@@ -1,0 +1,186 @@
+<div>
+  <app-page-breadcrumb pageTitle="Customers" />
+
+  <div class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] xl:p-6">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h3 class="text-base font-semibold text-gray-800 dark:text-white/90">Customers</h3>
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Manage customer records, vehicles, and service history.</p>
+      </div>
+      <app-button *appCan="{ menu: 'customers', permission: 'canCreate' }" size="sm" (btnClick)="openCreate()">
+        Add Customer
+      </app-button>
+    </div>
+
+    <div class="mt-4">
+      <input type="text" [(ngModel)]="search" placeholder="Search name, contact, or email"
+        class="w-full max-w-sm rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" />
+    </div>
+
+    <div class="mt-5 overflow-x-auto">
+      <table class="w-full min-w-[700px]">
+        <thead>
+          <tr class="border-b border-gray-200 dark:border-gray-800">
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Name</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Contact</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Email</th>
+            <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400">Vehicles</th>
+            <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400">Job Orders</th>
+            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @if (isLoading) {
+            <tr><td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">Loading...</td></tr>
+          } @else {
+            @for (c of filtered; track c.id) {
+              <tr class="border-b border-gray-100 hover:bg-gray-50/70 dark:border-gray-800/70 dark:hover:bg-gray-800/30">
+                <td class="px-4 py-3 text-sm font-medium text-gray-800 dark:text-gray-200">{{ c.name }}</td>
+                <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{{ c.contact || '—' }}</td>
+                <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{{ c.email || '—' }}</td>
+                <td class="px-4 py-3 text-center text-sm text-gray-600 dark:text-gray-400">{{ c.vehicleCount ?? 0 }}</td>
+                <td class="px-4 py-3 text-center text-sm text-gray-600 dark:text-gray-400">{{ c.jobOrderCount ?? 0 }}</td>
+                <td class="px-4 py-3 text-right">
+                  <div class="inline-flex gap-1.5">
+                    <app-button size="xs" variant="outline" (btnClick)="openProfile(c)">View</app-button>
+                    <app-button *appCan="{ menu: 'customers', permission: 'canUpdate' }" size="xs" variant="outline" (btnClick)="openEdit(c)">Edit</app-button>
+                  </div>
+                </td>
+              </tr>
+            } @empty {
+              <tr><td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No customers found.</td></tr>
+            }
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Create / Edit Drawer -->
+  @if (isDrawerOpen) {
+    <div class="fixed inset-0 z-[100000] bg-gray-900/40" (click)="closeDrawer()"></div>
+  }
+  <aside class="fixed right-0 top-0 z-[100001] h-full w-full max-w-md transform border-l border-gray-200 bg-white shadow-2xl transition-transform duration-300 dark:border-gray-800 dark:bg-gray-900"
+    [ngClass]="isDrawerOpen ? 'translate-x-0' : 'translate-x-full'">
+    <div class="flex h-full flex-col">
+      <div class="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-800">
+        <h3 class="text-lg font-semibold text-gray-800 dark:text-white/90">{{ drawerMode === 'create' ? 'Add Customer' : 'Edit Customer' }}</h3>
+        <button type="button" (click)="closeDrawer()" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Close</button>
+      </div>
+      <div class="flex-1 space-y-4 overflow-y-auto px-6 py-5">
+        <label>
+          <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Name *</span>
+          <input type="text" [(ngModel)]="form.name" [disabled]="isSaving"
+            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+        </label>
+        <label>
+          <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Contact</span>
+          <input type="text" [(ngModel)]="form.contact" [disabled]="isSaving"
+            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+        </label>
+        <label>
+          <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Email</span>
+          <input type="email" [(ngModel)]="form.email" [disabled]="isSaving"
+            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+        </label>
+        <label>
+          <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Address</span>
+          <textarea rows="3" [(ngModel)]="form.address" [disabled]="isSaving"
+            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"></textarea>
+        </label>
+      </div>
+      <div class="flex justify-end gap-2 border-t border-gray-200 px-6 py-4 dark:border-gray-800">
+        <button type="button" (click)="closeDrawer()" [disabled]="isSaving"
+          class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-300">Cancel</button>
+        <button type="button" (click)="save()" [disabled]="isSaving"
+          class="rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-60">
+          {{ isSaving ? 'Saving...' : (drawerMode === 'create' ? 'Add Customer' : 'Save Changes') }}
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Profile Drawer -->
+  @if (isProfileOpen) {
+    <div class="fixed inset-0 z-[100000] bg-gray-900/40" (click)="closeProfile()"></div>
+  }
+  <aside class="fixed right-0 top-0 z-[100001] h-full w-full max-w-2xl transform border-l border-gray-200 bg-white shadow-2xl transition-transform duration-300 dark:border-gray-800 dark:bg-gray-900"
+    [ngClass]="isProfileOpen ? 'translate-x-0' : 'translate-x-full'">
+    @if (profileCustomer) {
+      <div class="flex h-full flex-col">
+        <div class="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-800">
+          <div>
+            <h3 class="text-lg font-semibold text-gray-800 dark:text-white/90">{{ profileCustomer.name }}</h3>
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ profileCustomer.contact || profileCustomer.email || 'No contact info' }}</p>
+          </div>
+          <button type="button" (click)="closeProfile()" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Close</button>
+        </div>
+
+        <div class="flex gap-1 border-b border-gray-200 px-6 dark:border-gray-800">
+          @for (tab of [['vehicles','Vehicles'],['job-orders','Job Orders'],['payments','Payments'],['history','History']]; track tab[0]) {
+            <button type="button" (click)="switchTab($any(tab[0]))"
+              class="border-b-2 px-4 py-3 text-sm font-medium transition-colors"
+              [ngClass]="profileTab === tab[0]
+                ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'">
+              {{ tab[1] }}
+            </button>
+          }
+        </div>
+
+        <div class="flex-1 overflow-y-auto px-6 py-5">
+          @if (isLoadingProfile) {
+            <p class="text-sm text-gray-500 dark:text-gray-400">Loading...</p>
+          } @else {
+            @if (profileTab === 'vehicles') {
+              @for (v of profileVehicles; track v.id) {
+                <div class="mb-3 rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+                  <p class="font-medium text-gray-800 dark:text-gray-200">{{ v.plateNumber }} — {{ v.make }} {{ v.model }}</p>
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ v.yearModel || '—' }} · {{ v.fuelType || '—' }} · {{ v.transmission || '—' }}</p>
+                </div>
+              } @empty {
+                <p class="text-sm text-gray-500 dark:text-gray-400">No vehicles on record.</p>
+              }
+            }
+            @if (profileTab === 'job-orders') {
+              @for (jo of profileJobOrders; track $index) {
+                <div class="mb-3 rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+                  <div class="flex items-center justify-between">
+                    <p class="font-medium text-gray-800 dark:text-gray-200">{{ jo['joNumber'] }}</p>
+                    <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs dark:bg-gray-800 dark:text-gray-300">{{ jo['status'] }}</span>
+                  </div>
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ jo['plateNumber'] }} · ₱{{ jo['totalAmount'] }}</p>
+                </div>
+              } @empty {
+                <p class="text-sm text-gray-500 dark:text-gray-400">No job orders found.</p>
+              }
+            }
+            @if (profileTab === 'payments') {
+              @for (p of profilePayments; track $index) {
+                <div class="mb-3 rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+                  <div class="flex items-center justify-between">
+                    <p class="font-medium text-gray-800 dark:text-gray-200">₱{{ p['amount'] }}</p>
+                    <span class="text-xs text-gray-500 dark:text-gray-400">{{ p['mode'] }}</span>
+                  </div>
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ p['joNumber'] }} · {{ p['paymentDate'] }}</p>
+                </div>
+              } @empty {
+                <p class="text-sm text-gray-500 dark:text-gray-400">No payments found.</p>
+              }
+            }
+            @if (profileTab === 'history') {
+              @for (h of profileHistory; track $index) {
+                <div class="mb-3 rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+                  <p class="font-medium text-gray-800 dark:text-gray-200">{{ h['serviceDate'] }}</p>
+                  <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ h['notes'] }}</p>
+                </div>
+              } @empty {
+                <p class="text-sm text-gray-500 dark:text-gray-400">No service history found.</p>
+              }
+            }
+          }
+        </div>
+      </div>
+    }
+  </aside>
+</div>

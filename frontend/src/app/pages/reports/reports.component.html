@@ -1,0 +1,268 @@
+<div>
+  <app-page-breadcrumb pageTitle="Reports" />
+
+  <div class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] xl:p-6">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <h3 class="text-base font-semibold text-gray-800 dark:text-white/90">Reports</h3>
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Generate business reports for management review.</p>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="mt-5 flex flex-wrap items-end gap-3">
+      <label>
+        <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Report Type</span>
+        <select [(ngModel)]="reportType"
+          class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+          @for (rt of reportTypes; track rt.value) {
+            <option [value]="rt.value">{{ rt.label }}</option>
+          }
+        </select>
+      </label>
+
+      @if (needsDateRange) {
+        <label>
+          <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">From</span>
+          <input type="date" [(ngModel)]="fromDate"
+            class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" />
+        </label>
+        <label>
+          <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">To</span>
+          <input type="date" [(ngModel)]="toDate"
+            class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" />
+        </label>
+      }
+
+      <app-button (btnClick)="generate()" [disabled]="isLoading">
+        {{ isLoading ? 'Generating...' : 'Generate Report' }}
+      </app-button>
+    </div>
+
+    <!-- ── Sales Report ── -->
+    @if (reportType === 'sales') {
+      @if (salesSummary) {
+        <div class="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Total Transactions</p>
+            <p class="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">{{ salesSummary.totalTransactions }}</p>
+          </div>
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Total Amount</p>
+            <p class="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">₱{{ salesSummary.totalAmount | number:'1.2-2' }}</p>
+          </div>
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Job Orders Paid</p>
+            <p class="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">{{ salesSummary.totalJobOrders }}</p>
+          </div>
+        </div>
+      }
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full min-w-[500px]">
+          <thead>
+            <tr class="border-b border-gray-200 dark:border-gray-800">
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Date</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Mode</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Transactions</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of salesRows; track $index) {
+              <tr class="border-b border-gray-100 dark:border-gray-800/70">
+                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ row.date | date:'MMM dd, yyyy' }}</td>
+                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ row.mode }}</td>
+                <td class="px-4 py-3 text-right text-sm text-gray-700 dark:text-gray-300">{{ row.transactionCount }}</td>
+                <td class="px-4 py-3 text-right text-sm font-medium text-gray-800 dark:text-gray-200">₱{{ row.totalAmount | number:'1.2-2' }}</td>
+              </tr>
+            } @empty {
+              <tr><td colspan="4" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data. Click Generate Report.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+
+    <!-- ── Sales Payables/Receivables Expense ── -->
+    @if (reportType === 'payables-receivables') {
+      @if (payablesSummary) {
+        <div class="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-4">
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Total Transactions</p>
+            <p class="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">{{ payablesSummary.totalTransactions }}</p>
+          </div>
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Total Amount</p>
+            <p class="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">₱{{ payablesSummary.totalAmount | number:'1.2-2' }}</p>
+          </div>
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">PO Payments</p>
+            <p class="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">₱{{ payablesSummary.totalPoPayments | number:'1.2-2' }}</p>
+          </div>
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Cheque Payments</p>
+            <p class="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">₱{{ payablesSummary.totalChequePayments | number:'1.2-2' }}</p>
+          </div>
+        </div>
+      }
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full min-w-[750px]">
+          <thead>
+            <tr class="border-b border-gray-200 dark:border-gray-800">
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Date</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">JO No.</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Customer</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Payment Method</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Due Date/PDC</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of payablesRows; track $index) {
+              <tr class="border-b border-gray-100 dark:border-gray-800/70">
+                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ row.date | date:'MMM dd, yyyy' }}</td>
+                <td class="px-4 py-3 text-sm font-medium text-gray-800 dark:text-gray-200">{{ row.joNumber }}</td>
+                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ row.customerName }}</td>
+                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ formatPaymentMethod(row.paymentMethod) }}</td>
+                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ row.dueDatePdc ? (row.dueDatePdc | date:'MMM dd, yyyy') : '—' }}</td>
+                <td class="px-4 py-3 text-right text-sm font-medium text-gray-800 dark:text-gray-200">₱{{ row.amount | number:'1.2-2' }}</td>
+              </tr>
+            } @empty {
+              <tr><td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data. Click Generate Report.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+
+    <!-- ── Jobs Done Report ── -->
+    @if (reportType === 'jobs') {
+      @if (jobsSummary) {
+        <div class="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Total Jobs</p>
+            <p class="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">{{ jobsSummary.totalJobs }}</p>
+          </div>
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Total Revenue</p>
+            <p class="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">₱{{ jobsSummary.totalRevenue | number:'1.2-2' }}</p>
+          </div>
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Total Labor Fee</p>
+            <p class="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">₱{{ jobsSummary.totalLaborFee | number:'1.2-2' }}</p>
+          </div>
+        </div>
+      }
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full min-w-[750px]">
+          <thead>
+            <tr class="border-b border-gray-200 dark:border-gray-800">
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">JO #</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Vehicle</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Customer</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Mechanic</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Total</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Completed</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of jobsRows; track row.id) {
+              <tr class="border-b border-gray-100 dark:border-gray-800/70">
+                <td class="px-4 py-3 text-sm font-medium text-gray-800 dark:text-gray-200">{{ row.joNumber }}</td>
+                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ row.plateNumber }} — {{ row.make }} {{ row.model }}</td>
+                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ row.customerName }}</td>
+                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ row.mechanicName || '—' }}</td>
+                <td class="px-4 py-3 text-right text-sm font-medium text-gray-800 dark:text-gray-200">₱{{ row.totalAmount | number:'1.2-2' }}</td>
+                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ row.completedAt | date:'mediumDate' }}</td>
+              </tr>
+            } @empty {
+              <tr><td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data. Click Generate Report.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+
+    <!-- ── Inventory Report ── -->
+    @if (reportType === 'inventory') {
+      @if (inventorySummary) {
+        <div class="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Total Items</p>
+            <p class="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">{{ inventorySummary.totalItems }}</p>
+          </div>
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Total Units</p>
+            <p class="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">{{ inventorySummary.totalUnits }}</p>
+          </div>
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Stock Value</p>
+            <p class="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">₱{{ inventorySummary.totalValue | number:'1.2-2' }}</p>
+          </div>
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Low Stock Items</p>
+            <p class="mt-1 text-lg font-semibold text-error-600 dark:text-error-400">{{ inventorySummary.lowStockCount }}</p>
+          </div>
+        </div>
+      }
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full min-w-[700px]">
+          <thead>
+            <tr class="border-b border-gray-200 dark:border-gray-800">
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Part Name</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Category / Brand</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Stock</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Cost</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Selling</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Stock Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of inventoryRows; track row.id) {
+              <tr class="border-b border-gray-100 dark:border-gray-800/70">
+                <td class="px-4 py-3 text-sm font-medium text-gray-800 dark:text-gray-200">{{ row.partName }}</td>
+                <td class="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">{{ row.category || '—' }} / {{ row.brand || '—' }}</td>
+                <td class="px-4 py-3 text-right text-sm" [ngClass]="row.stockQty <= row.stockWarning ? 'font-bold text-error-600 dark:text-error-400' : 'text-gray-700 dark:text-gray-300'">{{ row.stockQty }}</td>
+                <td class="px-4 py-3 text-right text-sm text-gray-700 dark:text-gray-300">₱{{ row.costPrice | number:'1.2-2' }}</td>
+                <td class="px-4 py-3 text-right text-sm text-gray-700 dark:text-gray-300">₱{{ row.sellingPrice | number:'1.2-2' }}</td>
+                <td class="px-4 py-3 text-right text-sm font-medium text-gray-800 dark:text-gray-200">₱{{ row.stockValue | number:'1.2-2' }}</td>
+              </tr>
+            } @empty {
+              <tr><td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data. Click Generate Report.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+
+    <!-- ── Low Stock Report ── -->
+    @if (reportType === 'low-stock') {
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full min-w-[600px]">
+          <thead>
+            <tr class="border-b border-gray-200 dark:border-gray-800">
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Part Name</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Category / Brand</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Stock</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Warning Level</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Selling Price</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of lowStockRows; track row.id) {
+              <tr class="border-b border-gray-100 dark:border-gray-800/70">
+                <td class="px-4 py-3 text-sm font-medium text-error-700 dark:text-error-400">{{ row.partName }}</td>
+                <td class="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">{{ row.category || '—' }} / {{ row.brand || '—' }}</td>
+                <td class="px-4 py-3 text-right text-sm font-bold text-error-600 dark:text-error-400">{{ row.stockQty }}</td>
+                <td class="px-4 py-3 text-right text-sm text-gray-600 dark:text-gray-400">{{ row.stockWarning }}</td>
+                <td class="px-4 py-3 text-right text-sm text-gray-600 dark:text-gray-400">₱{{ row.sellingPrice | number:'1.2-2' }}</td>
+              </tr>
+            } @empty {
+              <tr><td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data. Click Generate Report.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+  </div>
+</div>

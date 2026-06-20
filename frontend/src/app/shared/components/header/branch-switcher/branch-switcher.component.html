@@ -1,0 +1,90 @@
+@if (isPlatformUser) {
+  <!-- Platform Admin: full org switcher dropdown -->
+  <div class="relative">
+    <button
+      (click)="toggleDropdown()"
+      title="Switch Organization"
+      class="dropdown-toggle flex items-center gap-1.5 h-11 px-3 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-full hover:bg-gray-100 hover:text-gray-800 dark:bg-gray-900 dark:border-gray-800 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white transition-colors"
+    >
+      <!-- Org icon -->
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" class="shrink-0">
+        <path fill-rule="evenodd" clip-rule="evenodd"
+          d="M3 5C3 3.89543 3.89543 3 5 3H19C20.1046 3 21 3.89543 21 5V7C21 8.10457 20.1046 9 19 9H5C3.89543 9 3 8.10457 3 7V5ZM5 5H19V7H5V5ZM3 11C3 10.4477 3.44772 10 4 10H10C10.5523 10 11 10.4477 11 11V19C11 19.5523 10.5523 20 10 20H4C3.44772 20 3 19.5523 3 19V11ZM5 12V18H9V12H5ZM13 11C13 10.4477 13.4477 10 14 10H20C20.5523 10 21 10.4477 21 11V19C21 19.5523 20.5523 20 20 20H14C13.4477 20 13 19.5523 13 19V11ZM15 12V18H19V12H15Z"
+          fill="currentColor" />
+      </svg>
+      <span class="hidden sm:block max-w-32 truncate text-xs">{{ activeOrgName }}</span>
+      <!-- Chevron -->
+      <svg
+        [class.rotate-180]="isOpen"
+        class="shrink-0 transition-transform duration-200"
+        width="16" height="16" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M5 7.5L10 12.5L15 7.5" stroke="currentColor" stroke-width="1.5"
+          stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </button>
+
+    <app-dropdown
+      [isOpen]="isOpen"
+      (close)="closeDropdown()"
+      className="absolute right-0 mt-3 w-56 flex flex-col rounded-2xl border border-gray-200 bg-white shadow-theme-lg dark:border-gray-800 dark:bg-gray-dark overflow-hidden z-50">
+
+      <div class="px-3 pt-3 pb-1">
+        <p class="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wide">Switch Organization</p>
+      </div>
+
+      @if (isLoading) {
+        <div class="py-4 text-center text-sm text-gray-400">Loading…</div>
+      } @else {
+        <ul class="py-1 max-h-64 overflow-y-auto">
+          <!-- Platform (no org) option -->
+          <li>
+            <button type="button" (click)="selectPlatform()"
+              class="flex items-center justify-between w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/5 transition-colors"
+              [class.font-semibold]="activeOrgId === null"
+              [class.text-brand-600]="activeOrgId === null">
+              <span class="truncate">Platform (All Orgs)</span>
+              @if (activeOrgId === null) {
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" class="shrink-0 ml-2 text-brand-500">
+                  <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              }
+            </button>
+          </li>
+          @if (orgs.length > 0) {
+            <li class="my-1 border-t border-gray-200 dark:border-gray-800"></li>
+          }
+          @for (org of orgs; track org.id) {
+            <li>
+              <button type="button" (click)="selectOrg(org)"
+                class="flex items-center justify-between w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-white/5 transition-colors"
+                [class.font-semibold]="activeOrgId === org.id"
+                [class.text-brand-600]="activeOrgId === org.id">
+                <span class="truncate">{{ org.name }}</span>
+                @if (activeOrgId === org.id) {
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" class="shrink-0 ml-2 text-brand-500">
+                    <path d="M5 13L9 17L19 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                }
+              </button>
+            </li>
+          }
+          @if (orgs.length === 0) {
+            <li class="py-3 text-center text-sm text-gray-400">No organizations found</li>
+          }
+        </ul>
+      }
+    </app-dropdown>
+  </div>
+} @else {
+  <!-- Org User: read-only badge showing their organization -->
+  <div
+    class="flex items-center gap-1.5 h-11 px-3 text-sm font-medium text-gray-600 bg-gray-50 border border-gray-200 rounded-full dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400"
+    [title]="activeOrgName">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" class="shrink-0 text-brand-500">
+      <path fill-rule="evenodd" clip-rule="evenodd"
+        d="M3 5C3 3.89543 3.89543 3 5 3H19C20.1046 3 21 3.89543 21 5V7C21 8.10457 20.1046 9 19 9H5C3.89543 9 3 8.10457 3 7V5ZM5 5H19V7H5V5ZM3 11C3 10.4477 3.44772 10 4 10H10C10.5523 10 11 10.4477 11 11V19C11 19.5523 10.5523 20 10 20H4C3.44772 20 3 19.5523 3 19V11ZM5 12V18H9V12H5ZM13 11C13 10.4477 13.4477 10 14 10H20C20.5523 10 21 10.4477 21 11V19C21 19.5523 20.5523 20 20 20H14C13.4477 20 13 19.5523 13 19V11ZM15 12V18H19V12H15Z"
+        fill="currentColor" />
+    </svg>
+    <span class="hidden sm:block max-w-36 truncate text-xs">{{ activeOrgName }}</span>
+  </div>
+}

@@ -1,0 +1,355 @@
+<div>
+  <app-page-breadcrumb pageTitle="Catering Menus & Packages" />
+
+  <div class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/3 xl:p-6">
+    <!-- Section Tabs -->
+    <div class="flex gap-1 border-b border-gray-200 dark:border-gray-800">
+      @for (tab of [['items', 'Menu Items'], ['packages', 'Packages']]; track tab[0]) {
+        <button type="button" (click)="switchSection($any(tab[0]))"
+          class="border-b-2 px-5 py-3 text-sm font-medium transition-colors"
+          [ngClass]="activeSection === tab[0]
+            ? 'border-brand-500 text-brand-600 dark:text-brand-400'
+            : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'">
+          {{ tab[1] }}
+        </button>
+      }
+    </div>
+
+    <!-- ── Menu Items Section ── -->
+    @if (activeSection === 'items') {
+      <!-- Search + Category Filter + Add Button -->
+      <div class="mt-5 flex items-center gap-3">
+        <input type="text" [(ngModel)]="menuSearch" placeholder="Search menu items..."
+          class="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 placeholder-gray-400 focus:border-brand-500 focus:outline-none focus:ring-1 focus:ring-brand-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:placeholder-gray-500" />
+        <select [(ngModel)]="menuCategoryFilter"
+          class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-800 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+          <option value="">All Categories</option>
+          @for (cat of categoriesWithItems; track cat) {
+            <option [value]="cat">{{ formatCategory(cat) }}</option>
+          }
+        </select>
+        <app-button size="sm" (btnClick)="openAddItemModal()">Add Menu Item</app-button>
+      </div>
+
+      @if (isLoadingItems) {
+        <div class="flex items-center justify-center py-12">
+          <div class="flex items-center gap-3 text-gray-500 dark:text-gray-400">
+            <svg class="h-5 w-5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            <span class="text-sm">Loading menu items...</span>
+          </div>
+        </div>
+      } @else if (allCategoriesEmpty) {
+        <p class="py-8 text-center text-sm text-gray-400 dark:text-gray-500">No menu items yet. Click "Add Menu Item" to get started.</p>
+      } @else if (filteredCategoriesWithItems.length === 0) {
+        <p class="py-8 text-center text-sm text-gray-400 dark:text-gray-500">No items match "{{ menuSearch }}".</p>
+      } @else {
+        <!-- Items Grid by Category -->
+        <div class="mt-4 space-y-5">
+          @for (category of filteredCategoriesWithItems; track category) {
+            <div>
+              <h4 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                {{ formatCategory(category) }}
+              </h4>
+              <div class="mt-2 grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+                @for (item of filteredGroupedItems[category]; track item.id) {
+                  <!-- Menu Item Card -->
+                  <div class="group relative cursor-default overflow-hidden rounded-xl border-2 border-gray-200 transition-all hover:border-gray-300 hover:shadow-md dark:border-gray-700 dark:hover:border-gray-600"
+                    style="max-width: 150px;">
+                    <!-- Image Area (1:1 ratio) -->
+                    <div class="relative w-full bg-gray-100 dark:bg-gray-800" style="aspect-ratio: 1/1;">
+                      @if (item.imageUrl) {
+                        <img [src]="item.imageUrl" [alt]="item.name" class="h-full w-full object-cover" />
+                      } @else {
+                        <div class="flex h-full w-full items-center justify-center">
+                          <svg class="h-8 w-8 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                        </div>
+                      }
+                      <!-- Hover Overlay with Actions -->
+                      <div class="absolute inset-0 flex items-center justify-center gap-1 bg-black/60 opacity-0 transition-opacity group-hover:opacity-100">
+                        <button type="button" (click)="openEditItemModal(item)"
+                          class="rounded-md bg-white/90 px-2 py-1 text-[10px] font-semibold text-gray-800 shadow hover:bg-white">
+                          Edit
+                        </button>
+                        <label class="cursor-pointer rounded-md bg-white/90 px-2 py-1 text-[10px] font-semibold text-gray-800 shadow hover:bg-white">
+                          Upload
+                          <input type="file" accept="image/*" class="sr-only" (change)="uploadMenuItemImage(item, $event)" />
+                        </label>
+                        <button type="button" (click)="deleteMenuItem(item)"
+                          class="rounded-md bg-red-500/90 px-2 py-1 text-[10px] font-semibold text-white shadow hover:bg-red-600">
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                    <!-- Item Name -->
+                    <div class="px-2 py-1.5">
+                      <p class="truncate text-xs font-medium text-gray-800 dark:text-gray-200">{{ item.name }}</p>
+                    </div>
+                  </div>
+                }
+              </div>
+            </div>
+          }
+        </div>
+      }
+    }
+
+    <!-- ── Packages Section ── -->
+    @if (activeSection === 'packages') {
+      <div class="mt-5 flex items-center justify-between">
+        <h3 class="text-sm font-semibold text-gray-800 dark:text-white/90">Catering Packages</h3>
+        <app-button size="sm" (btnClick)="openCreatePackageModal()">Create Package</app-button>
+      </div>
+
+      @if (isLoadingPackages) {
+        <div class="flex items-center justify-center py-12">
+          <div class="flex items-center gap-3 text-gray-500 dark:text-gray-400">
+            <svg class="h-5 w-5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            <span class="text-sm">Loading packages...</span>
+          </div>
+        </div>
+      } @else if (packages.length === 0) {
+        <p class="py-8 text-center text-sm text-gray-400 dark:text-gray-500">No packages yet. Click "Create Package" to get started.</p>
+      } @else {
+        <div class="mt-4 space-y-3">
+          @for (pkg of packages; track pkg.id) {
+            <div class="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+              <div class="flex items-start justify-between">
+                <div>
+                  <h4 class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ pkg.name }}</h4>
+                  <div class="mt-1 flex flex-wrap gap-3 text-xs text-gray-500 dark:text-gray-400">
+                    <span>₱{{ pkg.pricePerHead | number:'1.2-2' }} / head</span>
+                    <span>Min {{ pkg.minPax }} pax</span>
+                    <span>{{ getPackageItemSummary(pkg) }}</span>
+                  </div>
+                </div>
+                <div class="flex gap-1">
+                  <button type="button" (click)="openEditPackageModal(pkg)"
+                    class="rounded px-2 py-1 text-xs font-medium text-brand-600 hover:bg-brand-50 dark:text-brand-400 dark:hover:bg-brand-500/10">
+                    Edit
+                  </button>
+                  <button type="button" (click)="deletePackage(pkg)"
+                    class="rounded px-2 py-1 text-xs font-medium text-error-600 hover:bg-error-50 dark:text-error-400 dark:hover:bg-error-500/10">
+                    Delete
+                  </button>
+                </div>
+              </div>
+              <!-- Package items breakdown -->
+              @if (pkg.items && pkg.items.length > 0) {
+                <div class="mt-3 flex flex-wrap gap-1.5">
+                  @for (item of pkg.items; track item.menuItemId) {
+                    <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                      {{ item.menuItemName }}
+                    </span>
+                  }
+                </div>
+              }
+            </div>
+          }
+        </div>
+      }
+    }
+  </div>
+</div>
+
+<!-- ── Add/Edit Menu Item Modal ── -->
+@if (showItemModal) {
+  <div class="fixed inset-0 z-100011 flex items-center justify-center">
+    <div class="fixed inset-0 bg-black/50" (click)="closeItemModal()"></div>
+    <div class="relative z-10 w-full max-w-md rounded-xl bg-white p-6 shadow-xl dark:bg-gray-900">
+      <h3 class="text-lg font-semibold text-gray-800 dark:text-white">
+        {{ isEditingItem ? 'Edit Menu Item' : 'Add Menu Item' }}
+      </h3>
+
+      <div class="mt-4 space-y-4">
+        <!-- Name -->
+        <div>
+          <label class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Item Name</label>
+          <input type="text" [(ngModel)]="itemForm.name" maxlength="100" placeholder="Enter item name"
+            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
+        </div>
+
+        <!-- Category -->
+        <div>
+          <label class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Category</label>
+          <select [(ngModel)]="itemForm.category"
+            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+            @for (cat of categories; track cat) {
+              <option [value]="cat">{{ formatCategory(cat) }}</option>
+            }
+          </select>
+        </div>
+
+        <!-- Error -->
+        @if (itemError) {
+          <p class="text-xs text-error-600 dark:text-error-400">{{ itemError }}</p>
+        }
+      </div>
+
+      <div class="mt-6 flex justify-end gap-2">
+        <button type="button" (click)="closeItemModal()" [disabled]="isSavingItem"
+          class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
+          Cancel
+        </button>
+        <button type="button" (click)="saveMenuItem()" [disabled]="isSavingItem"
+          class="rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50">
+          {{ isSavingItem ? 'Saving...' : (isEditingItem ? 'Update' : 'Add Item') }}
+        </button>
+      </div>
+    </div>
+  </div>
+}
+
+<!-- ── Create/Edit Package Modal ── -->
+@if (showPackageModal) {
+  <div class="fixed inset-0 z-100011 flex items-center justify-center">
+    <div class="fixed inset-0 bg-black/50" (click)="closePackageModal()"></div>
+    <div class="relative z-10 w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-xl bg-white p-6 shadow-xl dark:bg-gray-900">
+      <h3 class="text-lg font-semibold text-gray-800 dark:text-white">
+        {{ isEditingPackage ? 'Edit Package' : 'Create Package' }}
+      </h3>
+
+      <div class="mt-4 space-y-4">
+        <!-- Package Name -->
+        <div>
+          <label class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Package Name</label>
+          <input type="text" [(ngModel)]="packageForm.name" maxlength="100" placeholder="Enter package name"
+            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
+        </div>
+
+        <!-- Price per Head & Min Pax -->
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Price per Head (₱)</label>
+            <input type="number" [(ngModel)]="packageForm.pricePerHead" min="0.01" step="0.01" placeholder="0.00"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Minimum Pax</label>
+            <input type="number" [(ngModel)]="packageForm.minPax" min="1" step="1" placeholder="1"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
+          </div>
+        </div>
+
+        <!-- Promo Text -->
+        <div>
+          <label class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Promo Text <span class="text-xs text-gray-400">(optional)</span></label>
+          <input type="text" [(ngModel)]="packageForm.promoText" maxlength="100" placeholder="e.g. Free dessert included!"
+            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
+        </div>
+
+        <!-- Category Selector -->
+        <div>
+          <label class="mb-1 block text-xs font-medium text-gray-700 dark:text-gray-300">Select Category</label>
+          @if (packageCategoriesWithItems.length === 0) {
+            <p class="text-xs text-gray-400 dark:text-gray-500">No menu items available. Add menu items first.</p>
+          } @else {
+            <select [(ngModel)]="packageSelectedCategory"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+              <option value="">Choose a category...</option>
+              @for (cat of packageCategoriesWithItems; track cat) {
+                <option [value]="cat">{{ formatCategory(cat) }} ({{ groupedItems[cat]?.length || 0 }} items)</option>
+              }
+            </select>
+          }
+        </div>
+
+        <!-- Items for selected category (150x150 cards, green selection) -->
+        @if (packageSelectedCategory) {
+          <div class="rounded-lg border border-gray-100 p-4 dark:border-gray-700/50">
+            <div class="mb-3 flex items-center justify-between">
+              <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">
+                {{ formatCategory(packageSelectedCategory) }}
+                @if (getSelectedCount(packageSelectedCategory) > 0) {
+                  <span class="ml-1 text-xs font-normal text-green-600 dark:text-green-400">({{ getSelectedCount(packageSelectedCategory) }} selected)</span>
+                }
+              </span>
+              <div class="flex items-center gap-2">
+                <label class="text-xs text-gray-500 dark:text-gray-400">Limit:</label>
+                <input type="number" [ngModel]="getSelectionLimit(packageSelectedCategory)"
+                  (ngModelChange)="setSelectionLimit(packageSelectedCategory, $event)"
+                  min="1" step="1"
+                  class="w-16 rounded border border-gray-300 px-2 py-1 text-xs dark:border-gray-600 dark:bg-gray-800 dark:text-gray-200" />
+              </div>
+            </div>
+            <div class="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
+              @for (item of packageSelectedCategoryItems; track item.id) {
+                <!-- Selectable Card -->
+                <div (click)="togglePackageItem(packageSelectedCategory, item.id)"
+                  class="cursor-pointer overflow-hidden rounded-xl border-2 transition-all hover:shadow-md"
+                  [ngClass]="isItemSelectedInPackage(packageSelectedCategory, item.id)
+                    ? 'border-green-500 ring-2 ring-green-200 dark:border-green-400 dark:ring-green-500/20'
+                    : 'border-gray-200 hover:border-gray-300 dark:border-gray-600 dark:hover:border-gray-500'"
+                  style="max-width: 150px;">
+                  <!-- Image Area (1:1 ratio) -->
+                  <div class="relative w-full bg-gray-100 dark:bg-gray-800" style="aspect-ratio: 1/1;">
+                    @if (item.imageUrl) {
+                      <img [src]="item.imageUrl" [alt]="item.name" class="h-full w-full object-cover" />
+                    } @else {
+                      <div class="flex h-full w-full items-center justify-center">
+                        <svg class="h-8 w-8 text-gray-300 dark:text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                        </svg>
+                      </div>
+                    }
+                    <!-- Green check overlay when selected -->
+                    @if (isItemSelectedInPackage(packageSelectedCategory, item.id)) {
+                      <div class="absolute inset-0 bg-green-500/10"></div>
+                      <div class="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-green-500 shadow">
+                        <svg class="h-3 w-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                          <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                        </svg>
+                      </div>
+                    }
+                  </div>
+                  <!-- Item Name -->
+                  <div class="px-2 py-1.5">
+                    <p class="truncate text-xs font-medium text-gray-800 dark:text-gray-200">{{ item.name }}</p>
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+        }
+
+        <!-- Selection Summary -->
+        @if (packageSelectionSummary.length > 0) {
+          <div class="border-t border-gray-200 pt-3 dark:border-gray-700">
+            <h5 class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400">Selected Items Summary</h5>
+            <div class="space-y-1">
+              @for (entry of packageSelectionSummary; track entry.category) {
+                <div class="flex items-center justify-between rounded-md bg-green-50 px-3 py-1.5 text-xs dark:bg-green-500/10">
+                  <span class="font-medium text-green-800 dark:text-green-300">{{ formatCategory(entry.category) }}</span>
+                  <span class="text-green-600 dark:text-green-400">{{ entry.count }} item{{ entry.count > 1 ? 's' : '' }} · limit: {{ entry.limit }}</span>
+                </div>
+              }
+            </div>
+          </div>
+        }
+
+        <!-- Error -->
+        @if (packageError) {
+          <p class="text-xs text-error-600 dark:text-error-400">{{ packageError }}</p>
+        }
+      </div>
+
+      <div class="mt-6 flex justify-end gap-2">
+        <button type="button" (click)="closePackageModal()" [disabled]="isSavingPackage"
+          class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
+          Cancel
+        </button>
+        <button type="button" (click)="savePackage()" [disabled]="isSavingPackage"
+          class="rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50">
+          {{ isSavingPackage ? 'Saving...' : (isEditingPackage ? 'Update Package' : 'Create Package') }}
+        </button>
+      </div>
+    </div>
+  </div>
+}

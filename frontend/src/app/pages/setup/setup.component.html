@@ -1,0 +1,186 @@
+<div class="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-12 dark:bg-gray-900">
+  <div class="w-full max-w-lg">
+
+    <!-- Header -->
+    <div class="text-center mb-8">
+      <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-brand-50 dark:bg-brand-500/10">
+        <svg class="h-8 w-8 text-brand-600 dark:text-brand-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4" />
+        </svg>
+      </div>
+      <h1 class="text-2xl font-bold text-gray-800 dark:text-white">Database Setup</h1>
+      <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Initialize your database from a backup file</p>
+    </div>
+
+    <!-- Loading -->
+    @if (state === 'loading') {
+      <div class="rounded-2xl border border-gray-200 bg-white p-8 text-center shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
+        <div class="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-brand-500"></div>
+        <p class="text-sm text-gray-500 dark:text-gray-400">Checking database status...</p>
+      </div>
+    }
+
+    <!-- Already Set Up -->
+    @if (state === 'already-setup') {
+      <div class="rounded-2xl border border-gray-200 bg-white p-8 text-center shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
+        <div class="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-green-50 dark:bg-green-500/10">
+          <svg class="h-7 w-7 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <h2 class="text-lg font-semibold text-gray-800 dark:text-white">Database Already Configured</h2>
+        <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">The database has existing tables. Setup is disabled to prevent data loss.</p>
+        <button type="button" (click)="goToLogin()"
+          class="mt-6 rounded-lg bg-brand-500 px-6 py-2.5 text-sm font-medium text-white hover:bg-brand-600">
+          Go to Login
+        </button>
+      </div>
+    }
+
+    <!-- Ready for Setup -->
+    @if (state === 'ready') {
+      <div class="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
+
+        @if (errorMessage) {
+          <div class="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700 dark:bg-red-900/20 dark:text-red-400">
+            {{ errorMessage }}
+          </div>
+        }
+
+        <!-- Drop Zone -->
+        <div
+          (dragover)="onDragOver($event)"
+          (dragleave)="onDragLeave($event)"
+          (drop)="onDrop($event)"
+          class="relative rounded-xl border-2 border-dashed p-8 text-center transition-colors"
+          [ngClass]="isDragOver
+            ? 'border-brand-500 bg-brand-50 dark:border-brand-400 dark:bg-brand-500/5'
+            : 'border-gray-300 hover:border-gray-400 dark:border-gray-700 dark:hover:border-gray-600'">
+
+          @if (!selectedFile) {
+            <svg class="mx-auto mb-3 h-12 w-12 text-gray-400 dark:text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            <p class="text-sm font-medium text-gray-700 dark:text-gray-300">
+              Drag & drop your <span class="text-brand-600 dark:text-brand-400">.sql</span> backup file here
+            </p>
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">or click to browse</p>
+            <input type="file" accept=".sql" (change)="onFileSelect($event)"
+              class="absolute inset-0 cursor-pointer opacity-0" />
+          } @else {
+            <div class="flex items-center justify-center gap-3">
+              <svg class="h-8 w-8 text-brand-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <div class="text-left">
+                <p class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ selectedFile.name }}</p>
+                <p class="text-xs text-gray-500">{{ (selectedFile.size / 1024).toFixed(1) }} KB</p>
+              </div>
+              <button type="button" (click)="removeFile()"
+                class="ml-2 rounded-full p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800">
+                <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          }
+        </div>
+
+        <!-- Restore Button -->
+        <button type="button" (click)="restore()" [disabled]="!selectedFile"
+          class="mt-5 w-full rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50">
+          🚀 Restore Database
+        </button>
+      </div>
+    }
+
+    <!-- Uploading -->
+    @if (state === 'uploading') {
+      <div class="rounded-2xl border border-gray-200 bg-white p-8 text-center shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
+        <div class="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-brand-500"></div>
+        <p class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ uploadProgress }}</p>
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">This may take a moment for large files...</p>
+      </div>
+    }
+
+    <!-- Success -->
+    @if (state === 'success') {
+      <div class="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
+        <div class="text-center mb-6">
+          <div class="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-green-50 dark:bg-green-500/10">
+            <svg class="h-7 w-7 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h2 class="text-lg font-semibold text-gray-800 dark:text-white">Setup Complete!</h2>
+          <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">{{ successMessage }}</p>
+        </div>
+
+        <!-- Summary -->
+        @if (summary) {
+          <div class="space-y-4 border-t border-gray-200 pt-5 dark:border-gray-700">
+            <!-- Stats -->
+            <div class="grid grid-cols-2 gap-3">
+              <div class="rounded-lg bg-gray-50 p-3 text-center dark:bg-gray-800">
+                <p class="text-xl font-bold text-gray-800 dark:text-white">{{ summary.tablesCreated }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">Tables Created</p>
+              </div>
+              <div class="rounded-lg bg-gray-50 p-3 text-center dark:bg-gray-800">
+                <p class="text-xl font-bold text-gray-800 dark:text-white">{{ summary.usersCount }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">Users</p>
+              </div>
+              <div class="rounded-lg bg-gray-50 p-3 text-center dark:bg-gray-800">
+                <p class="text-xl font-bold text-gray-800 dark:text-white">{{ summary.organizationsCount }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">Organizations</p>
+              </div>
+              <div class="rounded-lg bg-gray-50 p-3 text-center dark:bg-gray-800">
+                <p class="text-xl font-bold text-gray-800 dark:text-white">{{ summary.rolesCount }}</p>
+                <p class="text-xs text-gray-500 dark:text-gray-400">Roles</p>
+              </div>
+            </div>
+
+            <!-- Next Steps -->
+            @if (summary.nextSteps.length > 0) {
+              <div>
+                <h4 class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">Next Steps</h4>
+                <ol class="space-y-2">
+                  @for (step of summary.nextSteps; track $index) {
+                    <li class="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300">
+                      <span class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-100 text-xs font-bold text-brand-700 dark:bg-brand-500/20 dark:text-brand-400">{{ $index + 1 }}</span>
+                      {{ step }}
+                    </li>
+                  }
+                </ol>
+              </div>
+            }
+          </div>
+        }
+
+        <button type="button" (click)="goToLogin()"
+          class="mt-6 w-full rounded-lg bg-brand-500 px-6 py-2.5 text-sm font-medium text-white hover:bg-brand-600">
+          Go to Login
+        </button>
+      </div>
+    }
+
+    <!-- Error -->
+    @if (state === 'error') {
+      <div class="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
+        <div class="text-center mb-4">
+          <div class="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-50 dark:bg-red-500/10">
+            <svg class="h-7 w-7 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+            </svg>
+          </div>
+          <h2 class="text-lg font-semibold text-gray-800 dark:text-white">Restore Failed</h2>
+          <p class="mt-2 text-sm text-red-600 dark:text-red-400">{{ errorMessage }}</p>
+        </div>
+        <button type="button" (click)="state = 'ready'; selectedFile = null"
+          class="w-full rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
+          Try Again
+        </button>
+      </div>
+    }
+
+  </div>
+</div>

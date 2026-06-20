@@ -1,0 +1,115 @@
+<div class="space-y-6">
+  <!-- Header -->
+  <section class="rounded-2xl border border-gray-200 bg-linear-to-r from-brand-500 to-brand-600 p-5 text-white dark:border-gray-800">
+    <div>
+      <p class="text-xs uppercase tracking-wider text-white/80">Catering Dashboard</p>
+      <h1 class="mt-2 text-2xl font-semibold">STS Catering Services</h1>
+      <p class="mt-1 text-sm text-white/85">Operational metrics and customer feedback at a glance.</p>
+    </div>
+  </section>
+
+  <!-- Loading State -->
+  @if (state === 'loading') {
+    <div class="flex items-center justify-center py-12">
+      <div class="flex items-center gap-3 text-gray-500 dark:text-gray-400">
+        <svg class="h-5 w-5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+        </svg>
+        <span class="text-sm">Loading dashboard...</span>
+      </div>
+    </div>
+  }
+
+  <!-- Error State -->
+  @if (state === 'error') {
+    <div class="rounded-xl border border-error-200 bg-error-50 p-6 text-center dark:border-error-500/30 dark:bg-error-500/10">
+      <p class="text-sm text-error-700 dark:text-error-400">{{ errorMessage }}</p>
+      <button type="button" (click)="retry()"
+        class="mt-4 rounded-lg bg-error-600 px-4 py-2 text-sm font-medium text-white hover:bg-error-700 dark:bg-error-500 dark:hover:bg-error-600">
+        Retry
+      </button>
+    </div>
+  }
+
+  <!-- Loaded State -->
+  @if (state === 'loaded') {
+    <!-- Metric Cards -->
+    <section class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <!-- Unconfirmed Schedules -->
+      <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/3">
+        <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Unconfirmed Schedules</p>
+        <p class="mt-2 text-2xl font-bold text-warning-600 dark:text-warning-400">{{ metrics.pendingCount }}</p>
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Pending confirmation</p>
+      </div>
+      <!-- Confirmed Schedules -->
+      <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/3">
+        <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Confirmed Schedules</p>
+        <p class="mt-2 text-2xl font-bold text-blue-600 dark:text-blue-400">{{ metrics.inProgressCount }}</p>
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">In progress</p>
+      </div>
+      <!-- Total Sales -->
+      <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/3">
+        <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Total Sales</p>
+        <p class="mt-2 text-2xl font-bold text-success-600 dark:text-success-400">₱{{ formatCurrency(metrics.totalSales) }}</p>
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">From completed events</p>
+      </div>
+      <!-- Total Expenses -->
+      <div class="rounded-xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/3">
+        <p class="text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Total Expenses</p>
+        <p class="mt-2 text-2xl font-bold text-error-600 dark:text-error-400">₱{{ formatCurrency(metrics.totalExpenses) }}</p>
+        <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Operational costs</p>
+      </div>
+    </section>
+
+    <!-- Feedback Section -->
+    <section class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/3">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-semibold text-gray-800 dark:text-white/90">Customer Feedback</h3>
+        @if (feedbackItems.length > 0) {
+          <span class="rounded-lg bg-brand-50 px-3 py-1 text-sm font-medium text-brand-700 dark:bg-brand-500/15 dark:text-brand-400">
+            Average Rating: {{ averageRating.toFixed(1) }}/5
+          </span>
+        }
+      </div>
+
+      <div class="mt-4">
+        @if (feedbackItems.length === 0) {
+          <p class="py-8 text-center text-sm text-gray-400 dark:text-gray-500">No feedback received yet</p>
+        } @else {
+          <div class="space-y-3">
+            @for (item of feedbackItems; track item.id) {
+              <div class="rounded-lg border border-gray-100 p-4 dark:border-gray-700/50">
+                <div class="flex items-start justify-between">
+                  <div>
+                    <p class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ item.customerName }}</p>
+                    <div class="mt-1 flex items-center gap-0.5">
+                      @for (filled of getStarArray(item.rating); track $index) {
+                        @if (filled) {
+                          <svg class="h-4 w-4 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                          </svg>
+                        } @else {
+                          <svg class="h-4 w-4 text-gray-300 dark:text-gray-600" fill="currentColor" viewBox="0 0 20 20">
+                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                          </svg>
+                        }
+                      }
+                    </div>
+                  </div>
+                  <div class="text-right">
+                    <p class="text-xs text-gray-500 dark:text-gray-400">{{ item.submittedAt | date:'mediumDate' }}</p>
+                    <p class="text-xs text-gray-400 dark:text-gray-500">Event: {{ item.eventDate | date:'mediumDate' }}</p>
+                  </div>
+                </div>
+                @if (item.review) {
+                  <p class="mt-2 text-sm text-gray-600 dark:text-gray-300">{{ item.review }}</p>
+                }
+              </div>
+            }
+          </div>
+        }
+      </div>
+    </section>
+  }
+</div>

@@ -1,0 +1,127 @@
+<div class="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-12 dark:bg-gray-900">
+  <div class="w-full max-w-md">
+
+    <!-- Loading State -->
+    @if (state === 'loading') {
+      <div class="rounded-2xl border border-gray-200 bg-white p-8 text-center shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
+        <div class="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-4 border-gray-200 border-t-blue-500"></div>
+        <p class="text-sm text-gray-500 dark:text-gray-400">Validating your rating link...</p>
+      </div>
+    }
+
+    <!-- Error State -->
+    @if (state === 'error') {
+      <div class="rounded-2xl border border-gray-200 bg-white p-8 text-center shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
+        <div class="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-red-50 dark:bg-red-500/10">
+          <svg class="h-7 w-7 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+          </svg>
+        </div>
+        <h2 class="mb-2 text-lg font-semibold text-gray-800 dark:text-white/90">Unable to Load Rating</h2>
+        <p class="text-sm text-gray-500 dark:text-gray-400">{{ errorMessage }}</p>
+      </div>
+    }
+
+    <!-- Rating Form -->
+    @if (state === 'form') {
+      <div class="rounded-2xl border border-gray-200 bg-white p-8 shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
+        <div class="mb-6 text-center">
+          <h1 class="text-xl font-semibold text-gray-800 dark:text-white/90">Rate Your Experience</h1>
+          <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">We'd love to hear about your catering experience. Your feedback helps us improve!</p>
+        </div>
+
+        <!-- Star Rating -->
+        <div class="mb-6">
+          <label class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">Your Rating</label>
+          <div class="flex items-center justify-center gap-1">
+            @for (star of stars; track star) {
+              <button
+                type="button"
+                (click)="setRating(star)"
+                (mouseenter)="setHover(star)"
+                (mouseleave)="clearHover()"
+                class="p-1 transition-transform hover:scale-110 focus:outline-none"
+                [attr.aria-label]="star + ' star' + (star > 1 ? 's' : '')"
+              >
+                <svg
+                  class="h-8 w-8 transition-colors"
+                  [class.text-yellow-400]="star <= displayRating"
+                  [class.text-gray-300]="star > displayRating"
+                  [class.dark:text-gray-600]="star > displayRating"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                </svg>
+              </button>
+            }
+          </div>
+          @if (rating > 0) {
+            <p class="mt-2 text-center text-sm text-gray-500 dark:text-gray-400">
+              {{ rating }} out of 5 stars
+            </p>
+          }
+        </div>
+
+        <!-- Review Textarea -->
+        <div class="mb-6">
+          <label for="review" class="mb-2 block text-sm font-medium text-gray-700 dark:text-gray-300">
+            Review <span class="font-normal text-gray-400">(optional)</span>
+          </label>
+          <textarea
+            id="review"
+            [(ngModel)]="review"
+            [maxlength]="maxReviewLength"
+            rows="4"
+            placeholder="Tell us about your experience..."
+            class="w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-gray-800 placeholder-gray-400 transition-colors focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 dark:placeholder-gray-500 dark:focus:border-blue-400 dark:focus:ring-blue-400"
+          ></textarea>
+          <p class="mt-1 text-right text-xs text-gray-400 dark:text-gray-500">
+            {{ reviewCharCount }} / {{ maxReviewLength }}
+          </p>
+        </div>
+
+        <!-- Submit Error -->
+        @if (submitError) {
+          <div class="mb-4 rounded-lg bg-red-50 px-4 py-3 text-sm text-red-600 dark:bg-red-500/10 dark:text-red-400">
+            {{ submitError }}
+          </div>
+        }
+
+        <!-- Submit Button -->
+        <button
+          type="button"
+          (click)="submitRating()"
+          [disabled]="!isFormValid || isSubmitting"
+          class="w-full rounded-lg bg-blue-600 px-4 py-3 text-sm font-medium text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-500 dark:hover:bg-blue-600 dark:focus:ring-offset-gray-900"
+        >
+          @if (isSubmitting) {
+            <span class="inline-flex items-center gap-2">
+              <svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              Submitting...
+            </span>
+          } @else {
+            Submit Rating
+          }
+        </button>
+      </div>
+    }
+
+    <!-- Success State -->
+    @if (state === 'success') {
+      <div class="rounded-2xl border border-gray-200 bg-white p-8 text-center shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
+        <div class="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-green-50 dark:bg-green-500/10">
+          <svg class="h-7 w-7 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <h2 class="mb-2 text-lg font-semibold text-gray-800 dark:text-white/90">Thank you for your feedback!</h2>
+        <p class="text-sm text-gray-500 dark:text-gray-400">Your rating has been submitted successfully. We appreciate you taking the time to share your experience.</p>
+      </div>
+    }
+
+  </div>
+</div>

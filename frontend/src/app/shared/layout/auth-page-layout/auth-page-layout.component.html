@@ -1,0 +1,70 @@
+<div class="relative p-6 bg-white z-1 dark:bg-gray-900 sm:p-0">
+  <div class="relative flex flex-col justify-center w-full h-screen lg:flex-row dark:bg-gray-900 sm:p-0">
+
+    <ng-content></ng-content>
+
+    <!-- Right panel -->
+    <div class="items-center hidden w-full h-full lg:w-1/2 bg-blue-200 dark:bg-white/5 lg:grid relative">
+      <div class="flex items-center justify-center z-1">
+        <app-grid-shape />
+
+        <div class="flex flex-col items-center max-w-sm w-full px-6">
+
+          <!-- Main CBIS platform logo -->
+          <a routerLink="/" class="block mb-3">
+            <img width="500" height="48" class="dark:hidden" [src]="logoLightSrc" alt="CBIS Logo" />
+            <img width="500" height="48" class="hidden dark:block" [src]="logoDarkSrc" alt="CBIS Logo" />
+          </a>
+
+          <p class="text-center text-white dark:text-white/60 text-sm mb-6">
+            Centralized Business Information Management System
+          </p>
+
+          <!-- Organization logos -->
+          @if (orgs.length > 0) {
+            <div class="w-full">
+              <p class="text-center text-white/60 dark:text-white/30 text-xs uppercase tracking-widest mb-4">
+                Registered Organizations
+              </p>
+
+              <div class="flex flex-wrap items-center justify-center gap-3">
+                @for (org of orgs; track org.id) {
+                  <div
+                    class="flex flex-col items-center gap-1.5 group"
+                    [title]="org.name"
+                  >
+                    <!-- Logo or initial avatar -->
+                    <div class="w-14 h-14 rounded-xl overflow-hidden bg-white/20 dark:bg-white/10 border border-white/30 dark:border-white/10 flex items-center justify-center shadow-sm transition-transform group-hover:scale-105">
+                      @if (org.logoUrl) {
+                        <img
+                          [src]="org.logoUrl"
+                          [alt]="org.name"
+                          class="w-full h-full object-contain p-1"
+                        />
+                      } @else {
+                        <span class="text-xl font-bold text-white dark:text-white/80">
+                          {{ orgInitial(org.name) }}
+                        </span>
+                      }
+                    </div>
+                    <!-- Org name label -->
+                    <span class="text-white/70 dark:text-white/40 text-[10px] text-center max-w-16 truncate leading-tight">
+                      {{ org.name }}
+                    </span>
+                  </div>
+                }
+              </div>
+            </div>
+          }
+
+        </div>
+      </div>
+    </div>
+
+    <!-- Theme toggle -->
+    <div class="fixed z-50 hidden bottom-6 right-6 sm:block">
+      <app-theme-toggle-two />
+    </div>
+
+  </div>
+</div>

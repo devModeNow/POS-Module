@@ -1,0 +1,8 @@
+
+> ng-tailadmin@1.0.2 build
+> ng build
+
+[33m>[39m Building...
+[32m√[39m Building...
+Application bundle generation failed. [7.059 seconds] - 2026-04-29T03:31:06.715Z
+

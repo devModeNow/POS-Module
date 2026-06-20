@@ -1,0 +1,135 @@
+<div>
+  <app-page-breadcrumb pageTitle="Quotations" />
+
+  <div class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] xl:p-6">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h3 class="text-base font-semibold text-gray-800 dark:text-white/90">Quotations</h3>
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Create and manage service quotations for customers.</p>
+      </div>
+      <app-button *appCan="{ menu: 'quotations', permission: 'canCreate' }" size="sm" (btnClick)="openCreate()">
+        New Quotation
+      </app-button>
+    </div>
+
+    <div class="mt-4 flex gap-2">
+      <select [(ngModel)]="filterStatus" (ngModelChange)="load()"
+        class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+        <option value="">All Statuses</option>
+        @for (s of statuses; track s) { <option [value]="s">{{ s | titlecase }}</option> }
+      </select>
+    </div>
+
+    <div class="mt-5 overflow-x-auto">
+      <table class="w-full min-w-[750px]">
+        <thead>
+          <tr class="border-b border-gray-200 dark:border-gray-800">
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Customer</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Plate</th>
+            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Total</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Valid Until</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Status</th>
+            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @if (isLoading) {
+            <tr><td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">Loading...</td></tr>
+          } @else {
+            @for (q of quotations; track q.id) {
+              <tr class="border-b border-gray-100 hover:bg-gray-50/70 dark:border-gray-800/70 dark:hover:bg-gray-800/30">
+                <td class="px-4 py-3">
+                  <p class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ q.customerName }}</p>
+                  <p class="text-xs text-gray-500 dark:text-gray-400">{{ q.contact || '—' }}</p>
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{{ q.vehiclePlate || '—' }}</td>
+                <td class="px-4 py-3 text-right text-sm font-medium text-gray-800 dark:text-gray-200">₱{{ q.totalAmount | number:'1.2-2' }}</td>
+                <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{{ q.validUntil || '—' }}</td>
+                <td class="px-4 py-3">
+                  <span class="rounded-full px-2.5 py-0.5 text-xs font-medium" [ngClass]="statusClass(q.status)">{{ q.status }}</span>
+                </td>
+                <td class="px-4 py-3 text-right">
+                  <div class="inline-flex gap-1.5">
+                    <app-button *appCan="{ menu: 'quotations', permission: 'canUpdate' }" size="xs" variant="outline" (btnClick)="openEdit(q)">Edit</app-button>
+                    @if (q.status === 'draft') {
+                      <app-button *appCan="{ menu: 'quotations', permission: 'canUpdate' }" size="xs" variant="outline" (btnClick)="updateStatus(q, 'sent')">Send</app-button>
+                    }
+                  </div>
+                </td>
+              </tr>
+            } @empty {
+              <tr><td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No quotations found.</td></tr>
+            }
+          }
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  @if (isDrawerOpen) {
+    <div class="fixed inset-0 z-[100000] bg-gray-900/40" (click)="closeDrawer()"></div>
+  }
+  <aside class="fixed right-0 top-0 z-[100001] h-full w-full max-w-md transform border-l border-gray-200 bg-white shadow-2xl transition-transform duration-300 dark:border-gray-800 dark:bg-gray-900"
+    [ngClass]="isDrawerOpen ? 'translate-x-0' : 'translate-x-full'">
+    <div class="flex h-full flex-col">
+      <div class="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-800">
+        <h3 class="text-lg font-semibold text-gray-800 dark:text-white/90">{{ drawerMode === 'create' ? 'New Quotation' : 'Edit Quotation' }}</h3>
+        <button type="button" (click)="closeDrawer()" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Close</button>
+      </div>
+      <div class="flex-1 space-y-4 overflow-y-auto px-6 py-5">
+        <label>
+          <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Customer Name *</span>
+          <input type="text" [(ngModel)]="form.customerName" [disabled]="isSaving"
+            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+        </label>
+        <div class="grid grid-cols-2 gap-3">
+          <label>
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Contact</span>
+            <input type="text" [(ngModel)]="form.contact" [disabled]="isSaving"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+          </label>
+          <label>
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Plate Number</span>
+            <input type="text" [(ngModel)]="form.vehiclePlate" [disabled]="isSaving"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+          </label>
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+          <label>
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Labor Fee</span>
+            <input type="number" [(ngModel)]="form.laborFee" [disabled]="isSaving"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+          </label>
+          <label>
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Discount</span>
+            <input type="number" [(ngModel)]="form.discount" [disabled]="isSaving"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+          </label>
+          <label>
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Total</span>
+            <input type="number" [(ngModel)]="form.totalAmount" [disabled]="isSaving"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+          </label>
+        </div>
+        <label>
+          <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Valid Until</span>
+          <input type="date" [(ngModel)]="form.validUntil" [disabled]="isSaving"
+            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+        </label>
+        <label>
+          <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Notes</span>
+          <textarea rows="3" [(ngModel)]="form.notes" [disabled]="isSaving"
+            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"></textarea>
+        </label>
+      </div>
+      <div class="flex justify-end gap-2 border-t border-gray-200 px-6 py-4 dark:border-gray-800">
+        <button type="button" (click)="closeDrawer()" [disabled]="isSaving"
+          class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-300">Cancel</button>
+        <button type="button" (click)="save()" [disabled]="isSaving"
+          class="rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-60">
+          {{ isSaving ? 'Saving...' : (drawerMode === 'create' ? 'Create Quotation' : 'Save Changes') }}
+        </button>
+      </div>
+    </div>
+  </aside>
+</div>

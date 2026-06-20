@@ -1,0 +1,506 @@
+<app-page-breadcrumb pageTitle="Finance" />
+
+<div class="space-y-5">
+  <!-- Tab Navigation -->
+  <div class="flex flex-wrap gap-1 rounded-xl border border-gray-200 bg-gray-50 p-1 dark:border-gray-800 dark:bg-gray-900">
+    @for (tab of tabs; track tab.key) {
+      <button type="button" (click)="setTab(tab.key)"
+        class="flex items-center gap-1.5 rounded-lg border-b-2 px-3 py-2 text-sm font-medium transition-all"
+        [class]="getTabClass(tab.key)">
+        <span>{{ tab.icon }}</span>
+        <span class="hidden sm:inline">{{ tab.label }}</span>
+      </button>
+    }
+  </div>
+
+  <!-- Date Range Filter -->
+  @if (activeTab !== 'calendar' && activeTab !== 'soa') {
+    <div class="flex flex-wrap items-end gap-3">
+      <label>
+        <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">From</span>
+        <input type="date" [(ngModel)]="fromDate"
+          class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" />
+      </label>
+      <label>
+        <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">To</span>
+        <input type="date" [(ngModel)]="toDate"
+          class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" />
+      </label>
+      <app-button (btnClick)="loadTabData()" [disabled]="isLoading">
+        {{ isLoading ? 'Loading...' : 'Load' }}
+      </app-button>
+    </div>
+  }
+
+  <!-- ═══════ EXPENSES TAB ═══════ -->
+  @if (activeTab === 'expenses') {
+    <section class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-base font-semibold text-gray-800 dark:text-white/90">Expenses</h3>
+          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Daily expense / petty cash tracking.</p>
+        </div>
+        <app-button (btnClick)="showExpenseForm = !showExpenseForm">
+          {{ showExpenseForm ? 'Cancel' : '+ Add Expense' }}
+        </app-button>
+      </div>
+      @if (showExpenseForm) {
+        <div class="mt-4 grid grid-cols-1 gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900 sm:grid-cols-4">
+          <label>
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Description</span>
+            <input type="text" [(ngModel)]="expenseForm.description" placeholder="e.g. Office supplies"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
+          </label>
+          <label>
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Amount</span>
+            <input type="number" [(ngModel)]="expenseForm.amount" min="0"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
+          </label>
+          <label>
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Category</span>
+            <input type="text" [(ngModel)]="expenseForm.category" placeholder="e.g. Utilities"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
+          </label>
+          <div class="flex items-end">
+            <app-button (btnClick)="submitExpense()">Save</app-button>
+          </div>
+        </div>
+      }
+      @if (expenseSummary) {
+        <div class="mt-4 grid grid-cols-2 gap-3">
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Total Expenses</p>
+            <p class="mt-1 text-lg font-semibold text-error-600 dark:text-error-400">₱{{ expenseSummary.totalAmount | number:'1.2-2' }}</p>
+          </div>
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Count</p>
+            <p class="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">{{ expenseSummary.totalCount }}</p>
+          </div>
+        </div>
+      }
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full min-w-[600px]">
+          <thead>
+            <tr class="border-b border-gray-200 dark:border-gray-800">
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Date</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Description</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Category</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Amount</th>
+              <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (exp of expenses; track exp.id) {
+              <tr class="border-b border-gray-100 dark:border-gray-800/70">
+                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ exp.expenseDate || exp.createdAt | date:'MMM dd, yyyy' }}</td>
+                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ exp.description }}</td>
+                <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">{{ exp.category || '—' }}</td>
+                <td class="px-4 py-3 text-right text-sm font-medium text-error-600 dark:text-error-400">₱{{ exp.amount | number:'1.2-2' }}</td>
+                <td class="px-4 py-3 text-center">
+                  <button (click)="openDeleteExpense(exp.id)" class="text-xs text-red-500 hover:text-red-700">Delete</button>
+                </td>
+              </tr>
+            } @empty {
+              <tr><td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No expenses found.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+  }
+
+  <!-- ═══════ DEPOSITS TAB ═══════ -->
+  @if (activeTab === 'deposits') {
+    <section class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
+      <div class="flex items-center justify-between">
+        <div>
+          <h3 class="text-base font-semibold text-gray-800 dark:text-white/90">Deposits</h3>
+          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Track incoming deposits.</p>
+        </div>
+        <app-button (btnClick)="showDepositForm = !showDepositForm">
+          {{ showDepositForm ? 'Cancel' : '+ Add Deposit' }}
+        </app-button>
+      </div>
+      @if (showDepositForm) {
+        <div class="mt-4 grid grid-cols-1 gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900 sm:grid-cols-3">
+          <label>
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Description</span>
+            <input type="text" [(ngModel)]="depositForm.description" placeholder="e.g. Client payment"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
+          </label>
+          <label>
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Amount</span>
+            <input type="number" [(ngModel)]="depositForm.amount" min="0"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
+          </label>
+          <label>
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Source</span>
+            <input type="text" [(ngModel)]="depositForm.source" placeholder="e.g. Bank transfer"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
+          </label>
+          <div class="flex items-end sm:col-span-3">
+            <app-button (btnClick)="submitDeposit()">Save</app-button>
+          </div>
+        </div>
+      }
+      @if (depositSummary) {
+        <div class="mt-4 grid grid-cols-2 gap-3">
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Total Deposits</p>
+            <p class="mt-1 text-lg font-semibold text-green-600 dark:text-green-400">₱{{ depositSummary.totalAmount | number:'1.2-2' }}</p>
+          </div>
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Count</p>
+            <p class="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">{{ depositSummary.totalCount }}</p>
+          </div>
+        </div>
+      }
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full min-w-[500px]">
+          <thead>
+            <tr class="border-b border-gray-200 dark:border-gray-800">
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Date</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Description</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Source</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Amount</th>
+              <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (dep of deposits; track dep.id) {
+              <tr class="border-b border-gray-100 dark:border-gray-800/70">
+                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ dep.createdAt | date:'MMM dd, yyyy' }}</td>
+                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ dep.description }}</td>
+                <td class="px-4 py-3 text-sm text-gray-500 dark:text-gray-400">{{ dep.source || '—' }}</td>
+                <td class="px-4 py-3 text-right text-sm font-medium text-green-600 dark:text-green-400">₱{{ dep.amount | number:'1.2-2' }}</td>
+                <td class="px-4 py-3 text-center">
+                  <button (click)="removeDeposit(dep.id)" class="text-xs text-red-500 hover:text-red-700">Delete</button>
+                </td>
+              </tr>
+            } @empty {
+              <tr><td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No deposits found.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+  }
+
+  <!-- ═══════ RECEIVABLES TAB ═══════ -->
+  @if (activeTab === 'receivables') {
+    <section class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
+      <div>
+        <h3 class="text-base font-semibold text-gray-800 dark:text-white/90">Receivables</h3>
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">PO Payments and Cheque transactions. Settle when payment is received.</p>
+      </div>
+      @if (receivableSummary) {
+        <div class="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Total Amount</p>
+            <p class="mt-1 text-lg font-semibold text-amber-600 dark:text-amber-400">₱{{ receivableSummary.totalAmount | number:'1.2-2' }}</p>
+          </div>
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Pending</p>
+            <p class="mt-1 text-lg font-semibold text-red-600 dark:text-red-400">{{ receivableSummary.pendingCount }}</p>
+          </div>
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Settled</p>
+            <p class="mt-1 text-lg font-semibold text-green-600 dark:text-green-400">{{ receivableSummary.settledCount }}</p>
+          </div>
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Job Orders</p>
+            <p class="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">{{ receivableSummary.totalJobOrders }}</p>
+          </div>
+        </div>
+      }
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full min-w-[850px]">
+          <thead>
+            <tr class="border-b border-gray-200 dark:border-gray-800">
+              <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Date</th>
+              <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">JO No.</th>
+              <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Customer</th>
+              <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Method</th>
+              <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Reference</th>
+              <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400">Status</th>
+              <th class="px-3 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Amount</th>
+              <th class="px-3 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (rec of receivables; track rec.id) {
+              <tr class="border-b border-gray-100 dark:border-gray-800/70">
+                <td class="px-3 py-3 text-sm text-gray-700 dark:text-gray-300">{{ rec.paymentDate | date:'MMM dd, yyyy' }}</td>
+                <td class="px-3 py-3 text-sm font-medium text-gray-800 dark:text-gray-200">{{ rec.joNumber }}</td>
+                <td class="px-3 py-3 text-sm text-gray-700 dark:text-gray-300">{{ rec.customerName }}</td>
+                <td class="px-3 py-3 text-sm text-gray-700 dark:text-gray-300">{{ formatPaymentMethod(rec.paymentMethod) }}</td>
+                <td class="px-3 py-3 text-sm text-gray-500 dark:text-gray-400">{{ rec.referenceNo || '—' }}</td>
+                <td class="px-3 py-3 text-center">
+                  @if (rec.status === 'settled') {
+                    <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-500/20 dark:text-green-300">Settled</span>
+                  } @else {
+                    <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-500/20 dark:text-amber-300">Pending</span>
+                  }
+                </td>
+                <td class="px-3 py-3 text-right text-sm font-medium text-amber-600 dark:text-amber-400">₱{{ rec.amount | number:'1.2-2' }}</td>
+                <td class="px-3 py-3 text-center">
+                  @if (rec.status === 'pending') {
+                    <button (click)="openSettleModal(rec.id)" class="rounded-lg bg-green-500 px-2 py-1 text-xs font-medium text-white hover:bg-green-600">Settle</button>
+                  } @else {
+                    <span class="text-xs text-gray-400">{{ rec.settlementMode ? formatPaymentMethod(rec.settlementMode) : '—' }}</span>
+                  }
+                </td>
+              </tr>
+            } @empty {
+              <tr><td colspan="8" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No receivables found.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+  }
+
+  <!-- ═══════ CALENDAR TAB ═══════ -->
+  @if (activeTab === 'calendar') {
+    <section class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
+      <div class="flex items-center justify-between">
+        <button (click)="prevMonth()" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800">← Prev</button>
+        <h3 class="text-base font-semibold text-gray-800 dark:text-white/90">{{ monthLabel }}</h3>
+        <button (click)="nextMonth()" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800">Next →</button>
+      </div>
+      <div class="mt-4 grid grid-cols-7 gap-px rounded-xl border border-gray-200 bg-gray-200 dark:border-gray-700 dark:bg-gray-700">
+        @for (day of ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']; track day) {
+          <div class="bg-gray-100 px-2 py-2 text-center text-xs font-medium text-gray-500 dark:bg-gray-800 dark:text-gray-400">{{ day }}</div>
+        }
+        @for (cell of calendarDays; track cell.date) {
+          <div class="min-h-[80px] cursor-pointer bg-white p-1 hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800"
+            [class.opacity-40]="!cell.isCurrentMonth"
+            (click)="openDayModal(cell.date, cell.events)">
+            <p class="mb-1 text-xs font-medium text-gray-600 dark:text-gray-400">{{ cell.day }}</p>
+            @for (ev of cell.events | slice:0:3; track ev.id) {
+              <div class="mb-0.5 truncate rounded px-1 py-0.5 text-[10px] font-medium" [class]="eventColor(ev.type)">
+                ₱{{ ev.amount | number:'1.0-0' }}
+              </div>
+            }
+            @if (cell.events.length > 3) {
+              <p class="text-[10px] text-gray-400">+{{ cell.events.length - 3 }} more</p>
+            }
+          </div>
+        }
+      </div>
+      <div class="mt-3 flex flex-wrap gap-4 text-xs">
+        <span class="flex items-center gap-1"><span class="h-3 w-3 rounded bg-red-200"></span> Expense</span>
+        <span class="flex items-center gap-1"><span class="h-3 w-3 rounded bg-green-200"></span> Deposit</span>
+        <span class="flex items-center gap-1"><span class="h-3 w-3 rounded bg-amber-200"></span> Receivable</span>
+      </div>
+    </section>
+  }
+
+  <!-- ═══════ CUSTOMER SOA TAB ═══════ -->
+  @if (activeTab === 'soa') {
+    <section class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03]">
+      <div>
+        <h3 class="text-base font-semibold text-gray-800 dark:text-white/90">Customer Statement of Account</h3>
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">View balances and generate SOA for customers with PO/Cheque payments.</p>
+      </div>
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full min-w-[600px]">
+          <thead>
+            <tr class="border-b border-gray-200 dark:border-gray-800">
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Client Name</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Current Balance</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Settled Payments</th>
+              <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (cust of soaCustomers; track cust.id) {
+              <tr class="border-b border-gray-100 dark:border-gray-800/70 hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                <td class="px-4 py-3 text-sm font-medium text-gray-800 dark:text-gray-200">{{ cust.name }}</td>
+                <td class="px-4 py-3 text-right text-sm font-semibold" [class]="cust.currentBalance > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-green-600 dark:text-green-400'">
+                  ₱{{ cust.currentBalance | number:'1.2-2' }}
+                </td>
+                <td class="px-4 py-3 text-right text-sm text-green-600 dark:text-green-400">₱{{ cust.settledAmount | number:'1.2-2' }}</td>
+                <td class="px-4 py-3 text-center">
+                  <button (click)="viewSOA(cust.id)" class="rounded-lg bg-brand-500 px-3 py-1 text-xs font-medium text-white hover:bg-brand-600">View Details & Print SOA</button>
+                </td>
+              </tr>
+            } @empty {
+              <tr><td colspan="4" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No customers with receivables found.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    </section>
+  }
+
+  <!-- ═══════ DELETE EXPENSE MODAL ═══════ -->
+  @if (showDeleteExpenseModal) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-900">
+        <h3 class="text-lg font-semibold text-gray-800 dark:text-white/90">Delete Expense</h3>
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Please provide a reason and your password to confirm deletion.</p>
+        <div class="mt-4 space-y-3">
+          <label>
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Reason for deletion *</span>
+            <textarea [(ngModel)]="deleteExpenseForm.reason" rows="2" placeholder="Why is this expense being removed?"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"></textarea>
+          </label>
+          <label>
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Your Password *</span>
+            <input type="password" [(ngModel)]="deleteExpenseForm.password" placeholder="Enter your password"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
+          </label>
+        </div>
+        <div class="mt-5 flex justify-end gap-3">
+          <button (click)="showDeleteExpenseModal = false"
+            class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300">Cancel</button>
+          <button (click)="confirmDeleteExpense()"
+            [disabled]="!deleteExpenseForm.reason || !deleteExpenseForm.password"
+            class="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50">Confirm Delete</button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- ═══════ SETTLE RECEIVABLE MODAL ═══════ -->
+  @if (showSettleModal) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div class="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-900">
+        <h3 class="text-lg font-semibold text-gray-800 dark:text-white/90">Settle Payment</h3>
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Record how this receivable was paid/settled.</p>
+        <div class="mt-4 space-y-3">
+          <label>
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Settlement Mode *</span>
+            <select [(ngModel)]="settleForm.settlementMode"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+              <option value="cash">Cash</option>
+              <option value="cheque">Cheque</option>
+              <option value="bank_transfer">Bank Transfer</option>
+            </select>
+          </label>
+          <label>
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Settlement Date *</span>
+            <input type="date" [(ngModel)]="settleForm.settlementDate"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
+          </label>
+          <label>
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Reference No. (optional)</span>
+            <input type="text" [(ngModel)]="settleForm.settlementReference" placeholder="e.g. Check # or transaction ID"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200" />
+          </label>
+        </div>
+        <div class="mt-5 flex justify-end gap-3">
+          <button (click)="showSettleModal = false"
+            class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300">Cancel</button>
+          <button (click)="confirmSettle()"
+            class="rounded-lg bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700">Confirm Settlement</button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- ═══════ CALENDAR DAY MODAL ═══════ -->
+  @if (showDayModal) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div class="w-full max-w-lg rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-900">
+        <div class="flex items-center justify-between">
+          <h3 class="text-lg font-semibold text-gray-800 dark:text-white/90">{{ selectedDayDate | date:'MMMM dd, yyyy' }}</h3>
+          <button (click)="showDayModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">✕</button>
+        </div>
+        <div class="mt-4 max-h-[400px] space-y-2 overflow-y-auto">
+          @for (ev of selectedDayEvents; track ev.id) {
+            <div class="flex items-center justify-between rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+              <div>
+                <span class="rounded px-1.5 py-0.5 text-xs font-medium" [class]="eventColor(ev.type)">{{ eventTypeLabel(ev.type) }}</span>
+                <p class="mt-1 text-sm text-gray-700 dark:text-gray-300">{{ ev.title }}</p>
+                @if (ev.category) {
+                  <p class="text-xs text-gray-400">{{ ev.category }}</p>
+                }
+              </div>
+              <p class="text-sm font-semibold" [class]="ev.type === 'expense' ? 'text-red-600' : ev.type === 'deposit' ? 'text-green-600' : 'text-amber-600'">
+                ₱{{ ev.amount | number:'1.2-2' }}
+              </p>
+            </div>
+          }
+        </div>
+        <div class="mt-4 flex justify-end">
+          <button (click)="showDayModal = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300">Close</button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- ═══════ SOA DETAIL MODAL ═══════ -->
+  @if (showSOAModal && selectedSOA) {
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div class="w-full max-w-3xl rounded-2xl bg-white p-6 shadow-xl dark:bg-gray-900">
+        <div class="flex items-center justify-between">
+          <h3 class="text-lg font-semibold text-gray-800 dark:text-white/90">Statement of Account — {{ selectedSOA.customer.name }}</h3>
+          <button (click)="showSOAModal = false" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">✕</button>
+        </div>
+        <div class="mt-4 rounded-xl border border-gray-200 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800">
+          <p class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ selectedSOA.customer.name }}</p>
+          @if (selectedSOA.customer.address) { <p class="text-xs text-gray-500 dark:text-gray-400">{{ selectedSOA.customer.address }}</p> }
+          @if (selectedSOA.customer.contact) { <p class="text-xs text-gray-500 dark:text-gray-400">{{ selectedSOA.customer.contact }}</p> }
+          <p class="mt-1 text-xs text-gray-400">Generated: {{ selectedSOA.generatedAt | date:'MMM dd, yyyy' }}</p>
+        </div>
+        <div class="mt-4 max-h-[350px] overflow-y-auto">
+          <table class="w-full">
+            <thead class="sticky top-0 bg-white dark:bg-gray-900">
+              <tr class="border-b border-gray-200 dark:border-gray-700">
+                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Date</th>
+                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">JO No.</th>
+                <th class="px-3 py-2 text-left text-xs font-medium text-gray-500">Method</th>
+                <th class="px-3 py-2 text-center text-xs font-medium text-gray-500">Status</th>
+                <th class="px-3 py-2 text-right text-xs font-medium text-gray-500">Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (tx of selectedSOA.transactions; track tx.id) {
+                <tr class="border-b border-gray-100 dark:border-gray-800/70">
+                  <td class="px-3 py-2 text-sm text-gray-700 dark:text-gray-300">{{ tx.paymentDate | date:'MMM dd, yyyy' }}</td>
+                  <td class="px-3 py-2 text-sm font-medium text-gray-800 dark:text-gray-200">{{ tx.joNumber }}</td>
+                  <td class="px-3 py-2 text-sm text-gray-700 dark:text-gray-300">{{ formatPaymentMethod(tx.paymentMethod) }}</td>
+                  <td class="px-3 py-2 text-center">
+                    @if (tx.status === 'settled') {
+                      <span class="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">Settled</span>
+                    } @else {
+                      <span class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">Pending</span>
+                    }
+                  </td>
+                  <td class="px-3 py-2 text-right text-sm font-medium text-gray-800 dark:text-gray-200">₱{{ tx.amount | number:'1.2-2' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <!-- SOA Summary -->
+        <div class="mt-4 space-y-2">
+          <div class="flex justify-between rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+            <span class="text-sm text-gray-600 dark:text-gray-400">Total Charges</span>
+            <span class="text-sm font-medium text-gray-800 dark:text-gray-200">₱{{ selectedSOA.totalAmount | number:'1.2-2' }}</span>
+          </div>
+          <div class="flex justify-between rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-700 dark:bg-green-900/20">
+            <span class="text-sm text-green-700 dark:text-green-300">Settled Payments</span>
+            <span class="text-sm font-medium text-green-700 dark:text-green-300">₱{{ selectedSOA.settledAmount | number:'1.2-2' }}</span>
+          </div>
+          <div class="flex justify-between rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-900/20">
+            <span class="text-sm font-semibold text-amber-800 dark:text-amber-300">CURRENT BALANCE</span>
+            <span class="text-lg font-bold text-amber-700 dark:text-amber-300">₱{{ selectedSOA.currentBalance | number:'1.2-2' }}</span>
+          </div>
+        </div>
+
+        <div class="mt-5 flex justify-end gap-3">
+          <button (click)="showSOAModal = false"
+            class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300">Close</button>
+          <button (click)="generateSOAPdf()" [disabled]="isGeneratingPdf"
+            class="rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50">
+            {{ isGeneratingPdf ? 'Generating...' : '📄 Preview & Print SOA' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+</div>

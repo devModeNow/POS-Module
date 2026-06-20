@@ -1,0 +1,1032 @@
+<div>
+  <app-page-breadcrumb pageTitle="Job Orders" />
+
+  <div class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] xl:p-6">
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <h3 class="text-base font-semibold text-gray-800 dark:text-white/90">Job Orders</h3>
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Create and track vehicle repair job orders.</p>
+      </div>
+      <app-button *appCan="{ menu: 'job-orders', permission: 'canCreate' }" size="sm" (btnClick)="openCreate()">
+        New Job Order
+      </app-button>
+    </div>
+
+    <div class="mt-4 flex flex-col gap-2 sm:flex-row">
+      <input type="text" [(ngModel)]="search" (ngModelChange)="load()" placeholder="Search JO#, plate, or customer"
+        class="w-full max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" />
+      <select [(ngModel)]="filterStatus" (ngModelChange)="load()"
+        class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+        <option value="">All Statuses</option>
+        @for (s of statuses; track s) { <option [value]="s">{{ s | titlecase }}</option> }
+      </select>
+    </div>
+
+    <div class="mt-5 overflow-x-auto">
+      <table class="w-full min-w-[800px]">
+        <thead>
+          <tr class="border-b border-gray-200 dark:border-gray-800">
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">JO #</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Date</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Vehicle</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Customer</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Mechanic</th>
+            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Total</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Payment</th>
+            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Status</th>
+            <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @if (isLoading) {
+            <tr><td colspan="9" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">Loading...</td></tr>
+          } @else {
+            @for (jo of paginatedJOs; track jo.id) {
+              <tr class="border-b border-gray-100 hover:bg-gray-50/70 dark:border-gray-800/70 dark:hover:bg-gray-800/30">
+                <td class="px-4 py-3 text-sm font-medium text-gray-800 dark:text-gray-200">{{ jo.joNumber }}</td>
+                <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{{ ($any(jo).transactionDate || jo.createdAt) | date:'MMM d, y' }}</td>
+                <td class="px-4 py-3">
+                  <p class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ jo.plateNumber }}</p>
+                  <p class="text-xs text-gray-500 dark:text-gray-400">{{ jo.make }} {{ jo.model }}</p>
+                </td>
+                <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{{ jo.customerName }}</td>
+                <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{{ jo.mechanicName || '—' }}</td>
+                <td class="px-4 py-3 text-right text-sm font-medium text-gray-800 dark:text-gray-200">₱{{ jo.totalAmount | number:'1.2-2' }}</td>
+                <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">
+                  @if ($any(jo).paymentMode) {
+                    <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-300">{{ $any(jo).paymentMode | titlecase }}</span>
+                  } @else {
+                    <span class="text-xs text-gray-400">—</span>
+                  }
+                </td>
+                <td class="px-4 py-3">
+                  <span class="rounded-full px-2.5 py-0.5 text-xs font-medium" [ngClass]="statusClass(jo.status)">{{ jo.status }}</span>
+                </td>
+                <td class="px-4 py-3 text-right">
+                  <app-button size="xs" variant="outline" (btnClick)="openDetail(jo)">View</app-button>
+                </td>
+              </tr>
+            } @empty {
+              <tr><td colspan="9" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No job orders found.</td></tr>
+            }
+          }
+        </tbody>
+      </table>
+    </div>
+    <!-- Pagination -->
+    @if (totalPages > 1) {
+      <div class="mt-4 flex items-center justify-between border-t border-gray-200 pt-4 dark:border-gray-700">
+        <p class="text-xs text-gray-500 dark:text-gray-400">
+          Showing {{ (currentPage - 1) * pageSize + 1 }} to {{ currentPage * pageSize > jobOrders.length ? jobOrders.length : currentPage * pageSize }} of {{ jobOrders.length }} job orders
+        </p>
+        <div class="flex gap-1">
+          <button type="button" (click)="prevPage()" [disabled]="currentPage === 1"
+            class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
+            Previous
+          </button>
+          <span class="flex items-center px-3 text-xs text-gray-600 dark:text-gray-400">{{ currentPage }} / {{ totalPages }}</span>
+          <button type="button" (click)="nextPage()" [disabled]="currentPage === totalPages"
+            class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
+            Next
+          </button>
+        </div>
+      </div>
+    }
+  </div>
+
+  <!-- Create Drawer -->
+  @if (isDrawerOpen) {
+    <div class="fixed inset-0 z-[100000] bg-gray-900/40" (click)="closeDrawer()"></div>
+  }
+  <aside class="fixed right-0 top-0 z-[100001] h-full w-full max-w-xl transform border-l border-gray-200 bg-white shadow-2xl transition-transform duration-300 md:max-w-full lg:max-w-xl dark:border-gray-800 dark:bg-gray-900"
+    [ngClass]="isDrawerOpen ? 'translate-x-0' : 'translate-x-full'">
+    <div class="flex h-full flex-col">
+      <div class="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-800">
+        <h3 class="text-lg font-semibold text-gray-800 dark:text-white/90">New Job Order</h3>
+        <button type="button" (click)="closeDrawer()" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Close</button>
+      </div>
+      <!-- Tabs (show only when vehicle selected) -->
+      @if (form.vehicleId) {
+        <div class="flex border-b border-gray-200 px-6 dark:border-gray-800">
+          <button type="button" (click)="createDrawerTab = 'form'"
+            class="border-b-2 px-4 py-2.5 text-sm font-medium transition-colors"
+            [ngClass]="createDrawerTab === 'form' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'">
+            Job Order Details
+          </button>
+          <button type="button" (click)="createDrawerTab = 'history'"
+            class="border-b-2 px-4 py-2.5 text-sm font-medium transition-colors"
+            [ngClass]="createDrawerTab === 'history' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'">
+            History ({{ vehicleHistory.length }})
+          </button>
+        </div>
+      }
+      @if (createDrawerTab === 'form') {
+      <div class="flex-1 space-y-4 overflow-y-auto px-6 py-5">
+
+        <!-- Vehicle Info with Plate Smart Search -->
+        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Vehicle Info</p>
+        <div class="grid grid-cols-2 gap-3">
+          <label class="relative col-span-2">
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Plate Number *</span>
+            <input type="text" [(ngModel)]="plateSearchText" [disabled]="isSaving"
+              placeholder="Search plate number..."
+              (input)="onPlateInput()" (focus)="onPlateInput()" (blur)="hidePlateDropdown()"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"
+              [ngClass]="form.vehicleId ? 'border-green-400 dark:border-green-600' : ''" />
+            @if (showPlateDropdown && plateSearchResults.length) {
+              <div class="absolute left-0 top-full z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                @for (v of plateSearchResults; track v.id) {
+                  <button type="button" (mousedown)="selectVehicle(v)"
+                    class="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <span class="font-medium text-gray-800 dark:text-gray-200">{{ v.plateNumber }}</span>
+                    <span class="text-xs text-gray-500 dark:text-gray-400">{{ v.make }} {{ v.model }} · {{ v.customerName }}</span>
+                  </button>
+                }
+              </div>
+            }
+            @if (form.vehicleId) { <p class="mt-0.5 text-xs text-green-600 dark:text-green-400">✓ Existing vehicle selected</p> }
+          </label>
+          <label>
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Make</span>
+            <input type="text" [(ngModel)]="form.make" [disabled]="isSaving"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+          </label>
+          <label>
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Model</span>
+            <input type="text" [(ngModel)]="form.model" [disabled]="isSaving"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+          </label>
+          <label>
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Previous Reading</span>
+            <input type="text" [value]="previousOdometerReading != null ? (previousOdometerReading | number) + ' km' : '-'" disabled
+              class="w-full rounded-lg border border-gray-300 bg-gray-100 px-3 py-2 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400" />
+          </label>
+          <label>
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Current Reading</span>
+            <input type="number" [(ngModel)]="form.odometerReading" [disabled]="isSaving" placeholder="km"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+          </label>
+        </div>
+
+        <!-- Customer Info with Smart Search -->
+        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Customer Info</p>
+        <div class="grid grid-cols-2 gap-3">
+          <label class="relative col-span-2">
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Customer Name</span>
+            <input type="text" [(ngModel)]="customerSearchText" [disabled]="isSaving"
+              placeholder="Search customer..."
+              (input)="onCustomerInput()" (focus)="onCustomerInput()" (blur)="hideCustomerDropdown()"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"
+              [ngClass]="form.customerId ? 'border-green-400 dark:border-green-600' : ''" />
+            @if (showCustomerDropdown && customerSearchResults.length) {
+              <div class="absolute left-0 top-full z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                @for (c of customerSearchResults; track c.id) {
+                  <button type="button" (mousedown)="selectCustomer(c)"
+                    class="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <span class="text-gray-800 dark:text-gray-200">{{ c.name }}</span>
+                    <span class="text-xs text-gray-500 dark:text-gray-400">{{ c.contact || '' }}</span>
+                  </button>
+                }
+              </div>
+            }
+            @if (form.customerId) { <p class="mt-0.5 text-xs text-green-600 dark:text-green-400">✓ Existing customer</p> }
+          </label>
+          <label>
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Contact</span>
+            <input type="text" [(ngModel)]="form.contact" [disabled]="isSaving"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+          </label>
+          <label>
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Email</span>
+            <input type="email" [(ngModel)]="form.email" [disabled]="isSaving"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+          </label>
+        </div>
+
+        <!-- Job Details with Technician Smart Search -->
+        <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Job Details</p>
+        <label class="relative">
+          <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Mechanic / Technician</span>
+          <input type="text" [(ngModel)]="techSearchText" [disabled]="isSaving"
+            placeholder="Search technician..."
+            (input)="onTechInput()" (focus)="onTechInput()" (blur)="hideTechDropdown()"
+            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"
+            [ngClass]="form.technicianId ? 'border-green-400 dark:border-green-600' : ''" />
+          @if (showTechDropdown && techSearchResults.length) {
+            <div class="absolute left-0 top-full z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+              @for (t of techSearchResults; track t.id) {
+                <button type="button" (mousedown)="selectTech(t)"
+                  class="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+                  <span class="text-gray-800 dark:text-gray-200">{{ t.name }}</span>
+                  <span class="text-xs text-gray-500 dark:text-gray-400">{{ t.contactInfo || '' }}</span>
+                </button>
+              }
+            </div>
+          }
+          @if (form.technicianId) { <p class="mt-0.5 text-xs text-green-600 dark:text-green-400">✓ Selected</p> }
+        </label>
+        <label>
+          <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Description / Complaint</span>
+          <textarea rows="3" [(ngModel)]="form.description" [disabled]="isSaving"
+            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"></textarea>
+        </label>
+        <app-date-picker id="jo-transaction-date" label="Transaction Date" [defaultDate]="form.transactionDate ?? ''" placeholder="Select date" (dateChange)="onTransactionDateChange($event)"></app-date-picker>
+
+        <!-- Services Section -->
+        <div>
+          <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Services</p>
+          <div class="relative mb-2">
+            <div class="flex gap-2">
+              <input type="text" [(ngModel)]="serviceSearchText" [disabled]="isSaving"
+                placeholder="Search service or type new..."
+                (input)="onServiceSearchInput()" (focus)="onServiceSearchInput()"
+                (blur)="hideServiceDropdown()"
+                (keydown.enter)="addServiceFromSearch()"
+                class="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+              <button type="button" (click)="addServiceFromSearch()" [disabled]="!serviceSearchText.trim()"
+                class="rounded-lg bg-brand-500 px-3 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-40">
+                Add
+              </button>
+            </div>
+            @if (showServiceDropdown && serviceSearchResults.length) {
+              <div class="absolute left-0 top-full z-10 mt-1 max-h-36 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                @for (s of serviceSearchResults; track s.id) {
+                  <button type="button" (mousedown)="selectServiceFromSearch(s)"
+                    class="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <span class="text-gray-800 dark:text-gray-200">{{ s.name }}</span>
+                    @if (s.defaultFee) { <span class="text-xs text-gray-500 dark:text-gray-400">₱{{ s.defaultFee }}</span> }
+                  </button>
+                }
+              </div>
+            }
+            <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Press Enter or select to add. New services are saved to the database.</p>
+          </div>
+          <textarea [(ngModel)]="servicesText" [disabled]="isSaving" rows="3" placeholder="Added services will appear here (comma-separated)..."
+            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"></textarea>
+        </div>
+
+        <!-- Miscellaneous Parts & Accessories -->
+        <div>
+          <div class="mb-2 flex items-center justify-between">
+            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Parts & Accessories</p>
+            <button type="button" (click)="addPart()" class="text-xs text-brand-600 hover:underline dark:text-brand-400">+ Add Part</button>
+          </div>
+          <p class="mb-3 text-xs text-gray-400 dark:text-gray-500">Search to link from inventory (stock deducted on execution) or type manually.</p>
+          @for (part of miscParts; track part._uid; let i = $index) {
+            <div class="mb-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+              <div class="relative mb-2">
+                <input type="text" [(ngModel)]="part.description" placeholder="Search part or type manually..." [disabled]="isSaving"
+                  (input)="onPartDescInput(i)" (focus)="onPartDescInput(i)" (blur)="hidePartDropdown(i)"
+                  class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900"
+                  [ngClass]="part.inventoryId ? 'border-green-400 dark:border-green-600' : ''" />
+                @if (showPartDropdown[i] && partSearchResults[i]?.length) {
+                  <div class="absolute left-0 top-full z-10 mt-1 max-h-36 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                    @for (product of partSearchResults[i]; track product.id) {
+                      <button type="button" (mousedown)="selectPart(i, product)"
+                        class="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+                        <span class="text-gray-800 dark:text-gray-200">{{ product.partName }}</span>
+                        <span class="text-xs text-gray-500 dark:text-gray-400">Stock: {{ product.stockQty }} · ₱{{ product.sellingPrice }}</span>
+                      </button>
+                    }
+                  </div>
+                }
+                @if (part.inventoryId) { <p class="mt-0.5 text-xs text-green-600 dark:text-green-400">✓ From inventory (stock will be deducted)</p> }
+              </div>
+              <div class="grid grid-cols-12 gap-2">
+                <div class="col-span-2">
+                  <span class="mb-0.5 block text-[10px] text-gray-500 dark:text-gray-400">Qty</span>
+                  <input type="number" [(ngModel)]="part.quantity" placeholder="1" min="1" [disabled]="isSaving"
+                    class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs dark:border-gray-700 dark:bg-gray-900" />
+                </div>
+                <div class="col-span-2">
+                  <span class="mb-0.5 block text-[10px] text-gray-500 dark:text-gray-400">Price</span>
+                  <input type="number" [(ngModel)]="part.billingPrice" placeholder="0.00" [disabled]="isSaving || part.suppliedBy === 'customer'"
+                    class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs dark:border-gray-700 dark:bg-gray-900"
+                    [class.opacity-40]="part.suppliedBy === 'customer'" />
+                </div>
+                <div class="col-span-3">
+                  <span class="mb-0.5 block text-[10px] text-gray-500 dark:text-gray-400">Total</span>
+                  <p class="rounded-lg border border-gray-200 bg-gray-50 px-2 py-1.5 text-xs font-medium text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300">₱{{ part.suppliedBy === 'customer' ? '0.00' : (((part.quantity || 1) * (part.billingPrice || 0)) | number:'1.2-2') }}</p>
+                </div>
+                <div class="col-span-4">
+                  <span class="mb-0.5 block text-[10px] text-gray-500 dark:text-gray-400">Supplied By</span>
+                  <select [(ngModel)]="part.suppliedBy" [disabled]="isSaving"
+                    class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs dark:border-gray-700 dark:bg-gray-900">
+                    <option value="car_expert">Car Expert</option>
+                    <option value="customer">Customer</option>
+                  </select>
+                </div>
+                <button type="button" (click)="removePart(i)" [disabled]="miscParts.length === 1"
+                  class="col-span-1 mt-4 flex items-center justify-center text-error-500 hover:text-error-700 disabled:opacity-30">✕</button>
+              </div>
+              @if (part.suppliedBy === 'car_expert' && !part.inventoryId) {
+                <label class="mt-1.5 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                  <input type="checkbox" [(ngModel)]="part.recordAsExpense" [disabled]="isSaving"
+                    class="h-3.5 w-3.5 rounded border-gray-300 text-brand-600" />
+                  Record as Expense (part bought externally)
+                </label>
+              }
+            </div>
+          }
+        </div>
+
+        <!-- Summary Section -->
+        <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+          <p class="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Summary</p>
+          <div class="space-y-2 text-sm">
+            <div class="flex justify-between">
+              <span class="text-gray-600 dark:text-gray-400">Services Subtotal</span>
+              <span class="font-medium text-gray-800 dark:text-gray-200">₱{{ servicesSubtotal | number:'1.2-2' }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-600 dark:text-gray-400">Parts Subtotal</span>
+              <span class="font-medium text-gray-800 dark:text-gray-200">₱{{ partsSubtotal | number:'1.2-2' }}</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-gray-600 dark:text-gray-400">Labor Fee</span>
+              <input type="number" [(ngModel)]="form.laborFee" [disabled]="isSaving" min="0"
+                class="w-28 rounded-lg border border-gray-300 bg-white px-2 py-1 text-right text-sm dark:border-gray-700 dark:bg-gray-900" />
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-gray-600 dark:text-gray-400">Discount</span>
+              <input type="number" [(ngModel)]="form.discount" [disabled]="isSaving" min="0"
+                class="w-28 rounded-lg border border-gray-300 bg-white px-2 py-1 text-right text-sm dark:border-gray-700 dark:bg-gray-900" />
+            </div>
+            <div class="flex justify-between border-t border-gray-200 pt-2 dark:border-gray-700">
+              <span class="font-semibold text-gray-800 dark:text-gray-200">Grand Total</span>
+              <span class="font-bold text-gray-800 dark:text-gray-200">₱{{ grandTotal | number:'1.2-2' }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Customer Signature -->
+        <div>
+          <app-signature-pad label="Customer Signature (Approval)" [height]="130" (signatureChange)="form.customerSignatureData = $event"></app-signature-pad>
+          <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">
+            @if (form.customerSignatureData) {
+              <span class="text-green-600 dark:text-green-400">✓ Signed — Job order will start as <strong>In Progress</strong></span>
+            } @else {
+              No signature — Job order will be created as <strong>Pending Approval</strong>
+            }
+          </p>
+        </div>
+
+      </div>
+      } @else {
+      <!-- History Tab Content -->
+      <div class="flex-1 overflow-y-auto px-6 py-5">
+        @if (isLoadingHistory) {
+          <div class="flex flex-col items-center justify-center py-12">
+            <svg class="h-6 w-6 animate-spin text-brand-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Loading history...</p>
+          </div>
+        } @else if (vehicleHistory.length === 0) {
+          <p class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">No previous job orders for this vehicle.</p>
+        } @else {
+          <p class="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Service History ({{ vehicleHistory.length }})</p>
+          @for (h of vehicleHistory; track h.id) {
+            <div class="mb-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+              <div class="flex items-start justify-between">
+                <div>
+                  <p class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ h.joNumber }}</p>
+                  <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ h.createdAt | date:'mediumDate' }}</p>
+                </div>
+                <span class="rounded-full px-2 py-0.5 text-xs font-medium" [ngClass]="statusClass(h.status)">{{ h.status }}</span>
+              </div>
+              @if (h.description) { <p class="mt-1 text-xs text-gray-600 dark:text-gray-400">{{ h.description }}</p> }
+              <div class="mt-1 flex flex-wrap gap-3 text-xs text-gray-500 dark:text-gray-400">
+                @if (h.mechanicName) { <span>Mechanic: {{ h.mechanicName }}</span> }
+                @if (h.odometerReading) { <span>Odometer: {{ h.odometerReading | number }} km</span> }
+                <span>Total: ₱{{ h.totalAmount | number:'1.2-2' }}</span>
+              </div>
+              @if (h.services?.length) {
+                <div class="mt-1.5">
+                  <p class="text-xs font-medium text-gray-600 dark:text-gray-300">Services Done:</p>
+                  <p class="text-xs text-gray-500 dark:text-gray-400">{{ h.services.join(', ') }}</p>
+                </div>
+              }
+              @if (h.parts?.length) {
+                <div class="mt-1">
+                  <p class="text-xs font-medium text-gray-600 dark:text-gray-300">Parts & Accessories:</p>
+                  @for (p of h.parts; track p.description) {
+                    <p class="text-xs text-gray-500 dark:text-gray-400">• {{ p.description }} (x{{ p.quantity }})</p>
+                  }
+                </div>
+              }
+            </div>
+          }
+        }
+      </div>
+      }
+      <div class="flex justify-end gap-2 border-t border-gray-200 px-6 py-4 dark:border-gray-800">
+        <button type="button" (click)="closeDrawer()" [disabled]="isSaving"
+          class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-300">Cancel</button>
+        <button type="button" (click)="save()" [disabled]="isSaving"
+          class="rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-60">
+          {{ isSaving ? 'Creating...' : 'Create Job Order' }}
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Detail Drawer -->
+  @if (isDetailOpen) {
+    <div class="fixed inset-0 z-[100000] bg-gray-900/40" (click)="closeDetail()"></div>
+  }
+  <aside class="fixed right-0 top-0 z-[100001] h-full w-full max-w-2xl transform border-l border-gray-200 bg-white shadow-2xl transition-transform duration-300 md:max-w-full lg:max-w-2xl dark:border-gray-800 dark:bg-gray-900"
+    [ngClass]="isDetailOpen ? 'translate-x-0' : 'translate-x-full'">
+    @if (detailJO) {
+      <div class="flex h-full flex-col">
+        <div class="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-800">
+          <div>
+            <h3 class="text-lg font-semibold text-gray-800 dark:text-white/90">{{ detailJO.joNumber }}</h3>
+            <span class="mt-1 inline-block rounded-full px-2.5 py-0.5 text-xs font-medium" [ngClass]="statusClass(detailJO.status)">{{ detailJO.status | titlecase }}</span>
+          </div>
+          <button type="button" (click)="closeDetail()" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Close</button>
+        </div>
+        <!-- Detail Tabs -->
+        <div class="flex border-b border-gray-200 px-6 dark:border-gray-800">
+          <button type="button" (click)="detailDrawerTab = 'details'"
+            class="border-b-2 px-4 py-2.5 text-sm font-medium transition-colors"
+            [ngClass]="detailDrawerTab === 'details' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'">
+            Job Order Details
+          </button>
+          <button type="button" (click)="detailDrawerTab = 'history'; loadDetailHistory()"
+            class="border-b-2 px-4 py-2.5 text-sm font-medium transition-colors"
+            [ngClass]="detailDrawerTab === 'history' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'">
+            History
+          </button>
+          <button type="button" (click)="detailDrawerTab = 'logs'; loadChangeLogs()"
+            class="border-b-2 px-4 py-2.5 text-sm font-medium transition-colors"
+            [ngClass]="detailDrawerTab === 'logs' ? 'border-brand-500 text-brand-600 dark:text-brand-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'">
+            Change Logs
+          </button>
+        </div>
+        @if (detailDrawerTab === 'details') {
+        <div class="flex-1 space-y-4 overflow-y-auto px-6 py-5">
+          @if (isLoadingDetail) {
+            <div class="flex flex-col items-center justify-center py-16">
+              <svg class="h-8 w-8 animate-spin text-brand-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <p class="mt-3 text-sm text-gray-500 dark:text-gray-400">Loading details...</p>
+            </div>
+          } @else {
+
+            <!-- Vehicle Info -->
+            <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+              <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Vehicle Info</p>
+              <div class="grid grid-cols-3 gap-3">
+                <div><p class="text-xs text-gray-500 dark:text-gray-400">Plate Number</p><p class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ detailJO.plateNumber }}</p></div>
+                <div><p class="text-xs text-gray-500 dark:text-gray-400">Make</p><p class="text-sm text-gray-800 dark:text-gray-200">{{ detailJO.make || '—' }}</p></div>
+                <div><p class="text-xs text-gray-500 dark:text-gray-400">Model</p><p class="text-sm text-gray-800 dark:text-gray-200">{{ detailJO.model || '—' }}</p></div>
+                @if (detailJO.yearModel) { <div><p class="text-xs text-gray-500 dark:text-gray-400">Year</p><p class="text-sm text-gray-800 dark:text-gray-200">{{ detailJO.yearModel }}</p></div> }
+                @if (detailJO.color) { <div><p class="text-xs text-gray-500 dark:text-gray-400">Color</p><p class="text-sm text-gray-800 dark:text-gray-200">{{ detailJO.color }}</p></div> }
+                @if (detailJO.odometerReading) { <div><p class="text-xs text-gray-500 dark:text-gray-400">Odometer</p><p class="text-sm text-gray-800 dark:text-gray-200">{{ detailJO.odometerReading | number }} km</p></div> }
+                @if (detailJO.transmission) { <div><p class="text-xs text-gray-500 dark:text-gray-400">Transmission</p><p class="text-sm text-gray-800 dark:text-gray-200">{{ detailJO.transmission }}</p></div> }
+                @if (detailJO.engineType) { <div><p class="text-xs text-gray-500 dark:text-gray-400">Engine</p><p class="text-sm text-gray-800 dark:text-gray-200">{{ detailJO.engineType }}</p></div> }
+                @if (detailJO.fuelType) { <div><p class="text-xs text-gray-500 dark:text-gray-400">Fuel</p><p class="text-sm text-gray-800 dark:text-gray-200">{{ detailJO.fuelType }}</p></div> }
+              </div>
+            </div>
+
+            <!-- Customer Info -->
+            <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+              <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Customer Info</p>
+              <div class="grid grid-cols-2 gap-3">
+                <div><p class="text-xs text-gray-500 dark:text-gray-400">Name</p><p class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ detailJO.customerName || '—' }}</p></div>
+                <div><p class="text-xs text-gray-500 dark:text-gray-400">Contact</p><p class="text-sm text-gray-800 dark:text-gray-200">{{ detailJO.contact || '—' }}</p></div>
+                @if (detailJO.email) { <div><p class="text-xs text-gray-500 dark:text-gray-400">Email</p><p class="text-sm text-gray-800 dark:text-gray-200">{{ detailJO.email }}</p></div> }
+                @if (detailJO.address) { <div class="col-span-2"><p class="text-xs text-gray-500 dark:text-gray-400">Address</p><p class="text-sm text-gray-800 dark:text-gray-200">{{ detailJO.address }}</p></div> }
+              </div>
+            </div>
+
+            <!-- Job Details -->
+            <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+              <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Job Details</p>
+              <div class="grid grid-cols-2 gap-3">
+                <div><p class="text-xs text-gray-500 dark:text-gray-400">Mechanic / Technician</p><p class="text-sm text-gray-800 dark:text-gray-200">{{ detailJO.mechanicName || '—' }}</p></div>
+                <div><p class="text-xs text-gray-500 dark:text-gray-400">Created</p><p class="text-sm text-gray-800 dark:text-gray-200">{{ detailJO.createdAt | date:'MMM d, y, h:mm a' }}</p></div>
+                <div>
+                  <app-date-picker id="detail-transaction-date" label="Transaction Date" [defaultDate]="$any(detailJO).transactionDate || ''" (dateChange)="onDetailTransactionDateChange($event)"></app-date-picker>
+                </div>
+              </div>
+            </div>
+
+            <!-- Description & Services -->
+            <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+              <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Description & Services</p>
+              @if (detailJO.description) {
+                <div class="mb-3"><p class="text-xs text-gray-500 dark:text-gray-400">Complaint / Description</p><p class="mt-1 text-sm text-gray-700 dark:text-gray-300">{{ detailJO.description }}</p></div>
+              }
+              @if (getDetailServices().length) {
+                <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">Services</p>
+                <p class="mt-1 text-sm text-gray-800 dark:text-gray-200">{{ getDetailServices().join(', ') }}</p>
+              }
+            </div>
+
+            <!-- Parts & Accessories -->
+            @if (getDetailParts().length) {
+              <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+                <p class="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Parts & Accessories</p>
+                @for (item of getDetailParts(); track $index) {
+                  <div class="mb-2 flex items-center justify-between rounded-lg border border-gray-100 px-3 py-2 dark:border-gray-700/50">
+                    <div>
+                      <p class="text-sm text-gray-800 dark:text-gray-200">{{ $any(item).description || $any(item).inventoryName }}</p>
+                      @if ($any(item).inventoryId) { <span class="text-xs text-green-600 dark:text-green-400">From inventory</span> }
+                      @if ($any(item).source === 'manual' && !$any(item).inventoryId) { <span class="text-xs text-gray-400">Manual entry</span> }
+                    </div>
+                    <span class="text-sm font-medium text-gray-700 dark:text-gray-300">{{ $any(item).quantity ?? 1 }} × ₱{{ ($any(item).billingPrice ?? 0) | number:'1.2-2' }}</span>
+                  </div>
+                }
+              </div>
+            }
+
+            <!-- Summary -->
+            <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+              <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Summary</p>
+              <div class="space-y-1 text-sm">
+                @if (detailJO.laborFee) {
+                  <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Labor Fee</span><span class="text-gray-800 dark:text-gray-200">₱{{ detailJO.laborFee | number:'1.2-2' }}</span></div>
+                }
+                @if (detailJO.discount) {
+                  <div class="flex justify-between"><span class="text-gray-600 dark:text-gray-400">Discount</span><span class="text-error-600 dark:text-error-400">-₱{{ detailJO.discount | number:'1.2-2' }}</span></div>
+                }
+                <div class="flex justify-between border-t border-gray-200 pt-1 dark:border-gray-700">
+                  <span class="font-semibold text-gray-800 dark:text-gray-200">Total Amount</span>
+                  <span class="font-bold text-gray-800 dark:text-gray-200">₱{{ detailJO.totalAmount | number:'1.2-2' }}</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Customer Signature -->
+            @if (detailJO.customerSignatureData) {
+              <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+                <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Customer Signature</p>
+                <div class="rounded-lg border border-gray-100 bg-white p-2 dark:border-gray-700 dark:bg-gray-900">
+                  <img [src]="detailJO.customerSignatureData" alt="Customer Signature" class="h-24 w-full object-contain" />
+                </div>
+                <p class="mt-1 text-xs text-green-600 dark:text-green-400">✓ Customer approved</p>
+              </div>
+            } @else {
+              <div class="rounded-xl border border-dashed border-gray-300 p-4 dark:border-gray-700">
+                <p class="text-center text-xs text-gray-400 dark:text-gray-500">No customer signature — Pending approval</p>
+              </div>
+            }
+
+          }
+        </div>
+        <!-- Footer Actions -->
+        @if (detailJO.status === 'in-progress') {
+          <div class="flex justify-end gap-2 border-t border-gray-200 px-6 py-4 dark:border-gray-800">
+            <button type="button" (click)="openEditSupplies()"
+              class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
+              Edit Services & Parts
+            </button>
+            <button type="button" (click)="updateStatus(detailJO.id, 'cancelled')"
+              class="rounded-lg border border-error-300 px-4 py-2 text-sm font-medium text-error-600 hover:bg-error-50 dark:border-error-700 dark:text-error-400 dark:hover:bg-error-900/20">
+              Cancel JO
+            </button>
+            <button type="button" (click)="jobDoneRemarks = ''; showJobDoneModal = true"
+              class="rounded-lg bg-success-500 px-4 py-2 text-sm font-medium text-white hover:bg-success-600">
+              Job Done
+            </button>
+          </div>
+        }
+        @if (detailJO.status === 'pending') {
+          <div class="flex justify-end gap-2 border-t border-gray-200 px-6 py-4 dark:border-gray-800">
+            <button type="button" (click)="updateStatus(detailJO.id, 'cancelled')"
+              class="rounded-lg border border-error-300 px-4 py-2 text-sm font-medium text-error-600 hover:bg-error-50 dark:border-error-700 dark:text-error-400 dark:hover:bg-error-900/20">
+              Cancel JO
+            </button>
+            <button type="button" (click)="updateStatus(detailJO.id, 'in-progress')"
+              class="rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600">
+              Approve & Start
+            </button>
+          </div>
+        }
+        @if (detailJO.status === 'for-payment') {
+          <div class="flex justify-end gap-2 border-t border-gray-200 px-6 py-4 dark:border-gray-800">
+            <button type="button" (click)="printInvoice()"
+              class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
+              <span class="mr-1">🖨</span> Print Invoice
+            </button>
+            <button type="button" (click)="paymentForm = { mode: 'cash', amount: detailJO.totalAmount ?? 0, referenceNo: '', notes: '', partsSuppliedBy: 'car_expert', cashOnHand: 0, warranty: '' }; showSettlePaymentModal = true"
+              class="rounded-lg bg-success-500 px-4 py-2 text-sm font-medium text-white hover:bg-success-600">
+              Settle Payment & Release
+            </button>
+          </div>
+        }
+        @if (detailJO.status === 'released') {
+          <div class="flex justify-end gap-2 border-t border-gray-200 px-6 py-4 dark:border-gray-800">
+            <button type="button" (click)="reprintInvoice()"
+              class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
+              <span class="mr-1">🖨</span> Reprint Receipt
+            </button>
+          </div>
+        }
+        } @else if (detailDrawerTab === 'history') {
+        <!-- History Tab -->
+        <div class="flex-1 overflow-y-auto px-6 py-5">
+          @if (isLoadingDetailHistory) {
+            <div class="flex flex-col items-center justify-center py-12">
+              <svg class="h-6 w-6 animate-spin text-brand-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Loading history...</p>
+            </div>
+          } @else if (detailVehicleHistory.length === 0) {
+            <p class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">No previous job orders for this vehicle.</p>
+          } @else {
+            <p class="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">All Job Orders for {{ detailJO.plateNumber }} ({{ detailVehicleHistory.length }})</p>
+            @for (h of detailVehicleHistory; track h.id) {
+              <div class="mb-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700"
+                [ngClass]="h.id === detailJO.id ? 'border-brand-300 bg-brand-50/50 dark:border-brand-700 dark:bg-brand-900/10' : ''">
+                <div class="flex items-start justify-between">
+                  <div>
+                    <p class="text-sm font-medium text-gray-800 dark:text-gray-200">
+                      {{ h.joNumber }}
+                      @if (h.id === detailJO.id) { <span class="ml-1 text-xs text-brand-600 dark:text-brand-400">(current)</span> }
+                    </p>
+                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ h.createdAt | date:'mediumDate' }}</p>
+                  </div>
+                  <span class="rounded-full px-2 py-0.5 text-xs font-medium" [ngClass]="statusClass(h.status)">{{ h.status }}</span>
+                </div>
+                @if (h.description) { <p class="mt-1 text-xs text-gray-600 dark:text-gray-400">{{ h.description }}</p> }
+                <div class="mt-1 flex flex-wrap gap-3 text-xs text-gray-500 dark:text-gray-400">
+                  @if (h.mechanicName) { <span>Mechanic: {{ h.mechanicName }}</span> }
+                  @if (h.odometerReading) { <span>Odometer: {{ h.odometerReading | number }} km</span> }
+                  <span>Total: ₱{{ h.totalAmount | number:'1.2-2' }}</span>
+                </div>
+                @if (h.services?.length) {
+                  <div class="mt-1.5">
+                    <p class="text-xs font-medium text-gray-600 dark:text-gray-300">Services Done:</p>
+                    <p class="text-xs text-gray-500 dark:text-gray-400">{{ h.services.join(', ') }}</p>
+                  </div>
+                }
+                @if (h.parts?.length) {
+                  <div class="mt-1">
+                    <p class="text-xs font-medium text-gray-600 dark:text-gray-300">Parts & Accessories:</p>
+                    @for (p of h.parts; track p.description) {
+                      <p class="text-xs text-gray-500 dark:text-gray-400">• {{ p.description }} (x{{ p.quantity }})</p>
+                    }
+                  </div>
+                }
+              </div>
+            }
+          }
+        </div>
+        } @else if (detailDrawerTab === 'logs') {
+        <!-- Change Logs Tab -->
+        <div class="flex-1 overflow-y-auto px-6 py-5">
+          @if (isLoadingChangeLogs) {
+            <div class="flex flex-col items-center justify-center py-12">
+              <svg class="h-6 w-6 animate-spin text-brand-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+              <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Loading change logs...</p>
+            </div>
+          } @else if (changeLogs.length === 0) {
+            <p class="py-8 text-center text-sm text-gray-500 dark:text-gray-400">No change logs recorded yet.</p>
+          } @else {
+            <p class="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Activity Log ({{ changeLogs.length }})</p>
+            @for (log of changeLogs; track log.id) {
+              <div class="mb-3 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                <div class="flex items-start justify-between">
+                  <span class="rounded-full px-2 py-0.5 text-xs font-medium"
+                    [ngClass]="{
+                      'bg-brand-100 text-brand-700 dark:bg-brand-900/30 dark:text-brand-400': log.action === 'created',
+                      'bg-success-100 text-success-700 dark:bg-success-900/30 dark:text-success-400': log.action === 'approved',
+                      'bg-warning-100 text-warning-700 dark:bg-warning-900/30 dark:text-warning-400': log.action === 'modified',
+                      'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400': log.action === 'status_change',
+                      'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400': log.action === 'payment',
+                      'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300': !['created','approved','modified','status_change','payment'].includes(log.action)
+                    }">{{ log.action | titlecase }}</span>
+                  <span class="text-xs text-gray-500 dark:text-gray-400">{{ log.createdAt | date:'medium' }}</span>
+                </div>
+                <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">{{ log.description }}</p>
+                @if (log.createdByName) { <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">By: {{ log.createdByName }}</p> }
+              </div>
+            }
+          }
+        </div>
+        }
+      </div>
+    }
+  </aside>
+
+  <!-- Job Done Confirmation Modal -->
+  @if (showJobDoneModal && detailJO) {
+    <div class="fixed inset-0 z-[200000] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm">
+      <div class="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-0 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+        <!-- Header with shield icon -->
+        <div class="flex flex-col items-center border-b border-gray-200 px-6 py-6 dark:border-gray-700">
+          <div class="flex h-16 w-16 items-center justify-center rounded-full bg-success-50 dark:bg-success-900/20">
+            <svg class="h-8 w-8 text-success-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+            </svg>
+          </div>
+          <h3 class="mt-4 text-lg font-semibold text-gray-800 dark:text-white/90">Job Completed</h3>
+          <p class="mt-1 text-center text-sm text-gray-500 dark:text-gray-400">
+            Are you sure this job order is done?
+          </p>
+        </div>
+
+        <!-- Body -->
+        <div class="space-y-3 px-6 py-5">
+          <div class="rounded-lg border border-gray-100 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50">
+            <div class="flex justify-between text-sm">
+              <span class="text-gray-600 dark:text-gray-400">JO Number</span>
+              <span class="font-medium text-gray-800 dark:text-gray-200">{{ detailJO.joNumber }}</span>
+            </div>
+            <div class="mt-1 flex justify-between text-sm">
+              <span class="text-gray-600 dark:text-gray-400">Vehicle</span>
+              <span class="text-gray-800 dark:text-gray-200">{{ detailJO.plateNumber }}</span>
+            </div>
+            <div class="mt-1 flex justify-between text-sm">
+              <span class="text-gray-600 dark:text-gray-400">Total Amount</span>
+              <span class="font-medium text-gray-800 dark:text-gray-200">₱{{ detailJO.totalAmount | number:'1.2-2' }}</span>
+            </div>
+          </div>
+
+          <p class="text-center text-xs text-gray-500 dark:text-gray-400">
+            This will move the job order to <strong class="text-warning-600 dark:text-warning-400">For Payment</strong> status.
+            Once payment is confirmed, the vehicle can be released.
+          </p>
+
+          <label>
+            <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Mechanic Remarks</span>
+            <textarea [(ngModel)]="jobDoneRemarks" rows="3" placeholder="Notes about work done, parts replaced, recommendations..."
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"></textarea>
+          </label>
+        </div>
+
+        <!-- Footer -->
+        <div class="flex justify-end gap-2 border-t border-gray-200 px-6 py-4 dark:border-gray-700">
+          <button type="button" (click)="showJobDoneModal = false"
+            class="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
+            Cancel
+          </button>
+          <button type="button" (click)="confirmJobDone()"
+            class="rounded-lg bg-success-500 px-4 py-2 text-sm font-medium text-white hover:bg-success-600">
+            Confirm — Move to Payment
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- Settle Payment Modal -->
+  @if (showSettlePaymentModal && detailJO) {
+    <div class="fixed inset-0 z-[200000] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm">
+      <div class="w-full max-w-md max-h-[90vh] overflow-y-auto rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+        <div class="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-700">
+          <h3 class="text-lg font-semibold text-gray-800 dark:text-white/90">Settle Payment</h3>
+          <button type="button" (click)="showSettlePaymentModal = false" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300">Close</button>
+        </div>
+        <div class="space-y-4 px-6 py-5">
+          <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50">
+            <div class="flex justify-between text-sm"><span class="text-gray-600 dark:text-gray-400">JO Number</span><span class="font-medium text-gray-800 dark:text-gray-200">{{ detailJO.joNumber }}</span></div>
+            <div class="mt-1 flex justify-between text-sm"><span class="text-gray-600 dark:text-gray-400">Total Amount</span><span class="font-bold text-gray-800 dark:text-gray-200">₱{{ detailJO.totalAmount | number:'1.2-2' }}</span></div>
+          </div>
+
+          <!-- Payment Mode -->
+          <label><span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Payment Mode</span>
+            <select [(ngModel)]="paymentForm.mode" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+              <option value="cash">Cash</option>
+              <option value="gcash">GCash</option>
+              <option value="bank_transfer">Bank Transfer</option>
+              <option value="cheque">Cheque</option>
+              <option value="credit_card">Credit Card</option>
+              <option value="po_payment">PO Payment</option>
+            </select>
+          </label>
+
+          <!-- PO Payment: Floating Sales Notice -->
+          @if (paymentForm.mode === 'po_payment') {
+            <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-700 dark:bg-amber-900/20">
+              <p class="text-xs font-medium text-amber-800 dark:text-amber-300">⚡ Floating Sales</p>
+              <p class="mt-0.5 text-xs text-amber-600 dark:text-amber-400">This payment will be recorded as floating sales (government/contract payment with no due date).</p>
+            </div>
+          }
+
+          <!-- Amount Paid -->
+          <label><span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Amount Paid</span>
+            <input type="number" [(ngModel)]="paymentForm.amount" min="0" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
+          </label>
+
+          <!-- Cash: Cash On Hand + Change -->
+          @if (paymentForm.mode === 'cash') {
+            <label><span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Cash On Hand (paid by client)</span>
+              <input type="number" [(ngModel)]="paymentForm.cashOnHand" min="0" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
+            </label>
+            @if (paymentForm.cashOnHand > 0) {
+              <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-gray-700 dark:bg-gray-800/50">
+                <div class="flex justify-between text-sm">
+                  <span class="text-gray-600 dark:text-gray-400">Change</span>
+                  <span class="font-bold" [class.text-green-600]="paymentForm.cashOnHand >= paymentForm.amount"
+                    [class.text-red-600]="paymentForm.cashOnHand < paymentForm.amount">
+                    ₱{{ (paymentForm.cashOnHand - paymentForm.amount) | number:'1.2-2' }}
+                  </span>
+                </div>
+              </div>
+            }
+          }
+
+          <!-- Reference No -->
+          <label><span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Reference No. (optional)</span>
+            <input type="text" [(ngModel)]="paymentForm.referenceNo" placeholder="Transaction/Check #" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
+          </label>
+
+          <!-- Notes -->
+          <label><span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Notes (optional)</span>
+            <input type="text" [(ngModel)]="paymentForm.notes" placeholder="Payment notes..." class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
+          </label>
+
+          <!-- Parts Supplied By -->
+          <div class="mt-2 rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+            <p class="mb-2 text-xs font-medium text-gray-600 dark:text-gray-300">Parts Supplied By</p>
+            <div class="flex gap-4">
+              <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                <input type="radio" [(ngModel)]="paymentForm.partsSuppliedBy" value="car_expert" name="partsSupplied" /> CAR EXPERT
+              </label>
+              <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                <input type="radio" [(ngModel)]="paymentForm.partsSuppliedBy" value="customer" name="partsSupplied" /> CUSTOMER
+              </label>
+            </div>
+          </div>
+
+          <!-- Warranty -->
+          <div class="border-t border-gray-200 pt-4 dark:border-gray-700">
+            <label><span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Warranty</span>
+              <input type="text" [(ngModel)]="paymentForm.warranty" placeholder="e.g. 30 days parts warranty, 6 months labor warranty"
+                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
+            </label>
+          </div>
+        </div>
+        <div class="flex justify-end gap-2 border-t border-gray-200 px-6 py-4 dark:border-gray-700">
+          <button type="button" (click)="showSettlePaymentModal = false" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300">Cancel</button>
+          <button type="button" (click)="settlePayment()" [disabled]="isSettling"
+            class="rounded-lg bg-success-500 px-4 py-2 text-sm font-medium text-white hover:bg-success-600 disabled:opacity-60">
+            {{ isSettling ? 'Processing...' : 'Confirm Payment & Release' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- Invoice Preview Modal (Maximized) -->
+  @if (showInvoiceModal) {
+    <div class="fixed inset-0 z-[300000] flex flex-col bg-white dark:bg-gray-900">
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between border-b border-gray-200 px-6 py-3 dark:border-gray-700">
+        <h3 class="text-base font-semibold text-gray-800 dark:text-white/90">Job Order Receipt Preview</h3>
+        <div class="flex gap-2">
+          <button type="button" (click)="printFromModal()"
+            class="rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600">
+            🖨 Print
+          </button>
+          <button type="button" (click)="showInvoiceModal = false"
+            class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
+            Close
+          </button>
+        </div>
+      </div>
+      <!-- Invoice Content -->
+      <div class="flex-1 overflow-y-auto bg-gray-100 p-6 dark:bg-gray-800">
+        <div id="invoice-print-area" class="mx-auto rounded-lg bg-white p-6 shadow-lg" style="max-width:950px;" [innerHTML]="invoiceHtml"></div>
+      </div>
+    </div>
+  }
+
+  <!-- Edit Supplies Modal -->
+  @if (showEditSuppliesModal) {
+    <div class="fixed inset-0 z-[300000] flex flex-col bg-white dark:bg-gray-900">
+      <div class="flex items-center justify-between border-b border-gray-200 px-6 py-3 dark:border-gray-700">
+        <h3 class="text-base font-semibold text-gray-800 dark:text-white/90">Edit Services & Parts</h3>
+        <div class="flex gap-2">
+          <button type="button" (click)="saveEditSupplies()" [disabled]="isSavingSupplies"
+            class="rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-60">
+            {{ isSavingSupplies ? 'Saving...' : 'Save & Re-approve' }}
+          </button>
+          <button type="button" (click)="showEditSuppliesModal = false"
+            class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300">Close</button>
+        </div>
+      </div>
+      <div class="flex-1 space-y-4 overflow-y-auto px-6 py-5">
+        <!-- Services -->
+        <!-- Services -->
+        <div>
+          <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Services</p>
+          <div class="relative mb-2">
+            <div class="flex gap-2">
+              <input type="text" [(ngModel)]="editServiceSearchText"
+                placeholder="Search service or type new..."
+                (input)="onEditServiceSearchInput()" (focus)="onEditServiceSearchInput()"
+                (blur)="hideEditServiceDropdown()"
+                (keydown.enter)="addEditServiceFromSearch()"
+                class="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
+              <button type="button" (click)="addEditServiceFromSearch()" [disabled]="!editServiceSearchText.trim()"
+                class="rounded-lg bg-brand-500 px-3 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-40">
+                Add
+              </button>
+            </div>
+            @if (showEditServiceDropdown && editServiceSearchResults.length) {
+              <div class="absolute left-0 top-full z-10 mt-1 max-h-36 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                @for (s of editServiceSearchResults; track s.id) {
+                  <button type="button" (mousedown)="selectEditServiceFromSearch(s)"
+                    class="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <span class="text-gray-800 dark:text-gray-200">{{ s.name }}</span>
+                  </button>
+                }
+              </div>
+            }
+          </div>
+          <textarea [(ngModel)]="editServicesText" rows="3" placeholder="Services (comma-separated)..."
+            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"></textarea>
+        </div>
+
+        <!-- Parts -->
+        <div>
+          <div class="mb-2 flex items-center justify-between">
+            <p class="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Parts & Accessories</p>
+            <button type="button" (click)="addEditPart()" class="text-xs text-brand-600 hover:underline dark:text-brand-400">+ Add Part</button>
+          </div>
+          @for (part of editParts; track $index) {
+            <div class="mb-2 grid grid-cols-12 gap-2">
+              <div class="relative col-span-4">
+                <span class="mb-0.5 block text-[10px] text-gray-500 dark:text-gray-400">Item Name</span>
+                <input type="text" [(ngModel)]="part.description" placeholder="Search part or type manually..."
+                  (input)="onEditPartInput($index)" (focus)="onEditPartInput($index)" (blur)="hideEditPartDropdown($index)"
+                  class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                  [ngClass]="part.inventoryId ? 'border-green-400 dark:border-green-600' : ''" />
+                @if (showEditPartDropdown[$index] && editPartSearchResults[$index]?.length) {
+                  <div class="absolute left-0 top-full z-10 mt-1 max-h-36 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                    @for (product of editPartSearchResults[$index]; track product.id) {
+                      <button type="button" (mousedown)="selectEditPart($index, product)"
+                        class="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+                        <span class="text-gray-800 dark:text-gray-200">{{ product.partName }}</span>
+                        <span class="text-xs text-gray-500 dark:text-gray-400">₱{{ product.sellingPrice }}</span>
+                      </button>
+                    }
+                  </div>
+                }
+              </div>
+              <div class="col-span-1">
+                <span class="mb-0.5 block text-[10px] text-gray-500 dark:text-gray-400">Qty</span>
+                <input type="number" [(ngModel)]="part.quantity" placeholder="1" min="1"
+                  class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
+              </div>
+              <div class="col-span-2">
+                <span class="mb-0.5 block text-[10px] text-gray-500 dark:text-gray-400">Price</span>
+                <input type="number" [(ngModel)]="part.billingPrice" placeholder="0.00" [disabled]="part.suppliedBy === 'customer'"
+                  class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                  [class.opacity-40]="part.suppliedBy === 'customer'" />
+              </div>
+              <div class="col-span-4">
+                <span class="mb-0.5 block text-[10px] text-gray-500 dark:text-gray-400">Supplied By</span>
+                <select [(ngModel)]="part.suppliedBy"
+                  class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200">
+                  <option value="car_expert">Car Expert</option>
+                  <option value="customer">Customer</option>
+                </select>
+              </div>
+              <button type="button" (click)="removeEditPart($index)" [disabled]="editParts.length === 1"
+                class="col-span-1 flex items-center justify-center text-error-500 hover:text-error-700 disabled:opacity-30">✕</button>
+            </div>
+            @if (part.suppliedBy === 'car_expert' && !part.inventoryId) {
+              <label class="mt-1 mb-2 flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+                <input type="checkbox" [(ngModel)]="part.recordAsExpense"
+                  class="h-3.5 w-3.5 rounded border-gray-300 text-brand-600" />
+                Record as Expense (part bought externally)
+              </label>
+            }
+          }
+        </div>
+
+        <!-- Labor & Discount -->
+        <div class="grid grid-cols-2 gap-3">
+          <label>
+            <span class="mb-0.5 block text-[10px] text-gray-500 dark:text-gray-400">Labor Fee</span>
+            <input type="number" [(ngModel)]="editLaborFee" placeholder="0" min="0"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
+          </label>
+          <label>
+            <span class="mb-0.5 block text-[10px] text-gray-500 dark:text-gray-400">Discount</span>
+            <input type="number" [(ngModel)]="editDiscount" placeholder="0" min="0"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
+          </label>
+        </div>
+
+        <!-- Re-approval Signature -->
+        <div>
+          <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400">Customer Re-Approval Signature *</p>
+          <p class="mb-2 text-xs text-gray-400 dark:text-gray-500">A new signature is required to approve the modifications.</p>
+          <app-signature-pad label="Customer Re-Approval" [height]="120" (signatureChange)="editSignatureData = $event"></app-signature-pad>
+        </div>
+      </div>
+    </div>
+  }
+</div>
