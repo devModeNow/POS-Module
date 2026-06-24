@@ -62,9 +62,15 @@ export class SigninFormComponent {
       await this.router.navigateByUrl(this.getPostLoginRoute());
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        this.errorMessage =
-          (error.response?.data as { message?: string } | undefined)?.message ??
-          'Unable to reach backend API';
+        const apiMessage = (error.response?.data as { message?: string } | undefined)?.message;
+        if (apiMessage) {
+          this.errorMessage = apiMessage;
+        } else if (error.code === 'ERR_NETWORK' || !error.response) {
+          this.errorMessage =
+            'Unable to reach backend API. Make sure the backend is running on http://localhost:3000';
+        } else {
+          this.errorMessage = 'Unable to reach backend API';
+        }
       } else {
         this.errorMessage = 'Unexpected error during sign in';
       }
@@ -75,6 +81,14 @@ export class SigninFormComponent {
 
   private getPostLoginRoute(): string {
     const menus = this.rbacService.getAllowedMenus();
+
+    if (menus.has('pos-dashboard') || menus.has('pos-terminal')) {
+      return '/users/pos-dashboard';
+    }
+
+    if (menus.has('catering-dashboard')) {
+      return '/users/catering-dashboard';
+    }
 
     // If user has 'dashboard' menu, go there (default behavior)
     if (menus.has('dashboard')) {

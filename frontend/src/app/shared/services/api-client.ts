@@ -147,6 +147,15 @@ apiClient.interceptors.request.use((config) => {
 
   config.headers ??= new AxiosHeaders();
 
+  // Let the browser set multipart boundary for file uploads.
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    if (config.headers instanceof AxiosHeaders) {
+      config.headers.delete('Content-Type');
+    } else {
+      delete (config.headers as Record<string, string>)['Content-Type'];
+    }
+  }
+
   if (config.headers instanceof AxiosHeaders) {
     if (token) {
       config.headers.set('Authorization', `Bearer ${token}`);

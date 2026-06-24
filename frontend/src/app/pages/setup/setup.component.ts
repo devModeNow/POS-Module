@@ -103,7 +103,6 @@ export class SetupComponent implements OnInit {
       const r = await apiClient.post<{ success: boolean; message?: string }>(
         '/setup/restore',
         formData,
-        { headers: { 'Content-Type': 'multipart/form-data' } },
       );
       if (r.data.success) {
         this.state = 'success';

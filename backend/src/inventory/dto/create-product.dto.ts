@@ -41,4 +41,8 @@ export class CreateProductDto {
   @IsNumber()
   @Min(0)
   maxDiscountPrice?: number;
+
+  @IsOptional()
+  @IsString()
+  unitType?: string;
 }

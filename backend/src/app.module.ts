@@ -17,6 +17,7 @@ import { FinanceModule } from './finance/finance.module';
 import { BackupModule } from './backup/backup.module';
 import { CateringModule } from './catering/catering.module';
 import { SetupModule } from './setup/setup.module';
+import { PosModule } from './pos/pos.module';
 
 @Module({
   imports: [
@@ -39,6 +40,7 @@ import { SetupModule } from './setup/setup.module';
     BackupModule,
     CateringModule,
     SetupModule,
+    PosModule,
   ],
   controllers: [AppController],
   providers: [AppService],

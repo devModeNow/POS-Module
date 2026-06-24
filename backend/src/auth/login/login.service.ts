@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { createHash } from 'node:crypto';
+import { compareSync } from 'bcryptjs';
 import { ConfigService } from '@nestjs/config';
 import { verify } from 'jsonwebtoken';
 import { CreateLoginDto } from './dto/create-login.dto';
@@ -21,6 +22,8 @@ type UserRow = {
   orgCode: string | null;
   orgName: string | null;
 };
+
+type UserRowWithPassword = UserRow & { password: string | null };
 
 @Injectable()
 export class LoginService {
@@ -45,19 +48,67 @@ export class LoginService {
     SELECT
       u.id,
       u.username,
-      u.fullname                                        AS fullname,
-      u.email,
-      u."roleId"                                       AS "roleId",
-      r."roleName"                                      AS "roleName",
-      r."roleMenus"                                     AS "roleMenus",
-      r."rolePermission"                                AS "rolePermission",
-      o.id                                              AS "orgId",
-      o.code                                            AS "orgCode",
-      o.name                                            AS "orgName"
+      COALESCE(
+        to_jsonb(u)->>'fullname',
+        to_jsonb(u)->>'fullName',
+        to_jsonb(u)->>'full_name'
+      ) AS fullname,
+      COALESCE(
+        to_jsonb(u)->>'email',
+        to_jsonb(u)->>'emailAddress',
+        to_jsonb(u)->>'email_address'
+      ) AS email,
+      NULLIF(
+        COALESCE(
+          to_jsonb(u)->>'roleId',
+          to_jsonb(u)->>'roleid',
+          to_jsonb(u)->>'role_id'
+        ),
+        ''
+      )::int AS "roleId",
+      COALESCE(to_jsonb(r)->>'roleName', to_jsonb(r)->>'rolename') AS "roleName",
+      COALESCE(to_jsonb(r)->>'roleMenus', to_jsonb(r)->>'rolemenus') AS "roleMenus",
+      COALESCE(to_jsonb(r)->>'rolePermission', to_jsonb(r)->>'rolepermission') AS "rolePermission",
+      NULLIF(to_jsonb(u)->>'org_id', '')::bigint AS "orgId",
+      o.code AS "orgCode",
+      o.name AS "orgName",
+      u.password
     FROM tblusers u
-    LEFT JOIN tblrbac r ON r.id = u."roleId"
-    LEFT JOIN tblorganizations o ON o.id = u.org_id
+    LEFT JOIN tblrbac r
+      ON r.id::text = COALESCE(
+        to_jsonb(u)->>'roleId',
+        to_jsonb(u)->>'roleid',
+        to_jsonb(u)->>'role_id'
+      )
+    LEFT JOIN tblorganizations o ON o.id = NULLIF(to_jsonb(u)->>'org_id', '')::bigint
   `;
+
+  private readonly activeUserFilter = `
+    COALESCE(LOWER(NULLIF(COALESCE(to_jsonb(u)->>'is_deleted', to_jsonb(u)->>'isDeleted'), '')), 'false') NOT IN ('true', '1', 't', 'yes')
+    AND COALESCE(NULLIF(COALESCE(to_jsonb(u)->>'status', ''), ''), '1')::int != 0
+  `;
+
+  private matchesPassword(storedPassword: string | null | undefined, plainPassword: string): boolean {
+    const stored = String(storedPassword ?? '').trim();
+    if (!stored) {
+      return false;
+    }
+
+    const sha1 = createHash('sha1').update(plainPassword).digest('hex');
+    if (stored === sha1) {
+      return true;
+    }
+
+    if (stored.startsWith('$2a$') || stored.startsWith('$2b$') || stored.startsWith('$2y$')) {
+      try {
+        return compareSync(plainPassword, stored);
+      } catch {
+        return false;
+      }
+    }
+
+    return false;
+  }
 
   /** Normalize roleMenus from any format (JSON array, CSV, 'ALL') to CSV string */
   private normalizeMenus(raw: string | null): string {
@@ -118,34 +169,39 @@ export class LoginService {
 
   async create(createLoginDto: CreateLoginDto) {
     const { username, password } = createLoginDto;
-    const passwordSha1 = createHash('sha1').update(password).digest('hex');
 
     try {
-      const result = await this.databaseService.query<UserRow>(
+      const result = await this.databaseService.query<UserRowWithPassword>(
         `${this.userQuery}
          WHERE u.username = $1
-           AND u.password = $2
-           AND COALESCE(u.is_deleted, false) = false
-           AND COALESCE(u.status, 1) != 0
-           AND (o.id IS NULL OR o.is_active = true)
+           AND ${this.activeUserFilter}
+           AND (NULLIF(to_jsonb(u)->>'org_id', '') IS NULL OR o.is_active = true)
          LIMIT 1`,
-        [username, passwordSha1],
+        [username],
       );
 
-      if (result.rowCount === 0) {
-        // Check if user exists but org is deactivated
-        const userCheck = await this.databaseService.query<{ id: number }>(
-          `SELECT u.id FROM tblusers u
-           LEFT JOIN tblorganizations o ON o.id = u.org_id
-           WHERE u.username = $1 AND u.password = $2
-             AND COALESCE(u.is_deleted, false) = false
-             AND COALESCE(u.status, 1) != 0
-             AND o.is_active = false LIMIT 1`,
-          [username, passwordSha1],
+      if (result.rowCount === 0 || !this.matchesPassword(result.rows[0].password, password)) {
+        const deactivated = await this.databaseService.query<UserRowWithPassword>(
+          `SELECT u.password
+           FROM tblusers u
+           LEFT JOIN tblorganizations o ON o.id = NULLIF(to_jsonb(u)->>'org_id', '')::bigint
+           WHERE u.username = $1
+             AND ${this.activeUserFilter}
+             AND o.is_active = false
+           LIMIT 1`,
+          [username],
         );
-        if (userCheck.rowCount > 0) {
-          return { success: false, message: 'Your organization has been deactivated. Please contact the platform administrator.' };
+
+        if (
+          deactivated.rowCount > 0 &&
+          this.matchesPassword(deactivated.rows[0].password, password)
+        ) {
+          return {
+            success: false,
+            message: 'Your organization has been deactivated. Please contact the platform administrator.',
+          };
         }
+
         return { success: false, message: 'Invalid username or password' };
       }
 
@@ -206,9 +262,9 @@ export class LoginService {
       const result = await this.databaseService.query<UserRow>(
         `${this.userQuery}
          WHERE u.id = $1
-           AND COALESCE(u.is_deleted, false) = false
-           AND COALESCE(u.status, 1) != 0
-           AND (o.id IS NULL OR o.is_active = true)
+           AND COALESCE(LOWER(NULLIF(COALESCE(to_jsonb(u)->>'is_deleted', to_jsonb(u)->>'isDeleted'), '')), 'false') NOT IN ('true', '1', 't', 'yes')
+           AND COALESCE(NULLIF(COALESCE(to_jsonb(u)->>'status', ''), ''), '1')::int != 0
+           AND (NULLIF(to_jsonb(u)->>'org_id', '') IS NULL OR o.is_active = true)
          LIMIT 1`,
         [userId],
       );
@@ -266,13 +322,18 @@ export class LoginService {
 
   async verifyPassword(userId: number, password: string) {
     if (!password) return { success: false, message: 'Password is required' };
-    const passwordSha1 = createHash('sha1').update(password).digest('hex');
+
     try {
-      const result = await this.databaseService.query<{ id: number }>(
-        `SELECT id FROM tblusers WHERE id = $1 AND password = $2 LIMIT 1`,
-        [userId, passwordSha1],
+      const result = await this.databaseService.query<{ password: string | null }>(
+        `SELECT password FROM tblusers WHERE id = $1 LIMIT 1`,
+        [userId],
       );
-      if (result.rowCount === 0) return { success: false, message: 'Invalid password' };
+      if (
+        result.rowCount === 0 ||
+        !this.matchesPassword(result.rows[0].password, password)
+      ) {
+        return { success: false, message: 'Invalid password' };
+      }
       return { success: true };
     } catch {
       return { success: false, message: 'Verification failed' };

@@ -26,28 +26,41 @@
         </div>
       </div>
       <div class="mt-4 overflow-x-auto">
-        <table class="w-full min-w-[750px]">
+        <table class="w-full min-w-[850px]">
           <thead>
             <tr class="border-b border-gray-200 dark:border-gray-800">
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Image</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Part Name</th>
               <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Category / Brand</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Unit</th>
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Stock</th>
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Cost</th>
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Selling</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Margin</th>
               <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Actions</th>
             </tr>
           </thead>
           <tbody>
             @if (isLoadingItems) {
-              <tr><td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">Loading...</td></tr>
+              <tr><td colspan="9" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">Loading...</td></tr>
             } @else {
               @for (item of paginatedItems; track item.id) {
                 <tr class="border-b border-gray-100 hover:bg-gray-50/70 dark:border-gray-800/70 dark:hover:bg-gray-800/30">
+                  <td class="px-4 py-3">
+                    <div class="h-12 w-12 overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-800">
+                      @if (item.imageUrl) {
+                        <img [src]="item.imageUrl" [alt]="item.partName" class="h-full w-full object-cover" />
+                      } @else {
+                        <div class="flex h-full w-full items-center justify-center text-xs text-gray-400">—</div>
+                      }
+                    </div>
+                  </td>
                   <td class="px-4 py-3 text-sm font-medium text-gray-800 dark:text-gray-200">{{ item.partName }}</td>
                   <td class="px-4 py-3">
                     <p class="text-xs text-gray-600 dark:text-gray-400">{{ item.category || '—' }}</p>
                     <p class="text-xs text-gray-500 dark:text-gray-500">{{ item.brand || '—' }}</p>
                   </td>
+                  <td class="px-4 py-3 text-sm capitalize text-gray-600 dark:text-gray-400">{{ item.unitType || 'piece' }}</td>
                   <td class="px-4 py-3 text-right">
                     <span class="text-sm font-medium" [ngClass]="isLow(item) ? 'text-error-600 dark:text-error-400' : 'text-gray-800 dark:text-gray-200'">
                       {{ item.stockQty }}
@@ -56,6 +69,9 @@
                   </td>
                   <td class="px-4 py-3 text-right text-sm text-gray-600 dark:text-gray-400">₱{{ item.costPrice | number:'1.2-2' }}</td>
                   <td class="px-4 py-3 text-right text-sm text-gray-600 dark:text-gray-400">₱{{ item.sellingPrice | number:'1.2-2' }}</td>
+                  <td class="px-4 py-3 text-right text-sm text-gray-600 dark:text-gray-400">
+                    {{ item.marginPercent != null ? (item.marginPercent | number:'1.1-1') + '%' : '—' }}
+                  </td>
                   <td class="px-4 py-3 text-right">
                     <div class="flex justify-end gap-1">
                       <button type="button" (click)="openStockHistory(item)" class="rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800" title="Stock History">📋</button>
@@ -65,7 +81,7 @@
                   </td>
                 </tr>
               } @empty {
-                <tr><td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No items found.</td></tr>
+                <tr><td colspan="9" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No items found.</td></tr>
               }
             }
           </tbody>
@@ -235,16 +251,55 @@
         </div>
         <div class="grid grid-cols-2 gap-3">
           <label><span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Cost Price</span>
-            <input type="number" [(ngModel)]="itemForm.costPrice" [disabled]="isSavingItem" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" /></label>
+            <input type="number" [(ngModel)]="itemForm.costPrice" [disabled]="isSavingItem" (ngModelChange)="onCostPriceChange()"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" /></label>
           <label><span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Selling Price</span>
-            <input type="number" [(ngModel)]="itemForm.sellingPrice" [disabled]="isSavingItem" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" /></label>
+            <input type="number" [(ngModel)]="itemForm.sellingPrice" [disabled]="isSavingItem" (ngModelChange)="onSellingPriceChange()"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" /></label>
         </div>
         <div class="grid grid-cols-2 gap-3">
           <label><span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Margin %</span>
-            <input type="number" [(ngModel)]="itemForm.marginPercent" [disabled]="isSavingItem" (blur)="onMarginChange()" placeholder="e.g. 30"
+            <input type="number" [(ngModel)]="itemForm.marginPercent" [disabled]="isSavingItem" (ngModelChange)="onMarginPercentChange()" placeholder="Auto-computed"
               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" /></label>
-          <div class="flex items-end">
-            <p class="pb-2 text-xs text-gray-400 dark:text-gray-500">Enter margin % to auto-compute selling price from cost</p>
+          <label><span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Unit Type</span>
+            <select [(ngModel)]="itemForm.unitType" [disabled]="isSavingItem"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm capitalize dark:border-gray-700 dark:bg-gray-900">
+              @for (unit of unitTypes; track unit) {
+                <option [value]="unit">{{ unit }}</option>
+              }
+            </select>
+          </label>
+        </div>
+        <p class="text-xs text-gray-400 dark:text-gray-500">Margin updates automatically when cost or selling price changes. Edit margin to recalculate selling price.</p>
+        <div>
+          <span class="mb-2 block text-xs font-medium text-gray-600 dark:text-gray-300">Item Image</span>
+          <div class="flex items-start gap-4">
+            <div class="flex h-24 w-24 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800">
+              @if (itemImageDisplay()) {
+                <img [src]="itemImageDisplay()!" alt="Item preview" class="h-full w-full object-cover" />
+              } @else {
+                <svg class="h-8 w-8 text-gray-300 dark:text-gray-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+              }
+            </div>
+            <div class="flex flex-col gap-2">
+              <label class="inline-flex cursor-pointer items-center justify-center rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+                Choose Image
+                <input type="file" accept="image/*" class="sr-only" (change)="onItemImageSelected($event)" [disabled]="isSavingItem" />
+              </label>
+              @if (itemImageFile || itemImagePreview) {
+                <button type="button" (click)="clearItemImageSelection()" [disabled]="isSavingItem"
+                  class="text-left text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400">Clear selection</button>
+              }
+              @if (existingImageUrl && !itemImagePreview) {
+                <button type="button" (click)="removeExistingItemImage()" [disabled]="isSavingItem || isUploadingImage"
+                  class="text-left text-xs text-red-500 hover:text-red-600">
+                  {{ isUploadingImage ? 'Removing...' : 'Remove current image' }}
+                </button>
+              }
+              <p class="text-xs text-gray-400 dark:text-gray-500">JPEG, PNG, or WebP. Max 2MB.</p>
+            </div>
           </div>
         </div>
       </div>

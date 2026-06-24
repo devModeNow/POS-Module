@@ -19,6 +19,7 @@ import { FinanceComponent } from './pages/finance/finance.component';
 import { CateringDashboardComponent } from './pages/catering/dashboard/catering-dashboard.component';
 import { CateringSchedulesComponent } from './pages/catering/schedules/catering-schedules.component';
 import { CateringMenusComponent } from './pages/catering/menus/catering-menus.component';
+import { PosDashboardComponent } from './pages/pos/dashboard/pos-dashboard.component';
 import { SchedulingFormComponent } from './pages/catering/public/scheduling-form/scheduling-form.component';
 import { RatingPageComponent } from './pages/catering/public/rating-page/rating-page.component';
 import { SetupComponent } from './pages/setup/setup.component';
@@ -120,11 +121,27 @@ export const routes: Routes = [
       orgRoute('service-history', 'service-history', 'Service History'),
       orgRoute('sales',           'sales',           'Sales'),
       {
+        path: 'pos-terminal',
+        component: PosDashboardComponent,
+        canActivate: [rbacGuard],
+        data: { menu: 'pos-terminal', permission: 'canRead' },
+        title: 'POS Terminal',
+      },
+      {
         path: 'finance',
         component: FinanceComponent,
         canActivate: [rbacGuard],
         data: { menu: 'finance', permission: 'canRead' },
         title: 'Finance',
+      },
+
+      // ── POS menus ───────────────────────────────────────────────────────
+      {
+        path: 'pos-dashboard',
+        component: PosDashboardComponent,
+        canActivate: [rbacGuard],
+        data: { menu: 'pos-dashboard', permission: 'canRead' },
+        title: 'POS Dashboard',
       },
 
       // ── Catering menus ──────────────────────────────────────────────────

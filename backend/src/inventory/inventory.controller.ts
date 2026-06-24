@@ -1,4 +1,6 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, Res, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { InventoryService } from './inventory.service';
 import { PaginatedQueryDto } from './dto/paginated-query.dto';
@@ -139,6 +141,17 @@ export class InventoryController {
     const uId = userId(req);
     const uName = String(req.user?.['fullname'] ?? req.user?.['username'] ?? '');
     return this.svc.adjustStock(+id, orgId(req), body.qty, body.notes, uId, uName);
+  }
+
+  @Post(':id/image')
+  @UseInterceptors(FileInterceptor('image', { storage: memoryStorage() }))
+  uploadImage(@Param('id') id: string, @UploadedFile() file: Express.Multer.File, @Req() req: AuthReq) {
+    return this.svc.uploadProductImage(+id, orgId(req), file);
+  }
+
+  @Delete(':id/image')
+  removeImage(@Param('id') id: string, @Req() req: AuthReq) {
+    return this.svc.removeProductImage(+id, orgId(req));
   }
 
   @Get(':id/stock-history')

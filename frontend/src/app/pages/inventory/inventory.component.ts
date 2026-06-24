@@ -28,6 +28,10 @@ export class InventoryComponent implements OnInit {
   itemDrawerMode: DrawerMode = 'create';
   editingItemId: number | null = null;
   itemForm = this.emptyItemForm();
+  itemImageFile: File | null = null;
+  itemImagePreview: string | null = null;
+  existingImageUrl: string | null = null;
+  isUploadingImage = false;
 
   // Pagination
   currentPage = 1;
@@ -138,43 +142,159 @@ export class InventoryComponent implements OnInit {
     finally { this.isLoadingItems = false; }
   }
 
-  openCreateItem(): void { this.itemForm = this.emptyItemForm(); this.itemDrawerMode = 'create'; this.editingItemId = null; this.isItemDrawerOpen = true; }
+  openCreateItem(): void {
+    this.itemForm = this.emptyItemForm();
+    this.itemDrawerMode = 'create';
+    this.editingItemId = null;
+    this.itemImageFile = null;
+    this.itemImagePreview = null;
+    this.existingImageUrl = null;
+    this.isItemDrawerOpen = true;
+  }
 
   openEditItem(item: InventoryItem): void {
-    this.itemForm = { partName: item.partName, category: item.category ?? '', brand: item.brand ?? '', description: item.description ?? '', stockQty: item.stockQty, stockWarning: item.stockWarning ?? 0, costPrice: item.costPrice ?? 0, sellingPrice: item.sellingPrice ?? 0, marginPercent: (item as any).marginPercent ?? null };
+    this.itemForm = {
+      partName: item.partName,
+      category: item.category ?? '',
+      brand: item.brand ?? '',
+      description: item.description ?? '',
+      stockQty: item.stockQty,
+      stockWarning: item.stockWarning ?? 0,
+      costPrice: item.costPrice ?? 0,
+      sellingPrice: item.sellingPrice ?? 0,
+      marginPercent: item.marginPercent ?? this.computeMargin(item.costPrice ?? 0, item.sellingPrice ?? 0),
+      unitType: item.unitType ?? 'piece',
+    };
     this.itemDrawerMode = 'edit';
     this.editingItemId = item.id;
+    this.itemImageFile = null;
+    this.itemImagePreview = null;
+    this.existingImageUrl = item.imageUrl ?? null;
     this.isItemDrawerOpen = true;
   }
 
   closeItemDrawer(): void { if (!this.isSavingItem) this.isItemDrawerOpen = false; }
 
-  onMarginChange(): void {
-    if (this.itemForm.marginPercent && this.itemForm.marginPercent > 0 && this.itemForm.costPrice > 0) {
-      const computed = this.itemForm.costPrice * (1 + this.itemForm.marginPercent / 100);
-      if (confirm(`Set selling price to ₱${computed.toFixed(2)} based on ${this.itemForm.marginPercent}% margin?`)) {
-        this.itemForm.sellingPrice = Math.round(computed * 100) / 100;
-      }
+  readonly unitTypes = ['piece', 'grams', 'kilo', 'pack', 'sack', 'liter', 'box', 'bottle', 'can', 'tray'];
+
+  onCostPriceChange(): void {
+    this.syncMarginFromPrices();
+    if (this.itemForm.marginPercent != null && this.itemForm.marginPercent > 0) {
+      this.applyMarginToSellingPrice();
     }
+  }
+
+  onSellingPriceChange(): void {
+    this.syncMarginFromPrices();
+  }
+
+  onMarginPercentChange(): void {
+    this.applyMarginToSellingPrice();
+  }
+
+  private computeMargin(cost: number, selling: number): number | null {
+    if (!cost || cost <= 0 || !selling) return null;
+    return Math.round(((selling - cost) / cost) * 10000) / 100;
+  }
+
+  private syncMarginFromPrices(): void {
+    const margin = this.computeMargin(this.itemForm.costPrice, this.itemForm.sellingPrice);
+    this.itemForm.marginPercent = margin;
+  }
+
+  private applyMarginToSellingPrice(): void {
+    if (!this.itemForm.costPrice || this.itemForm.costPrice <= 0) return;
+    if (this.itemForm.marginPercent == null) return;
+    const computed = this.itemForm.costPrice * (1 + this.itemForm.marginPercent / 100);
+    this.itemForm.sellingPrice = Math.round(computed * 100) / 100;
   }
 
   async saveItem(): Promise<void> {
     if (!this.itemForm.partName.trim()) { this.notify.warning('Required', 'Part name is required.'); return; }
     this.isSavingItem = true;
     try {
-      // Auto-save brand and category to lookup tables
       if (this.itemForm.brand?.trim()) { void this.svc.createBrand(this.itemForm.brand.trim()); }
       if (this.itemForm.category?.trim()) { void this.svc.createCategory(this.itemForm.category.trim()); }
 
-      const r = this.itemDrawerMode === 'create'
-        ? await this.svc.create(this.itemForm)
-        : await this.svc.update(this.editingItemId!, this.itemForm);
-      if (!r.success) { this.notify.error('Failed', r.message ?? 'Operation failed.'); return; }
+      let itemId: number | null = null;
+      if (this.itemDrawerMode === 'create') {
+        const createResult = await this.svc.create(this.itemForm);
+        if (!createResult.success) {
+          this.notify.error('Failed', createResult.message ?? 'Operation failed.');
+          return;
+        }
+        itemId = createResult.id ?? null;
+      } else {
+        const updateResult = await this.svc.update(this.editingItemId!, this.itemForm);
+        if (!updateResult.success) {
+          this.notify.error('Failed', updateResult.message ?? 'Operation failed.');
+          return;
+        }
+        itemId = this.editingItemId;
+      }
+
+      if (itemId && this.itemImageFile) {
+        const upload = await this.svc.uploadImage(itemId, this.itemImageFile);
+        if (!upload.success) {
+          this.notify.warning('Image', upload.message ?? 'Item saved but image upload failed.');
+        }
+      }
+
       this.notify.success('Saved', this.itemDrawerMode === 'create' ? 'Item added.' : 'Item updated.');
       this.isItemDrawerOpen = false;
+      this.itemImageFile = null;
+      this.itemImagePreview = null;
       await this.loadItems();
     } catch { this.notify.error('Error', 'Unexpected error.'); }
     finally { this.isSavingItem = false; }
+  }
+
+  onItemImageSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      this.notify.error('Invalid File', 'Only image files are allowed.');
+      input.value = '';
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      this.notify.error('Too Large', 'Image must be under 2MB.');
+      input.value = '';
+      return;
+    }
+    this.itemImageFile = file;
+    this.itemImagePreview = URL.createObjectURL(file);
+    input.value = '';
+  }
+
+  clearItemImageSelection(): void {
+    this.itemImageFile = null;
+    if (this.itemImagePreview) URL.revokeObjectURL(this.itemImagePreview);
+    this.itemImagePreview = null;
+  }
+
+  async removeExistingItemImage(): Promise<void> {
+    if (!this.editingItemId) return;
+    this.isUploadingImage = true;
+    try {
+      const r = await this.svc.removeImage(this.editingItemId);
+      if (!r.success) {
+        this.notify.error('Failed', r.message ?? 'Could not remove image.');
+        return;
+      }
+      this.existingImageUrl = null;
+      this.notify.success('Removed', 'Item image removed.');
+      await this.loadItems();
+    } catch {
+      this.notify.error('Error', 'Failed to remove image.');
+    } finally {
+      this.isUploadingImage = false;
+    }
+  }
+
+  itemImageDisplay(): string | null {
+    return this.itemImagePreview ?? this.existingImageUrl;
   }
 
   isLow(item: InventoryItem): boolean { return item.stockQty <= (item.stockWarning ?? 0); }
@@ -542,7 +662,20 @@ export class InventoryComponent implements OnInit {
 
   selectPoItemCategory(index: number, name: string): void { this.poItems[index].category = name; this.showPoItemCategoryDropdown[index] = false; }
 
-  private emptyItemForm() { return { partName: '', category: '', brand: '', description: '', stockQty: 0, stockWarning: 0, costPrice: 0, sellingPrice: 0, marginPercent: null as number | null }; }
+  private emptyItemForm() {
+    return {
+      partName: '',
+      category: '',
+      brand: '',
+      description: '',
+      stockQty: 0,
+      stockWarning: 0,
+      costPrice: 0,
+      sellingPrice: 0,
+      marginPercent: null as number | null,
+      unitType: 'piece',
+    };
+  }
   private emptyPOForm() {
     const today = new Date().toISOString().slice(0, 10);
     return { supplierId: null as number | null, comments: '', orderDate: today, expectedDate: today };

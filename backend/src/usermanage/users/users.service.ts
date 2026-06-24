@@ -479,20 +479,23 @@ export class UsersService {
       let sql: string;
       let params: unknown[];
 
+      const roleSelect = `SELECT r.id,
+        COALESCE(to_jsonb(r)->>'roleName', to_jsonb(r)->>'rolename') AS "roleName",
+        COALESCE(to_jsonb(r)->>'roleMenus', to_jsonb(r)->>'rolemenus') AS "roleMenus",
+        COALESCE(to_jsonb(r)->>'rolePermission', to_jsonb(r)->>'rolepermission') AS "rolePermission",
+        r.org_id AS "orgId"`;
+
       if (orgId !== undefined && orgId !== null && Number(orgId) > 0) {
         // Specific org selected — return ONLY that org's roles
-        sql = `SELECT r.id, r."roleName", r."roleMenus", r."rolePermission", r.org_id AS "orgId"
-               FROM tblrbac r WHERE r.org_id = $1 ORDER BY r.id ASC`;
+        sql = `${roleSelect} FROM tblrbac r WHERE r.org_id = $1 ORDER BY r.id ASC`;
         params = [orgId];
       } else if (orgId === null) {
         // Platform context — return ONLY platform-level roles (org_id IS NULL)
-        sql = `SELECT r.id, r."roleName", r."roleMenus", r."rolePermission", r.org_id AS "orgId"
-               FROM tblrbac r WHERE r.org_id IS NULL ORDER BY r.id ASC`;
+        sql = `${roleSelect} FROM tblrbac r WHERE r.org_id IS NULL ORDER BY r.id ASC`;
         params = [];
       } else {
         // No filter (undefined) — return all roles
-        sql = `SELECT r.id, r."roleName", r."roleMenus", r."rolePermission", r.org_id AS "orgId"
-               FROM tblrbac r ORDER BY r.org_id NULLS FIRST, r.id ASC`;
+        sql = `${roleSelect} FROM tblrbac r ORDER BY r.org_id NULLS FIRST, r.id ASC`;
         params = [];
       }
 

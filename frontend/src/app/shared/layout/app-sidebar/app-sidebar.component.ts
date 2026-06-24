@@ -171,12 +171,36 @@ export class AppSidebarComponent {
     } else {
       // Org user — build nav from their allowed menus (from roleMenus CSV)
       const allowedMenus = this.rbacService.getAllowedMenus();
-      this.navItems = [...allowedMenus]
+      this.navItems = this.sortOrgMenus([...allowedMenus])
         .filter((key) => key.length > 0)
-        .sort((a, b) => a.localeCompare(b))
         .map((key) => this.buildOrgNavItem(key))
         .filter((item): item is NavItem => item !== null);
     }
+  }
+
+  private sortOrgMenus(menus: string[]): string[] {
+    const priority = [
+      'pos-dashboard',
+      'pos-terminal',
+      'catering-dashboard',
+      'dashboard',
+      'inventory',
+      'job-orders',
+      'customers',
+      'reports',
+      'settings',
+    ];
+
+    return menus.sort((a, b) => {
+      const ai = priority.indexOf(a);
+      const bi = priority.indexOf(b);
+      if (ai !== -1 || bi !== -1) {
+        if (ai === -1) return 1;
+        if (bi === -1) return -1;
+        return ai - bi;
+      }
+      return a.localeCompare(b);
+    });
   }
 
   private buildOrgNavItem(menuKey: string): NavItem | null {
@@ -202,6 +226,8 @@ export class AppSidebarComponent {
       'catering-dashboard': 'Catering Dashboard',
       'catering-schedules': 'Catering Schedules',
       'catering-menus':     'Catering Menus',
+      'pos-dashboard':      'POS Sales',
+      'pos-terminal':       'POS Sales',
     };
     const iconMap: Record<string, string> = {
       'dashboard':       `<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M5.5 3.25C4.25736 3.25 3.25 4.25736 3.25 5.5V8.99998C3.25 10.2426 4.25736 11.25 5.5 11.25H9C10.2426 11.25 11.25 10.2426 11.25 8.99998V5.5C11.25 4.25736 10.2426 3.25 9 3.25H5.5ZM15 3.25C13.7574 3.25 12.75 4.25736 12.75 5.5V8.99998C12.75 10.2426 13.7574 11.25 15 11.25H18.5C19.7426 11.25 20.75 10.2426 20.75 8.99998V5.5C20.75 4.25736 19.7426 3.25 18.5 3.25H15ZM3.25 15C3.25 13.7574 4.25736 12.75 5.5 12.75H9C10.2426 12.75 11.25 13.7574 11.25 15V18.5C11.25 19.7426 10.2426 20.75 9 20.75H5.5C4.25736 20.75 3.25 19.7426 3.25 18.5V15ZM15 12.75C13.7574 12.75 12.75 13.7574 12.75 15V18.5C12.75 19.7426 13.7574 20.75 15 20.75H18.5C19.7426 20.75 20.75 19.7426 20.75 18.5V15C20.75 13.7574 19.7426 12.75 18.5 12.75H15Z" fill="currentColor"/></svg>`,
@@ -221,6 +247,8 @@ export class AppSidebarComponent {
       'catering-dashboard': `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5zm4 3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V8zm6 2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-6z" fill="currentColor"/></svg>`,
       'catering-schedules': `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M8 2a.75.75 0 0 1 .75.75V4h6.5V2.75a.75.75 0 0 1 1.5 0V4H18a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1.25V2.75A.75.75 0 0 1 8 2zM6 9v9h12V9H6zm2 2h3v3H8v-3z" fill="currentColor"/></svg>`,
       'catering-menus':     `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M3 6a1 1 0 0 1 1-1h16a1 1 0 1 1 0 2H4a1 1 0 0 1-1-1zm0 6a1 1 0 0 1 1-1h16a1 1 0 1 1 0 2H4a1 1 0 0 1-1-1zm1 5a1 1 0 1 0 0 2h16a1 1 0 1 0 0-2H4z" fill="currentColor"/></svg>`,
+      'pos-dashboard':      `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M4 3a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H4zm0 10a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H4zm3 2h2v2H7v-2zm4 0h6v2h-6v-2z" fill="currentColor"/></svg>`,
+      'pos-terminal':       `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5zm4 3a1 1 0 0 0 0 2h10a1 1 0 1 0 0-2H7zm0 4a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2H7zM6 19h12v1a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-1z" fill="currentColor"/></svg>`,
     };
 
     const label = labelMap[menuKey] ?? menuKey.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
@@ -243,6 +271,8 @@ export class AppSidebarComponent {
       'catering-dashboard': '/users/catering-dashboard',
       'catering-schedules': '/users/catering-schedules',
       'catering-menus':     '/users/catering-menus',
+      'pos-dashboard':      '/users/pos-dashboard',
+      'pos-terminal':       '/users/pos-terminal',
     };
     const path = routeMap[menuKey] ?? `/users/${menuKey}`;
     return { name: label, menuKey: menuKey as MenuKey, path, icon };

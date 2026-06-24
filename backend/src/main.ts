@@ -17,7 +17,7 @@ async function bootstrap() {
   app.useGlobalFilters(new ApiExceptionFilter());
   app.useGlobalInterceptors(new ApiErrorResponseInterceptor());
 
-  const corsOrigins = String(process.env.CORS_ORIGINS || 'http://localhost:4200')
+  const corsOrigins = String(process.env.CORS_ORIGINS || 'http://localhost:4200,http://127.0.0.1:4200')
     .split(',')
     .map((origin) => origin.trim())
     .filter((origin) => origin.length > 0);

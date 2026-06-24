@@ -2,6 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { DatabaseService } from 'src/database/database.service';
 import { PaginatedQueryDto } from './dto/paginated-query.dto';
 import { CreateProductDto } from './dto/create-product.dto';
+import sharp from 'sharp';
+
+const MAX_IMAGE_SIZE = 2 * 1024 * 1024;
+const THUMB_SIZE = 400;
 
 @Injectable()
 export class InventoryService {
@@ -67,6 +71,9 @@ export class InventoryService {
           i.cost_price AS "costPrice",
           i.selling_price AS "sellingPrice",
           i.max_discount_price AS "maxDiscountPrice",
+          i.image_url AS "imageUrl",
+          i.unit_type AS "unitType",
+          i.margin_percent AS "marginPercent",
           i.updated_at AS "updatedAt",
           COALESCE(st.purchased_qty, 0)::int AS "purchasedQuantity",
           COALESCE(st.month_sales, 0)::numeric AS "monthSales",
@@ -137,7 +144,9 @@ export class InventoryService {
         `SELECT id, part_name AS "partName", category, brand, description,
                 stock_qty AS "stockQty", stock_warning AS "stockWarning",
                 cost_price AS "costPrice", selling_price AS "sellingPrice",
-                max_discount_price AS "maxDiscountPrice", updated_at AS "updatedAt"
+                max_discount_price AS "maxDiscountPrice", image_url AS "imageUrl",
+                unit_type AS "unitType", margin_percent AS "marginPercent",
+                updated_at AS "updatedAt"
          FROM tblinventory WHERE id = $1 AND org_id = $2 LIMIT 1`, [id, orgId]);
       if (result.rowCount === 0) return { success: false, message: 'Item not found' };
       return { success: true, data: result.rows[0] };
@@ -153,11 +162,12 @@ export class InventoryService {
       const result = await this.db.query<{ id: number }>(
         `INSERT INTO tblinventory
            (org_id, part_name, category, brand, description, stock_qty, stock_warning,
-            cost_price, selling_price, max_discount_price, margin_percent, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW()) RETURNING id`,
+            cost_price, selling_price, max_discount_price, margin_percent, unit_type, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW()) RETURNING id`,
         [orgId, name, dto.category ?? null, dto.brand ?? null, dto.description ?? null,
          dto.stockQty ?? 0, dto.stockWarning ?? 0, dto.costPrice ?? 0,
-         dto.sellingPrice ?? 0, dto.maxDiscountPrice ?? null, (dto as any).marginPercent ?? null]);
+         dto.sellingPrice ?? 0, dto.maxDiscountPrice ?? null, (dto as any).marginPercent ?? null,
+         dto.unitType ?? null]);
       return { success: true, id: result.rows[0].id };
     } catch (e) {
       return { success: false, message: e instanceof Error ? e.message : 'Failed to create item' };
@@ -230,7 +240,8 @@ export class InventoryService {
         partName: 'part_name', category: 'category', brand: 'brand',
         description: 'description', stockQty: 'stock_qty', stockWarning: 'stock_warning',
         costPrice: 'cost_price', sellingPrice: 'selling_price',
-        maxDiscountPrice: 'max_discount_price',
+        maxDiscountPrice: 'max_discount_price', marginPercent: 'margin_percent',
+        unitType: 'unit_type',
       };
       const sets: string[] = [];
       const vals: unknown[] = [];
@@ -300,7 +311,7 @@ export class InventoryService {
       const result = await this.db.query(
         `SELECT id, part_name AS "partName", brand, category,
                 stock_qty AS "stockQty", cost_price AS "costPrice",
-                selling_price AS "sellingPrice"
+                selling_price AS "sellingPrice", image_url AS "imageUrl"
          FROM tblinventory
          WHERE org_id = $1
            AND (LOWER(part_name) LIKE LOWER($2) OR LOWER(brand) LIKE LOWER($2))
@@ -956,6 +967,66 @@ export class InventoryService {
       return { success: true, data: result.rows[0] };
     } catch (e) {
       return { success: false, message: e instanceof Error ? e.message : 'Failed to create category' };
+    }
+  }
+
+  async uploadProductImage(id: number, orgId: number, file: Express.Multer.File) {
+    if (!file?.buffer || file.size <= 0) {
+      return { success: false, message: 'Image file is required' };
+    }
+    if (!String(file.mimetype ?? '').startsWith('image/')) {
+      return { success: false, message: 'Only image files are allowed' };
+    }
+    if (file.size > MAX_IMAGE_SIZE) {
+      return { success: false, message: 'Image must be under 2MB' };
+    }
+
+    try {
+      const existing = await this.db.query<{ id: number }>(
+        `SELECT id FROM tblinventory WHERE id = $1 AND org_id = $2`,
+        [id, orgId],
+      );
+      if (existing.rowCount === 0) {
+        return { success: false, message: 'Item not found' };
+      }
+
+      const resizedBuffer = await sharp(file.buffer)
+        .resize(THUMB_SIZE, THUMB_SIZE, { fit: 'cover' })
+        .webp({ quality: 80 })
+        .toBuffer();
+
+      const dataUrl = `data:image/webp;base64,${resizedBuffer.toString('base64')}`;
+
+      await this.db.query(
+        `UPDATE tblinventory SET image_url = $1, updated_at = NOW() WHERE id = $2 AND org_id = $3`,
+        [dataUrl, id, orgId],
+      );
+
+      return { success: true, data: { imageUrl: dataUrl } };
+    } catch (e) {
+      return {
+        success: false,
+        message: e instanceof Error ? e.message : 'Failed to upload image',
+      };
+    }
+  }
+
+  async removeProductImage(id: number, orgId: number) {
+    try {
+      const result = await this.db.query(
+        `UPDATE tblinventory SET image_url = NULL, updated_at = NOW()
+         WHERE id = $1 AND org_id = $2 RETURNING id`,
+        [id, orgId],
+      );
+      if (result.rowCount === 0) {
+        return { success: false, message: 'Item not found' };
+      }
+      return { success: true };
+    } catch (e) {
+      return {
+        success: false,
+        message: e instanceof Error ? e.message : 'Failed to remove image',
+      };
     }
   }
 }

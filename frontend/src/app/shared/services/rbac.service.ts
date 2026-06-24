@@ -23,7 +23,8 @@ export type MenuKey =
   | 'accounting'
   | 'catering-dashboard'
   | 'catering-schedules'
-  | 'catering-menus';
+  | 'catering-menus'
+  | 'pos-dashboard';
 
 export type PermissionKey = 'canCreate' | 'canRead' | 'canUpdate' | 'canDelete' | 'canDoAll';
 
@@ -252,6 +253,16 @@ export class RbacService {
 
   isPlatformUser(): boolean {
     return this.getOrgId() === null;
+  }
+
+  isPosOrg(): boolean {
+    const code = String(this.getOrgCode() ?? '').trim().toLowerCase();
+    return code === 'point-of-sales' || code === 'pos';
+  }
+
+  isCateringOrg(): boolean {
+    const code = String(this.getOrgCode() ?? '').trim().toLowerCase();
+    return code === 'sts-catering' || code.includes('catering');
   }
 
   async syncEffectivePermissions(): Promise<boolean> {

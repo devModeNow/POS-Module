@@ -7,6 +7,8 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { readFileSync } from 'fs';
 import { SetupService } from './setup.service';
 
 @Controller('setup')
@@ -21,9 +23,9 @@ export class SetupController {
 
   /** Execute a SQL backup file to initialize the database */
   @Post('restore')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
   async restore(@UploadedFile() file: Express.Multer.File) {
-    if (!file?.buffer) {
+    if (!file) {
       throw new BadRequestException('SQL file is required');
     }
 
@@ -32,7 +34,12 @@ export class SetupController {
       throw new BadRequestException('Only .sql files are accepted');
     }
 
-    const sql = file.buffer.toString('utf-8');
+    const sql = file.buffer?.length
+      ? file.buffer.toString('utf-8')
+      : file.path
+        ? readFileSync(file.path, 'utf-8')
+        : '';
+
     if (!sql.trim()) {
       throw new BadRequestException('SQL file is empty');
     }

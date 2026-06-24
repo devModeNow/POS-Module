@@ -12,6 +12,9 @@ export interface InventoryItem {
   costPrice?: number;
   sellingPrice?: number;
   maxDiscountPrice?: number | null;
+  imageUrl?: string | null;
+  unitType?: string | null;
+  marginPercent?: number | null;
   updatedAt?: string | null;
 }
 
@@ -99,6 +102,21 @@ export class InventoryService {
 
   async update(id: number, payload: Partial<InventoryItem>): Promise<ApiItem<InventoryItem>> {
     const r = await apiClient.patch<ApiItem<InventoryItem>>(`/inventory/${id}`, payload);
+    return r.data;
+  }
+
+  async uploadImage(id: number, file: File): Promise<{ success: boolean; data?: { imageUrl: string }; message?: string }> {
+    const formData = new FormData();
+    formData.append('image', file);
+    const r = await apiClient.post<{ success: boolean; data?: { imageUrl: string }; message?: string }>(
+      `/inventory/${id}/image`,
+      formData,
+    );
+    return r.data;
+  }
+
+  async removeImage(id: number): Promise<ApiOk> {
+    const r = await apiClient.delete<ApiOk>(`/inventory/${id}/image`);
     return r.data;
   }
 

@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DatabaseService } from 'src/database/database.service';
-import { writeFileSync, unlinkSync, existsSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { execSync } from 'child_process';
+import { DatabaseService } from 'src/database/database.service';
+import { containsCopyFromStdin, splitSqlStatements } from './utils/split-sql-statements';
 
 @Injectable()
 export class SetupService {
@@ -22,7 +23,7 @@ export class SetupService {
          ORDER BY table_name`,
       );
 
-      const tables = result.rows.map(r => r.table_name);
+      const tables = result.rows.map((r) => r.table_name);
       const isSetupComplete = tables.length >= 3;
 
       return {
@@ -35,7 +36,7 @@ export class SetupService {
             : 'Database is fresh. You can import a backup.',
         },
       };
-    } catch (e) {
+    } catch {
       return {
         success: true,
         data: {
@@ -47,9 +48,8 @@ export class SetupService {
     }
   }
 
-  /** Execute a SQL backup file using psql for full compatibility (COPY, etc.) */
+  /** Execute a SQL backup file to initialize the database */
   async restore(sql: string) {
-    // Safety check: don't allow restore if DB is already set up
     const status = await this.getStatus();
     if (status.data.isSetupComplete) {
       return {
@@ -58,35 +58,83 @@ export class SetupService {
       };
     }
 
-    // Get psql path from env or use default
-    const pgDumpPath = this.configService.get<string>('PG_DUMP_PATH', 'C:\\Program Files\\PostgreSQL\\18\\bin\\pg_dump.exe');
-    const psqlPath = pgDumpPath.replace('pg_dump.exe', 'psql.exe').replace('pg_dump', 'psql');
-    const databaseUrl = this.configService.get<string>('DATABASE_URL', '');
+    const trimmedSql = sql.trim();
+    if (!trimmedSql) {
+      return { success: false, message: 'SQL file is empty' };
+    }
 
+    if (containsCopyFromStdin(trimmedSql)) {
+      const psqlPath = this.resolvePsqlPath();
+      if (psqlPath) {
+        return this.restoreViaPsql(trimmedSql, psqlPath);
+      }
+
+      return {
+        success: false,
+        message:
+          'This SQL file uses COPY ... FROM stdin, which requires the psql client. Install PostgreSQL client tools or export a plain SQL backup without COPY blocks.',
+      };
+    }
+
+    return this.restoreViaPg(trimmedSql);
+  }
+
+  private async restoreViaPg(sql: string) {
+    const statements = splitSqlStatements(sql);
+    if (statements.length === 0) {
+      return { success: false, message: 'No executable SQL statements found in file.' };
+    }
+
+    let executed = 0;
+
+    try {
+      for (const statement of statements) {
+        await this.db.query(statement);
+        executed++;
+      }
+
+      const summary = await this.getRestorationSummary();
+
+      return {
+        success: true,
+        message: `Database restored successfully (${executed} statements executed).`,
+        data: { summary },
+      };
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Unknown error';
+      return {
+        success: false,
+        message: `Restore failed after ${executed} statement(s): ${message.substring(0, 400)}`,
+      };
+    }
+  }
+
+  private async restoreViaPsql(sql: string, psqlPath: string) {
+    const databaseUrl = this.configService.get<string>('DATABASE_URL', '');
     if (!databaseUrl) {
       return { success: false, message: 'DATABASE_URL not configured' };
     }
 
-    // Write SQL to a temp file
-    const tempFile = join(process.cwd(), 'backups', `_restore_${Date.now()}.sql`);
+    const backupsDir = join(process.cwd(), 'backups');
+    if (!existsSync(backupsDir)) {
+      mkdirSync(backupsDir, { recursive: true });
+    }
+
+    const tempFile = join(backupsDir, `_restore_${Date.now()}.sql`);
 
     try {
       writeFileSync(tempFile, sql, 'utf-8');
 
-      // Execute via psql
-      const output = execSync(
-        `"${psqlPath}" "${databaseUrl}" -f "${tempFile}"`,
-        {
-          encoding: 'utf-8',
-          timeout: 120000, // 2 minutes max
-          env: { ...process.env, PGPASSWORD: undefined }, // URL has password
-        },
-      );
+      const output = execSync(`"${psqlPath}" "${databaseUrl}" -f "${tempFile}"`, {
+        encoding: 'utf-8',
+        timeout: 300000,
+        env: { ...process.env, PGPASSWORD: undefined },
+      });
 
-      // Clean up temp file
-      if (existsSync(tempFile)) unlinkSync(tempFile);
+      if (existsSync(tempFile)) {
+        unlinkSync(tempFile);
+      }
 
-      // Get a summary of what was restored
       const summary = await this.getRestorationSummary();
 
       return {
@@ -95,8 +143,9 @@ export class SetupService {
         data: { output: output.substring(0, 500), summary },
       };
     } catch (e: unknown) {
-      // Clean up temp file on error
-      if (existsSync(tempFile)) unlinkSync(tempFile);
+      if (existsSync(tempFile)) {
+        unlinkSync(tempFile);
+      }
 
       const execErr = e as { stderr?: string; stdout?: string; message?: string };
       const errorMsg = execErr.stderr || execErr.message || 'Unknown error';
@@ -108,24 +157,34 @@ export class SetupService {
     }
   }
 
+  private resolvePsqlPath(): string | null {
+    const pgDumpPath = this.configService.get<string>(
+      'PG_DUMP_PATH',
+      'C:\\Program Files\\PostgreSQL\\18\\bin\\pg_dump.exe',
+    );
+    const psqlPath = pgDumpPath.replace(/pg_dump(\.exe)?$/i, 'psql$1');
+    return existsSync(psqlPath) ? psqlPath : null;
+  }
+
   private async getRestorationSummary() {
     try {
-      // Count tables
       const tablesResult = await this.db.query<{ count: string }>(
         `SELECT COUNT(*)::text AS count FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'`,
       );
 
-      // List table names
       const tableNamesResult = await this.db.query<{ table_name: string }>(
         `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY table_name`,
       );
 
-      // Count records safely
       const countSafe = async (table: string): Promise<number> => {
         try {
-          const r = await this.db.query<{ count: string }>(`SELECT COUNT(*)::text AS count FROM public."${table}"`);
+          const r = await this.db.query<{ count: string }>(
+            `SELECT COUNT(*)::text AS count FROM public."${table}"`,
+          );
           return parseInt(r.rows[0]?.count ?? '0', 10);
-        } catch { return 0; }
+        } catch {
+          return 0;
+        }
       };
 
       const usersCount = await countSafe('tblusers');
@@ -134,7 +193,7 @@ export class SetupService {
 
       return {
         tablesCreated: parseInt(tablesResult.rows[0]?.count ?? '0', 10),
-        tableNames: tableNamesResult.rows.map(r => r.table_name),
+        tableNames: tableNamesResult.rows.map((r) => r.table_name),
         usersCount,
         organizationsCount: orgCount,
         rolesCount: roleCount,
@@ -145,7 +204,14 @@ export class SetupService {
         ],
       };
     } catch {
-      return { tablesCreated: 0, tableNames: [], usersCount: 0, organizationsCount: 0, rolesCount: 0, nextSteps: ['Restart the backend and try logging in'] };
+      return {
+        tablesCreated: 0,
+        tableNames: [],
+        usersCount: 0,
+        organizationsCount: 0,
+        rolesCount: 0,
+        nextSteps: ['Restart the backend and try logging in'],
+      };
     }
   }
 }
