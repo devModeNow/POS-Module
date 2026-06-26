@@ -56,6 +56,11 @@ export class OrgService {
     return this.contextSubject.value.id === null;
   }
 
+  isPosOrg(): boolean {
+    const code = this.contextSubject.value.code;
+    return code === 'point-of-sales' || code === 'pos';
+  }
+
   reset(): void {
     this.contextSubject.next({ id: null, code: null, name: null });
   }

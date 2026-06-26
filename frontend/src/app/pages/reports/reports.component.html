@@ -5,7 +5,13 @@
     <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
       <div>
         <h3 class="text-base font-semibold text-gray-800 dark:text-white/90">Reports</h3>
-        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Generate business reports for management review.</p>
+        <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          @if (isPosOrg) {
+            Store sales and inventory reports for your POS business.
+          } @else {
+            Generate business reports for management review.
+          }
+        </p>
       </div>
     </div>
 
@@ -253,6 +259,160 @@
               <tr class="border-b border-gray-100 dark:border-gray-800/70">
                 <td class="px-4 py-3 text-sm font-medium text-error-700 dark:text-error-400">{{ row.partName }}</td>
                 <td class="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">{{ row.category || '—' }} / {{ row.brand || '—' }}</td>
+                <td class="px-4 py-3 text-right text-sm font-bold text-error-600 dark:text-error-400">{{ row.stockQty }}</td>
+                <td class="px-4 py-3 text-right text-sm text-gray-600 dark:text-gray-400">{{ row.stockWarning }}</td>
+                <td class="px-4 py-3 text-right text-sm text-gray-600 dark:text-gray-400">₱{{ row.sellingPrice | number:'1.2-2' }}</td>
+              </tr>
+            } @empty {
+              <tr><td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data. Click Generate Report.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+
+    <!-- ── POS Daily Sales ── -->
+    @if (reportType === 'pos-daily-sales') {
+      @if (posDailySales?.summary) {
+        <div class="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Total Sales</p>
+            <p class="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">₱{{ posDailySales!.summary.totalSales | number:'1.2-2' }}</p>
+          </div>
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Transactions</p>
+            <p class="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">{{ posDailySales!.summary.transactionCount }}</p>
+          </div>
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Total Discounts</p>
+            <p class="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">₱{{ posDailySales!.summary.totalDiscount | number:'1.2-2' }}</p>
+          </div>
+        </div>
+      }
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full min-w-[400px]">
+          <thead>
+            <tr class="border-b border-gray-200 dark:border-gray-800">
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Date</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Transactions</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Total Sales</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of posDailySales?.byDay ?? []; track row.saleDate) {
+              <tr class="border-b border-gray-100 dark:border-gray-800/70">
+                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ row.saleDate | date:'MMM dd, yyyy' }}</td>
+                <td class="px-4 py-3 text-right text-sm text-gray-700 dark:text-gray-300">{{ row.transactionCount }}</td>
+                <td class="px-4 py-3 text-right text-sm font-medium text-gray-800 dark:text-gray-200">₱{{ row.totalSales | number:'1.2-2' }}</td>
+              </tr>
+            } @empty {
+              <tr><td colspan="3" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data. Click Generate Report.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+
+    <!-- ── POS Top Products ── -->
+    @if (reportType === 'pos-top-products') {
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full min-w-[500px]">
+          <thead>
+            <tr class="border-b border-gray-200 dark:border-gray-800">
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Product</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Category</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Qty Sold</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Revenue</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of posTopProducts; track row.partName) {
+              <tr class="border-b border-gray-100 dark:border-gray-800/70">
+                <td class="px-4 py-3 text-sm font-medium text-gray-800 dark:text-gray-200">{{ row.partName }}</td>
+                <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{{ row.category || '—' }}</td>
+                <td class="px-4 py-3 text-right text-sm text-gray-700 dark:text-gray-300">{{ row.quantitySold }}</td>
+                <td class="px-4 py-3 text-right text-sm font-medium text-gray-800 dark:text-gray-200">₱{{ row.totalAmount | number:'1.2-2' }}</td>
+              </tr>
+            } @empty {
+              <tr><td colspan="4" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data. Click Generate Report.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+
+    <!-- ── POS Sales by Category ── -->
+    @if (reportType === 'pos-sales-by-category') {
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full min-w-[400px]">
+          <thead>
+            <tr class="border-b border-gray-200 dark:border-gray-800">
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Category</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Qty Sold</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Revenue</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of posCategorySales; track row.category) {
+              <tr class="border-b border-gray-100 dark:border-gray-800/70">
+                <td class="px-4 py-3 text-sm font-medium text-gray-800 dark:text-gray-200">{{ row.category }}</td>
+                <td class="px-4 py-3 text-right text-sm text-gray-700 dark:text-gray-300">{{ row.quantitySold }}</td>
+                <td class="px-4 py-3 text-right text-sm font-medium text-gray-800 dark:text-gray-200">₱{{ row.totalAmount | number:'1.2-2' }}</td>
+              </tr>
+            } @empty {
+              <tr><td colspan="3" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data. Click Generate Report.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+
+    <!-- ── POS Inventory Valuation ── -->
+    @if (reportType === 'pos-inventory-valuation') {
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full min-w-[500px]">
+          <thead>
+            <tr class="border-b border-gray-200 dark:border-gray-800">
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Category</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Items</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Total Stock</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Retail Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of posInventoryValuation; track row.category) {
+              <tr class="border-b border-gray-100 dark:border-gray-800/70">
+                <td class="px-4 py-3 text-sm font-medium text-gray-800 dark:text-gray-200">{{ row.category }}</td>
+                <td class="px-4 py-3 text-right text-sm text-gray-700 dark:text-gray-300">{{ row.itemCount }}</td>
+                <td class="px-4 py-3 text-right text-sm text-gray-700 dark:text-gray-300">{{ row.totalStock }}</td>
+                <td class="px-4 py-3 text-right text-sm font-medium text-gray-800 dark:text-gray-200">₱{{ row.retailValue | number:'1.2-2' }}</td>
+              </tr>
+            } @empty {
+              <tr><td colspan="4" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data. Click Generate Report.</td></tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    }
+
+    <!-- ── POS Low Stock ── -->
+    @if (reportType === 'pos-low-stock') {
+      <div class="mt-4 overflow-x-auto">
+        <table class="w-full min-w-[500px]">
+          <thead>
+            <tr class="border-b border-gray-200 dark:border-gray-800">
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Product</th>
+              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Category</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Stock</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Warning</th>
+              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Price</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of posLowStock; track row.partName) {
+              <tr class="border-b border-gray-100 dark:border-gray-800/70">
+                <td class="px-4 py-3 text-sm font-medium text-error-700 dark:text-error-400">{{ row.partName }}</td>
+                <td class="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">{{ row.category || '—' }}</td>
                 <td class="px-4 py-3 text-right text-sm font-bold text-error-600 dark:text-error-400">{{ row.stockQty }}</td>
                 <td class="px-4 py-3 text-right text-sm text-gray-600 dark:text-gray-400">{{ row.stockWarning }}</td>
                 <td class="px-4 py-3 text-right text-sm text-gray-600 dark:text-gray-400">₱{{ row.sellingPrice | number:'1.2-2' }}</td>

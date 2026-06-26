@@ -22,6 +22,8 @@ export class InventoryComponent implements OnInit {
   // Inventory tab
   items: InventoryItem[] = [];
   search = '';
+  categoryFilter = '';
+  categoryOptions: { id: number; name: string }[] = [];
   isLoadingItems = false;
   isItemDrawerOpen = false;
   isSavingItem = false;
@@ -121,6 +123,7 @@ export class InventoryComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
+    void this.loadCategoryOptions();
     void this.loadItems();
     void this.loadSuppliers();
   }
@@ -137,9 +140,28 @@ export class InventoryComponent implements OnInit {
   async loadItems(): Promise<void> {
     this.isLoadingItems = true;
     this.currentPage = 1;
-    try { const r = await this.svc.getAll(this.search || undefined); this.items = r.data ?? []; }
+    try {
+      const r = await this.svc.getAll(
+        this.search || undefined,
+        this.categoryFilter || undefined,
+      );
+      this.items = r.data ?? [];
+    }
     catch { this.items = []; }
     finally { this.isLoadingItems = false; }
+  }
+
+  async loadCategoryOptions(): Promise<void> {
+    try {
+      const r = await this.svc.getCategories();
+      this.categoryOptions = r.data ?? [];
+    } catch {
+      this.categoryOptions = [];
+    }
+  }
+
+  onCategoryFilterChange(): void {
+    void this.loadItems();
   }
 
   openCreateItem(): void {
@@ -162,6 +184,7 @@ export class InventoryComponent implements OnInit {
       stockWarning: item.stockWarning ?? 0,
       costPrice: item.costPrice ?? 0,
       sellingPrice: item.sellingPrice ?? 0,
+      salePrice: item.salePrice ?? null,
       marginPercent: item.marginPercent ?? this.computeMargin(item.costPrice ?? 0, item.sellingPrice ?? 0),
       unitType: item.unitType ?? 'piece',
     };
@@ -672,6 +695,7 @@ export class InventoryComponent implements OnInit {
       stockWarning: 0,
       costPrice: 0,
       sellingPrice: 0,
+      salePrice: null as number | null,
       marginPercent: null as number | null,
       unitType: 'piece',
     };

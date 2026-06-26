@@ -18,8 +18,17 @@
     <!-- ── Inventory Tab ── -->
     @if (activeTab === 'inventory') {
       <div class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <input type="text" [(ngModel)]="search" (ngModelChange)="loadItems()" placeholder="Search parts..."
-          class="w-full max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" />
+        <div class="flex flex-wrap items-center gap-3">
+          <input type="text" [(ngModel)]="search" (ngModelChange)="loadItems()" placeholder="Search parts..."
+            class="w-full max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" />
+          <select [(ngModel)]="categoryFilter" (ngModelChange)="onCategoryFilterChange()"
+            class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+            <option value="">All categories</option>
+            @for (cat of categoryOptions; track cat.id) {
+              <option [value]="cat.name">{{ cat.name }}</option>
+            }
+          </select>
+        </div>
         <div class="flex gap-2">
           <app-button *appCan="{ menu: 'inventory', permission: 'canCreate' }" size="sm" variant="outline" (btnClick)="showImportModal = true">Import CSV</app-button>
           <app-button *appCan="{ menu: 'inventory', permission: 'canCreate' }" size="sm" (btnClick)="openCreateItem()">Add Item</app-button>
@@ -257,6 +266,9 @@
             <input type="number" [(ngModel)]="itemForm.sellingPrice" [disabled]="isSavingItem" (ngModelChange)="onSellingPriceChange()"
               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" /></label>
         </div>
+        <label><span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Sale Price (optional)</span>
+          <input type="number" [(ngModel)]="itemForm.salePrice" [disabled]="isSavingItem" placeholder="Promo / sale price"
+            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" /></label>
         <div class="grid grid-cols-2 gap-3">
           <label><span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Margin %</span>
             <input type="number" [(ngModel)]="itemForm.marginPercent" [disabled]="isSavingItem" (ngModelChange)="onMarginPercentChange()" placeholder="Auto-computed"

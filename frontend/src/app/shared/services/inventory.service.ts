@@ -11,6 +11,7 @@ export interface InventoryItem {
   stockWarning?: number;
   costPrice?: number;
   sellingPrice?: number;
+  salePrice?: number | null;
   maxDiscountPrice?: number | null;
   imageUrl?: string | null;
   unitType?: string | null;

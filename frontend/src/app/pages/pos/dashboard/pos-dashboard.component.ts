@@ -1,7 +1,12 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { CartLine, PosProduct, PosService } from '../../../shared/services/pos.service';
+import {
+  CartLine,
+  PosDiscount,
+  PosProduct,
+  PosService,
+} from '../../../shared/services/pos.service';
 import { OrgService } from '../../../shared/services/org.service';
 import { NotificationService } from '../../../shared/services/notification.service';
 
@@ -16,13 +21,16 @@ export class PosDashboardComponent implements OnInit {
   errorMessage = '';
   orgName = 'POS';
   search = '';
+  selectedCategory = '';
+  categories: string[] = [];
   products: PosProduct[] = [];
+  discounts: PosDiscount[] = [];
   cart: CartLine[] = [];
   cartOpen = true;
   isCheckingOut = false;
 
   showCheckoutModal = false;
-  discountAmount = 0;
+  selectedDiscountId: number | null = null;
   amountReceived = 0;
   checkoutSuccess: { changeDue: number; totalAmount: number } | null = null;
 
@@ -36,14 +44,42 @@ export class PosDashboardComponent implements OnInit {
 
   ngOnInit(): void {
     this.orgName = this.orgService.getContext().name ?? 'POS';
+    void this.loadCategories();
+    void this.loadDiscounts();
     void this.loadProducts();
+  }
+
+  get selectedDiscount(): PosDiscount | null {
+    if (!this.selectedDiscountId) return null;
+    return this.discounts.find((d) => d.id === this.selectedDiscountId) ?? null;
+  }
+
+  async loadCategories(): Promise<void> {
+    try {
+      const response = await this.posService.getCategories();
+      this.categories = response.data ?? [];
+    } catch {
+      this.categories = [];
+    }
+  }
+
+  async loadDiscounts(): Promise<void> {
+    try {
+      const response = await this.posService.getDiscounts();
+      this.discounts = response.data ?? [];
+    } catch {
+      this.discounts = [];
+    }
   }
 
   async loadProducts(): Promise<void> {
     this.state = 'loading';
     this.errorMessage = '';
     try {
-      const response = await this.posService.getProducts(this.search);
+      const response = await this.posService.getProducts(
+        this.search,
+        this.selectedCategory || undefined,
+      );
       if (!response.success || !response.data) {
         this.state = 'error';
         this.errorMessage = response.message ?? 'Failed to load products.';
@@ -63,8 +99,17 @@ export class PosDashboardComponent implements OnInit {
     this.searchTimer = setTimeout(() => void this.loadProducts(), 300);
   }
 
+  onCategoryChange(): void {
+    void this.loadProducts();
+  }
+
   clearSearch(): void {
     this.search = '';
+    void this.loadProducts();
+  }
+
+  clearCategory(): void {
+    this.selectedCategory = '';
     void this.loadProducts();
   }
 
@@ -88,6 +133,7 @@ export class PosDashboardComponent implements OnInit {
           inventoryId: product.id,
           partName: product.partName,
           sellingPrice: product.sellingPrice,
+          salePrice: product.salePrice,
           quantity: 1,
           stockQty: product.stockQty,
           imageUrl: product.imageUrl,
@@ -120,20 +166,53 @@ export class PosDashboardComponent implements OnInit {
 
   clearCart(): void {
     this.cart = [];
-    this.discountAmount = 0;
+    this.selectedDiscountId = null;
   }
 
   cartCount(): number {
     return this.cart.reduce((sum, line) => sum + line.quantity, 0);
   }
 
+  lineUnitPrice(line: CartLine): number {
+    return this.posService.computeLineUnitPrice(
+      line.sellingPrice,
+      line.salePrice,
+      this.selectedDiscount,
+      line.quantity,
+    );
+  }
+
+  lineTotal(line: CartLine): number {
+    return Math.round(this.lineUnitPrice(line) * line.quantity * 100) / 100;
+  }
+
   cartSubtotal(): number {
-    return this.cart.reduce((sum, line) => sum + line.sellingPrice * line.quantity, 0);
+    return this.cart.reduce((sum, line) => sum + this.lineTotal(line), 0);
+  }
+
+  cartDiscountAmount(): number {
+    const discount = this.selectedDiscount;
+    const subtotal = this.cartSubtotal();
+    if (!discount) return 0;
+
+    if (discount.discountType === 'percent' || discount.discountType === 'fixed') {
+      return this.posService.computeOrderDiscount(subtotal, discount);
+    }
+
+    const regular = this.cart.reduce(
+      (sum, line) => sum + line.sellingPrice * line.quantity,
+      0,
+    );
+    return Math.round((regular - subtotal) * 100) / 100;
   }
 
   cartTotal(): number {
-    const discount = Math.min(Math.max(0, this.discountAmount || 0), this.cartSubtotal());
-    return Math.round((this.cartSubtotal() - discount) * 100) / 100;
+    const subtotal = this.cartSubtotal();
+    const discount = this.selectedDiscount;
+    if (discount?.discountType === 'percent' || discount?.discountType === 'fixed') {
+      return Math.round((subtotal - this.cartDiscountAmount()) * 100) / 100;
+    }
+    return subtotal;
   }
 
   changeDue(): number {
@@ -155,7 +234,7 @@ export class PosDashboardComponent implements OnInit {
       this.notify.warning('Empty cart', 'Add products before checking out.');
       return;
     }
-    this.discountAmount = 0;
+    this.selectedDiscountId = null;
     this.amountReceived = this.cartSubtotal();
     this.checkoutSuccess = null;
     this.showCheckoutModal = true;
@@ -168,6 +247,21 @@ export class PosDashboardComponent implements OnInit {
     }
   }
 
+  onDiscountChange(): void {
+    this.amountReceived = this.cartTotal();
+  }
+
+  displayPrice(product: PosProduct): number {
+    if (this.selectedDiscount?.discountType === 'auto_sale' && product.salePrice) {
+      return product.salePrice;
+    }
+    return product.sellingPrice;
+  }
+
+  hasSalePrice(product: PosProduct): boolean {
+    return product.salePrice != null && product.salePrice > 0 && product.salePrice < product.sellingPrice;
+  }
+
   async confirmCheckout(): Promise<void> {
     if (!this.canConfirmCheckout() || this.isCheckingOut) return;
 
@@ -175,7 +269,7 @@ export class PosDashboardComponent implements OnInit {
     try {
       const response = await this.posService.checkout({
         items: this.cart.map((line) => ({ inventoryId: line.inventoryId, quantity: line.quantity })),
-        discountAmount: Math.min(Math.max(0, this.discountAmount || 0), this.cartSubtotal()),
+        discountId: this.selectedDiscountId,
         amountPaid: Number(this.amountReceived) || 0,
       });
 
@@ -190,7 +284,7 @@ export class PosDashboardComponent implements OnInit {
       };
       this.notify.success('Sale complete', `Change: ₱${this.formatCurrency(this.checkoutSuccess.changeDue)}`);
       this.cart = [];
-      this.discountAmount = 0;
+      this.selectedDiscountId = null;
       this.amountReceived = 0;
       await this.loadProducts();
 
@@ -218,6 +312,12 @@ export class PosDashboardComponent implements OnInit {
     return unit;
   }
 
+  discountLabel(d: PosDiscount): string {
+    if (d.discountType === 'percent') return `${d.name} (${d.discountValue}%)`;
+    if (d.discountType === 'auto_bulk') return `${d.name} (${d.discountValue}% off ${d.bulkMinQty}+)`;
+    return d.name;
+  }
+
   private syncCartStock(): void {
     this.cart = this.cart
       .map((line) => {
@@ -227,6 +327,7 @@ export class PosDashboardComponent implements OnInit {
           ...line,
           stockQty: product.stockQty,
           sellingPrice: product.sellingPrice,
+          salePrice: product.salePrice,
           quantity: Math.min(line.quantity, product.stockQty),
           unitType: product.unitType ?? line.unitType,
         };
