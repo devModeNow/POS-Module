@@ -43,6 +43,11 @@ export class CreateProductDto {
   maxDiscountPrice?: number;
 
   @IsOptional()
+  @IsNumber()
+  @Min(0)
+  salePrice?: number;
+
+  @IsOptional()
   @IsString()
   unitType?: string;
 }

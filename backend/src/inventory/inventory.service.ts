@@ -15,7 +15,7 @@ export class InventoryService {
 
   async findAll(orgId: number, query: PaginatedQueryDto) {
     try {
-      const { page, pageSize, search, status, deliveryDateFrom, deliveryDateTo } = query;
+      const { page, pageSize, search, status, deliveryDateFrom, deliveryDateTo, category } = query;
       const offset = (page - 1) * pageSize;
 
       const conditions: string[] = ['i.org_id = $1'];
@@ -52,6 +52,11 @@ export class InventoryService {
         conditions.push('i.stock_qty < i.stock_warning');
       }
 
+      if (category?.trim()) {
+        params.push(category.trim());
+        conditions.push(`LOWER(TRIM(i.category)) = LOWER(TRIM($${params.length}))`);
+      }
+
       const whereClause = conditions.join(' AND ');
 
       params.push(pageSize);
@@ -70,6 +75,7 @@ export class InventoryService {
           i.stock_warning AS "stockWarning",
           i.cost_price AS "costPrice",
           i.selling_price AS "sellingPrice",
+          i.sale_price AS "salePrice",
           i.max_discount_price AS "maxDiscountPrice",
           i.image_url AS "imageUrl",
           i.unit_type AS "unitType",
@@ -144,6 +150,7 @@ export class InventoryService {
         `SELECT id, part_name AS "partName", category, brand, description,
                 stock_qty AS "stockQty", stock_warning AS "stockWarning",
                 cost_price AS "costPrice", selling_price AS "sellingPrice",
+                sale_price AS "salePrice",
                 max_discount_price AS "maxDiscountPrice", image_url AS "imageUrl",
                 unit_type AS "unitType", margin_percent AS "marginPercent",
                 updated_at AS "updatedAt"
@@ -162,12 +169,12 @@ export class InventoryService {
       const result = await this.db.query<{ id: number }>(
         `INSERT INTO tblinventory
            (org_id, part_name, category, brand, description, stock_qty, stock_warning,
-            cost_price, selling_price, max_discount_price, margin_percent, unit_type, updated_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW()) RETURNING id`,
+            cost_price, selling_price, sale_price, max_discount_price, margin_percent, unit_type, updated_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW()) RETURNING id`,
         [orgId, name, dto.category ?? null, dto.brand ?? null, dto.description ?? null,
          dto.stockQty ?? 0, dto.stockWarning ?? 0, dto.costPrice ?? 0,
-         dto.sellingPrice ?? 0, dto.maxDiscountPrice ?? null, (dto as any).marginPercent ?? null,
-         dto.unitType ?? null]);
+         dto.sellingPrice ?? 0, dto.salePrice ?? null, dto.maxDiscountPrice ?? null,
+         (dto as any).marginPercent ?? null, dto.unitType ?? null]);
       return { success: true, id: result.rows[0].id };
     } catch (e) {
       return { success: false, message: e instanceof Error ? e.message : 'Failed to create item' };
@@ -239,7 +246,7 @@ export class InventoryService {
       const fieldMap: Record<string, string> = {
         partName: 'part_name', category: 'category', brand: 'brand',
         description: 'description', stockQty: 'stock_qty', stockWarning: 'stock_warning',
-        costPrice: 'cost_price', sellingPrice: 'selling_price',
+        costPrice: 'cost_price', sellingPrice: 'selling_price', salePrice: 'sale_price',
         maxDiscountPrice: 'max_discount_price', marginPercent: 'margin_percent',
         unitType: 'unit_type',
       };

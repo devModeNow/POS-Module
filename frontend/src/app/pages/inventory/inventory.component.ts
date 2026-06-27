@@ -5,22 +5,32 @@ import { PageBreadcrumbComponent } from '../../shared/components/common/page-bre
 import { ButtonComponent } from '../../shared/components/ui/button/button.component';
 import { DatePickerComponent } from '../../shared/components/form/date-picker/date-picker.component';
 import { CanDirective } from '../../shared/directives/can.directive';
+import { ConfirmDialogComponent } from '../../shared/components/ui/confirm-dialog/confirm-dialog.component';
 import { InventoryItem, InventoryService, PurchaseOrder, PurchaseOrderItem, Supplier } from '../../shared/services/inventory.service';
+import { InventoryProductRow, InventoryVariantRow, PosService } from '../../shared/services/pos.service';
+import { OrgService } from '../../shared/services/org.service';
 import { NotificationService } from '../../shared/services/notification.service';
 
 type MainTab = 'inventory' | 'purchase-orders' | 'reports';
 type DrawerMode = 'create' | 'edit';
+type PosInventoryView = 'products' | 'variants';
 
 @Component({
   selector: 'app-inventory',
-  imports: [CommonModule, FormsModule, PageBreadcrumbComponent, ButtonComponent, DatePickerComponent, CanDirective],
+  imports: [CommonModule, FormsModule, PageBreadcrumbComponent, ButtonComponent, DatePickerComponent, CanDirective, ConfirmDialogComponent],
   templateUrl: './inventory.component.html',
 })
 export class InventoryComponent implements OnInit {
   activeTab: MainTab = 'inventory';
+  isPosOrg = false;
 
   // Inventory tab
   items: InventoryItem[] = [];
+  variantItems: InventoryVariantRow[] = [];
+  productItems: InventoryProductRow[] = [];
+  posInventoryView: PosInventoryView = 'products';
+  productForm = this.emptyProductForm();
+  editingProductId: number | null = null;
   search = '';
   categoryFilter = '';
   categoryOptions: { id: number; name: string }[] = [];
@@ -38,7 +48,12 @@ export class InventoryComponent implements OnInit {
   // Pagination
   currentPage = 1;
   pageSize = 20;
-  get totalPages(): number { return Math.ceil(this.filteredItems.length / this.pageSize); }
+  get totalPages(): number {
+    const count = this.isPosOrg
+      ? (this.posInventoryView === 'products' ? this.filteredProducts.length : this.filteredVariants.length)
+      : this.filteredItems.length;
+    return Math.ceil(count / this.pageSize) || 1;
+  }
   get filteredItems(): InventoryItem[] {
     if (!this.search.trim()) return this.items;
     const q = this.search.toLowerCase();
@@ -48,9 +63,35 @@ export class InventoryComponent implements OnInit {
       i.category?.toLowerCase().includes(q)
     );
   }
+  get filteredVariants(): InventoryVariantRow[] {
+    if (!this.search.trim()) return this.variantItems;
+    const q = this.search.toLowerCase();
+    return this.variantItems.filter(v =>
+      v.productName?.toLowerCase().includes(q) ||
+      v.variantName?.toLowerCase().includes(q) ||
+      v.category?.toLowerCase().includes(q)
+    );
+  }
+  get filteredProducts(): InventoryProductRow[] {
+    if (!this.search.trim()) return this.productItems;
+    const q = this.search.toLowerCase();
+    return this.productItems.filter(p =>
+      p.name?.toLowerCase().includes(q) ||
+      p.category?.toLowerCase().includes(q) ||
+      p.brand?.toLowerCase().includes(q)
+    );
+  }
   get paginatedItems(): InventoryItem[] {
     const start = (this.currentPage - 1) * this.pageSize;
     return this.filteredItems.slice(start, start + this.pageSize);
+  }
+  get paginatedVariants(): InventoryVariantRow[] {
+    const start = (this.currentPage - 1) * this.pageSize;
+    return this.filteredVariants.slice(start, start + this.pageSize);
+  }
+  get paginatedProducts(): InventoryProductRow[] {
+    const start = (this.currentPage - 1) * this.pageSize;
+    return this.filteredProducts.slice(start, start + this.pageSize);
   }
   goToPage(page: number): void { if (page >= 1 && page <= this.totalPages) this.currentPage = page; }
   nextPage(): void { this.goToPage(this.currentPage + 1); }
@@ -117,12 +158,21 @@ export class InventoryComponent implements OnInit {
   stockHistory: any[] = [];
   isLoadingHistory = false;
 
+  confirmOpen = false;
+  confirmTitle = '';
+  confirmMessage = '';
+  confirmVariant: 'primary' | 'danger' = 'primary';
+  private confirmAction: (() => void) | null = null;
+
   constructor(
     private readonly svc: InventoryService,
+    private readonly posSvc: PosService,
+    private readonly orgSvc: OrgService,
     private readonly notify: NotificationService,
   ) {}
 
   ngOnInit(): void {
+    this.isPosOrg = this.orgSvc.isPosOrg();
     void this.loadCategoryOptions();
     void this.loadItems();
     void this.loadSuppliers();
@@ -141,13 +191,35 @@ export class InventoryComponent implements OnInit {
     this.isLoadingItems = true;
     this.currentPage = 1;
     try {
-      const r = await this.svc.getAll(
-        this.search || undefined,
-        this.categoryFilter || undefined,
-      );
-      this.items = r.data ?? [];
+      if (this.isPosOrg) {
+        const [variantsR, productsR] = await Promise.all([
+          this.posSvc.getInventoryVariants(
+            this.search || undefined,
+            this.categoryFilter || undefined,
+          ),
+          this.posSvc.getInventoryProducts(
+            this.search || undefined,
+            this.categoryFilter || undefined,
+          ),
+        ]);
+        this.variantItems = variantsR?.success !== false && Array.isArray(variantsR?.data) ? variantsR.data : [];
+        this.productItems = productsR?.success !== false && Array.isArray(productsR?.data) ? productsR.data : [];
+        if (productsR?.success === false) {
+          this.notify.error('Load failed', productsR.message ?? 'Could not load product types.');
+        }
+      } else {
+        const r = await this.svc.getAll(
+          this.search || undefined,
+          this.categoryFilter || undefined,
+        );
+        this.items = r.data ?? [];
+      }
     }
-    catch { this.items = []; }
+    catch {
+      this.items = [];
+      this.variantItems = [];
+      this.productItems = [];
+    }
     finally { this.isLoadingItems = false; }
   }
 
@@ -165,6 +237,13 @@ export class InventoryComponent implements OnInit {
   }
 
   openCreateItem(): void {
+    if (this.isPosOrg) {
+      this.productForm = this.emptyProductForm();
+      this.editingProductId = null;
+      this.itemDrawerMode = 'create';
+      this.isItemDrawerOpen = true;
+      return;
+    }
     this.itemForm = this.emptyItemForm();
     this.itemDrawerMode = 'create';
     this.editingItemId = null;
@@ -198,7 +277,27 @@ export class InventoryComponent implements OnInit {
 
   closeItemDrawer(): void { if (!this.isSavingItem) this.isItemDrawerOpen = false; }
 
-  readonly unitTypes = ['piece', 'grams', 'kilo', 'pack', 'sack', 'liter', 'box', 'bottle', 'can', 'tray'];
+  readonly unitTypes = ['piece', 'grams', 'kilo', 'pack', 'sack', 'liter', 'box', 'bottle', 'can', 'tray', 'manual'];
+  readonly unitTypeOptions: { value: string; label: string }[] = [
+    { value: 'piece', label: 'Piece' },
+    { value: 'pack', label: 'Pack' },
+    { value: 'kilo', label: 'Kilo' },
+    { value: 'sack', label: 'Sack' },
+    { value: 'grams', label: 'Grams (fixed unit)' },
+    { value: 'manual', label: 'Manual (enter grams at POS)' },
+    { value: 'liter', label: 'Liter' },
+    { value: 'box', label: 'Box' },
+    { value: 'bottle', label: 'Bottle' },
+    { value: 'can', label: 'Can' },
+    { value: 'tray', label: 'Tray' },
+  ];
+
+  unitPriceHint(unitType: string): string {
+    if (unitType === 'manual') return 'Price per gram';
+    if (unitType === 'kilo') return 'Price per kilo';
+    if (unitType === 'grams') return 'Price per gram pack/unit';
+    return 'Selling price per unit';
+  }
 
   onCostPriceChange(): void {
     this.syncMarginFromPrices();
@@ -216,8 +315,18 @@ export class InventoryComponent implements OnInit {
   }
 
   private computeMargin(cost: number, selling: number): number | null {
-    if (!cost || cost <= 0 || !selling) return null;
-    return Math.round(((selling - cost) / cost) * 10000) / 100;
+    const c = Number(cost);
+    const s = Number(selling);
+    if (!Number.isFinite(c) || !Number.isFinite(s) || c <= 0 || s <= 0) return null;
+    const margin = ((s - c) / c) * 100;
+    if (!Number.isFinite(margin)) return null;
+    const clamped = Math.max(-99999999.99, Math.min(99999999.99, margin));
+    return Math.round(clamped * 100) / 100;
+  }
+
+  private toFiniteNumber(value: unknown, fallback = 0): number {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
   }
 
   private syncMarginFromPrices(): void {
@@ -232,8 +341,368 @@ export class InventoryComponent implements OnInit {
     this.itemForm.sellingPrice = Math.round(computed * 100) / 100;
   }
 
+
+  onPosInventoryViewChange(view: PosInventoryView): void {
+    this.posInventoryView = view;
+    this.currentPage = 1;
+  }
+
+  async openEditProductById(productId: number): Promise<void> {
+    try {
+      const r = await this.posSvc.getInventoryProduct(productId);
+      if (!r.success || !r.data) {
+        this.notify.error('Error', r.message ?? 'Failed to load product.');
+        return;
+      }
+      await this.populateProductForm(r.data);
+    } catch {
+      this.notify.error('Error', 'Failed to load product.');
+    }
+  }
+
+  async openEditProduct(variant: InventoryVariantRow): Promise<void> {
+    await this.openEditProductById(variant.productId);
+  }
+
+  private async populateProductForm(d: {
+    id: number;
+    name: string;
+    category?: string | null;
+    brand?: string | null;
+    description?: string | null;
+    imageUrl?: string | null;
+    variants?: Array<InventoryVariantRow & { units?: Array<{ unitType: string; sellingPrice: number; salePrice?: number | null; isManualEntry?: boolean }> }>;
+  }): Promise<void> {
+      this.productForm = {
+        id: d.id,
+        name: d.name,
+        category: d.category ?? '',
+        brand: d.brand ?? '',
+        description: d.description ?? '',
+        imageUrl: d.imageUrl ?? null,
+        imagePreview: d.imageUrl ?? null,
+        imageFile: null,
+        variants: (d.variants ?? []).map((v: InventoryVariantRow & { units?: Array<{ unitType: string; sellingPrice: number; salePrice?: number | null; isManualEntry?: boolean }> }) => ({
+          id: v.id,
+          variantName: v.variantName,
+          stockQty: v.stockQty,
+          stockWarning: v.stockWarning ?? 0,
+          costPrice: v.costPrice ?? 0,
+          sellingPrice: v.sellingPrice ?? 0,
+          salePrice: v.salePrice ?? null,
+          unitType: v.unitType ?? 'piece',
+          marginPercent: v.marginPercent ?? null,
+          units: (v.units?.length ? v.units : [{
+            unitType: v.unitType ?? 'piece',
+            sellingPrice: v.sellingPrice ?? 0,
+            salePrice: v.salePrice ?? null,
+            isManualEntry: v.unitType === 'manual',
+          }]).map((u) => ({
+            unitType: u.unitType,
+            sellingPrice: u.sellingPrice ?? 0,
+            salePrice: u.salePrice ?? null,
+            isManualEntry: Boolean(u.isManualEntry) || u.unitType === 'manual',
+          })),
+          imageUrl: v.imageUrl ?? null,
+          imagePreview: v.imageUrl ?? null,
+          imageFile: null,
+        })),
+      };
+      if (!this.productForm.variants.length) {
+        this.productForm.variants = [this.emptyVariantRow()];
+      }
+      this.editingProductId = d.id;
+      this.itemDrawerMode = 'edit';
+      this.isItemDrawerOpen = true;
+  }
+
+  addVariantRow(): void {
+    this.productForm.variants.unshift(this.emptyVariantRow());
+  }
+
+  addUnitRow(variantIndex: number): void {
+    this.productForm.variants[variantIndex].units.push(this.emptyUnitRow());
+  }
+
+  removeUnitRow(variantIndex: number, unitIndex: number): void {
+    const units = this.productForm.variants[variantIndex].units;
+    if (units.length <= 1) return;
+    units.splice(unitIndex, 1);
+    this.syncVariantPrimaryUnit(variantIndex);
+  }
+
+  onUnitTypeChange(variantIndex: number, unitIndex: number): void {
+    const unit = this.productForm.variants[variantIndex].units[unitIndex];
+    unit.isManualEntry = unit.unitType === 'manual';
+    this.syncVariantPrimaryUnit(variantIndex);
+  }
+
+  onUnitPriceChange(variantIndex: number): void {
+    this.syncVariantPrimaryUnit(variantIndex);
+    this.onVariantSellingChange(variantIndex);
+  }
+
+  private syncVariantPrimaryUnit(variantIndex: number): void {
+    const v = this.productForm.variants[variantIndex];
+    const primary = v.units[0];
+    if (!primary) return;
+    v.unitType = primary.unitType;
+    v.sellingPrice = primary.sellingPrice;
+    v.salePrice = primary.salePrice;
+  }
+
+  productImageDisplay(): string | null {
+    return this.productForm.imagePreview ?? this.productForm.imageUrl ?? null;
+  }
+
+  variantImageDisplay(variant: { imagePreview?: string | null; imageUrl?: string | null }): string | null {
+    return variant.imagePreview ?? variant.imageUrl ?? null;
+  }
+
+  onProductImageSelected(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/') || file.size > 2 * 1024 * 1024) {
+      this.notify.error('Invalid image', 'Use JPEG/PNG/WebP under 2MB.');
+      input.value = '';
+      return;
+    }
+    this.productForm.imageFile = file;
+    if (this.productForm.imagePreview?.startsWith('blob:')) {
+      URL.revokeObjectURL(this.productForm.imagePreview);
+    }
+    this.productForm.imagePreview = URL.createObjectURL(file);
+    input.value = '';
+  }
+
+  clearProductImageSelection(): void {
+    this.productForm.imageFile = null;
+    if (this.productForm.imagePreview?.startsWith('blob:')) {
+      URL.revokeObjectURL(this.productForm.imagePreview);
+    }
+    this.productForm.imagePreview = this.productForm.imageUrl ?? null;
+  }
+
+  onVariantImageSelected(event: Event, index: number): void {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/') || file.size > 2 * 1024 * 1024) {
+      this.notify.error('Invalid image', 'Use JPEG/PNG/WebP under 2MB.');
+      return;
+    }
+    const v = this.productForm.variants[index];
+    v.imageFile = file;
+    v.imagePreview = URL.createObjectURL(file);
+  }
+
+  removeVariantRow(index: number): void {
+    if (this.productForm.variants.length <= 1) return;
+    this.productForm.variants.splice(index, 1);
+  }
+
+  onVariantCostChange(index: number): void {
+    const v = this.productForm.variants[index];
+    v.marginPercent = this.computeMargin(v.costPrice, v.sellingPrice);
+  }
+
+  onVariantSellingChange(index: number): void {
+    const v = this.productForm.variants[index];
+    v.marginPercent = this.computeMargin(v.costPrice, v.sellingPrice);
+  }
+
+  requestSaveProduct(): void {
+    if (this.isSavingItem) return;
+    if (!this.productForm.name.trim()) {
+      this.notify.warning('Required', 'Product name is required.');
+      return;
+    }
+    const variantNames = this.productForm.variants
+      .map((v) => v.variantName.trim().toLowerCase())
+      .filter(Boolean);
+    if (!variantNames.length) {
+      this.notify.warning('Required', 'Add at least one variant with a name.');
+      return;
+    }
+    if (new Set(variantNames).size !== variantNames.length) {
+      this.notify.warning('Duplicate variants', 'Each variant must have a unique name.');
+      return;
+    }
+    const label = this.itemDrawerMode === 'create' ? 'Add this product?' : 'Save changes to this product?';
+    this.openConfirm('Confirm save', label, () => void this.saveProduct());
+  }
+
+  async saveProduct(): Promise<void> {
+    if (this.isSavingItem) return;
+    this.isSavingItem = true;
+    try {
+      if (this.productForm.category?.trim()) {
+        await this.svc.createCategory(this.productForm.category.trim());
+        await this.loadCategoryOptions();
+      }
+      const productId = this.productForm.id ?? this.editingProductId ?? undefined;
+      const payload = {
+        id: productId,
+        name: this.productForm.name.trim(),
+        category: this.productForm.category || undefined,
+        brand: this.productForm.brand || undefined,
+        description: this.productForm.description || undefined,
+        variants: this.productForm.variants
+          .filter((v) => v.variantName.trim())
+          .map((v) => {
+            const sellingPrice = this.toFiniteNumber(v.units[0]?.sellingPrice ?? v.sellingPrice, 0);
+            const costPrice = this.toFiniteNumber(v.costPrice, 0);
+            return {
+              id: v.id,
+              variantName: v.variantName.trim(),
+              stockQty: this.toFiniteNumber(v.stockQty, 0),
+              stockWarning: this.toFiniteNumber(v.stockWarning, 0),
+              costPrice,
+              sellingPrice,
+              salePrice: v.units[0]?.salePrice ?? v.salePrice ?? null,
+              unitType: v.units[0]?.unitType ?? v.unitType,
+              marginPercent: this.computeMargin(costPrice, sellingPrice),
+              units: v.units.map((u) => ({
+                unitType: u.unitType,
+                sellingPrice: this.toFiniteNumber(u.sellingPrice, 0),
+                salePrice: u.salePrice ?? null,
+                isManualEntry: u.isManualEntry || u.unitType === 'manual',
+              })),
+            };
+          }),
+      };
+      if (!payload.variants.length) {
+        this.notify.warning('Required', 'Add at least one variant.');
+        return;
+      }
+      const r = await this.posSvc.saveInventoryProduct(payload);
+      if (!r.success) {
+        this.notify.error('Failed', r.message ?? 'Could not save product.');
+        return;
+      }
+      const savedId = r.id ?? productId;
+      if (!savedId) {
+        this.notify.error('Failed', 'Product saved but no product id was returned.');
+        return;
+      }
+      if (this.productForm.imageFile) {
+        const upload = await this.posSvc.uploadProductImage(savedId, this.productForm.imageFile);
+        if (!upload.success) {
+          this.notify.error('Image upload failed', upload.message ?? 'Product saved but image upload failed.');
+        }
+      }
+      {
+        const fresh = await this.posSvc.getInventoryProduct(savedId);
+        const savedVariants = fresh.data?.variants ?? [];
+        for (const local of this.productForm.variants) {
+          if (!local.imageFile || !local.variantName.trim()) continue;
+          const remote = savedVariants.find((sv: InventoryVariantRow) => sv.variantName === local.variantName.trim());
+          if (remote?.id) {
+            const upload = await this.posSvc.uploadVariantImage(remote.id, local.imageFile);
+            if (!upload.success) {
+              this.notify.warning('Image', upload.message ?? `Variant "${local.variantName}" image upload failed.`);
+            }
+          }
+        }
+      }
+      this.notify.success('Saved', this.itemDrawerMode === 'create' ? 'Product added.' : 'Product updated.');
+      this.isItemDrawerOpen = false;
+      this.editingProductId = null;
+      await this.loadItems();
+    } catch {
+      this.notify.error('Error', 'Unexpected error.');
+    } finally {
+      this.isSavingItem = false;
+    }
+  }
+
+  requestDeleteVariant(variant: InventoryVariantRow): void {
+    this.openConfirm(
+      'Delete variant?',
+      `Delete "${variant.variantName}" from ${variant.productName}? Other variants will be kept.`,
+      () => void this.deleteVariant(variant.id),
+      'danger',
+    );
+  }
+
+  async deleteVariant(variantId: number): Promise<void> {
+    try {
+      const r = await this.posSvc.deleteInventoryVariant(variantId);
+      if (!r.success) {
+        this.notify.error('Failed', r.message ?? 'Could not delete variant.');
+        return;
+      }
+      this.notify.success('Deleted', 'Variant removed.');
+      await this.loadItems();
+    } catch {
+      this.notify.error('Error', 'Failed to delete variant.');
+    }
+  }
+
+  requestDeleteProduct(variant: InventoryVariantRow): void {
+    this.requestDeleteProductById(variant.productId, variant.productName);
+  }
+
+  requestDeleteProductRow(product: InventoryProductRow): void {
+    this.requestDeleteProductById(product.id, product.name);
+  }
+
+  private requestDeleteProductById(productId: number, productName: string): void {
+    this.openConfirm(
+      'Delete product type?',
+      `Delete "${productName}" and all its variants? This cannot be undone.`,
+      () => void this.deleteProduct(productId),
+      'danger',
+    );
+  }
+
+  async deleteProduct(productId: number): Promise<void> {
+    try {
+      const r = await this.posSvc.deleteInventoryProduct(productId);
+      if (!r.success) {
+        this.notify.error('Failed', r.message ?? 'Could not delete product.');
+        return;
+      }
+      this.notify.success('Deleted', 'Product removed.');
+      await this.loadItems();
+    } catch {
+      this.notify.error('Error', 'Failed to delete product.');
+    }
+  }
+
+  openConfirm(title: string, message: string, action: () => void, variant: 'primary' | 'danger' = 'primary'): void {
+    this.confirmTitle = title;
+    this.confirmMessage = message;
+    this.confirmVariant = variant;
+    this.confirmAction = action;
+    this.confirmOpen = true;
+  }
+
+  onConfirmDialog(): void {
+    this.confirmOpen = false;
+    this.confirmAction?.();
+    this.confirmAction = null;
+  }
+
+  onCancelDialog(): void {
+    this.confirmOpen = false;
+    this.confirmAction = null;
+  }
+
   async saveItem(): Promise<void> {
+    if (this.isPosOrg) {
+      this.requestSaveProduct();
+      return;
+    }
     if (!this.itemForm.partName.trim()) { this.notify.warning('Required', 'Part name is required.'); return; }
+    this.openConfirm(
+      this.itemDrawerMode === 'create' ? 'Add item?' : 'Save changes?',
+      this.itemDrawerMode === 'create' ? 'Add this inventory item?' : 'Save changes to this item?',
+      () => void this.doSaveItem(),
+    );
+  }
+
+  private async doSaveItem(): Promise<void> {
     this.isSavingItem = true;
     try {
       if (this.itemForm.brand?.trim()) { void this.svc.createBrand(this.itemForm.brand.trim()); }
@@ -321,6 +790,10 @@ export class InventoryComponent implements OnInit {
   }
 
   isLow(item: InventoryItem): boolean { return item.stockQty <= (item.stockWarning ?? 0); }
+
+  isVariantLowStock(v: InventoryVariantRow): boolean {
+    return v.stockQty <= v.stockWarning;
+  }
 
   // ── Purchase Orders ───────────────────────────────────────────────────────
 
@@ -684,6 +1157,47 @@ export class InventoryComponent implements OnInit {
   }
 
   selectPoItemCategory(index: number, name: string): void { this.poItems[index].category = name; this.showPoItemCategoryDropdown[index] = false; }
+
+  private emptyUnitRow() {
+    return {
+      unitType: 'piece',
+      sellingPrice: 0,
+      salePrice: null as number | null,
+      isManualEntry: false,
+    };
+  }
+
+  private emptyVariantRow() {
+    return {
+      id: undefined as number | undefined,
+      variantName: '',
+      stockQty: 0,
+      stockWarning: 0,
+      costPrice: 0,
+      sellingPrice: 0,
+      salePrice: null as number | null,
+      marginPercent: null as number | null,
+      unitType: 'piece',
+      units: [this.emptyUnitRow()],
+      imageUrl: null as string | null,
+      imagePreview: null as string | null,
+      imageFile: null as File | null,
+    };
+  }
+
+  private emptyProductForm() {
+    return {
+      id: null as number | null,
+      name: '',
+      category: '',
+      brand: '',
+      description: '',
+      imageUrl: null as string | null,
+      imagePreview: null as string | null,
+      imageFile: null as File | null,
+      variants: [this.emptyVariantRow()],
+    };
+  }
 
   private emptyItemForm() {
     return {

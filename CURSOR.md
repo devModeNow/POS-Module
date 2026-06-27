@@ -1,0 +1,66 @@
+##TASKS
+
+#TASK 1
+- add a feature on the POS Inventory dashboard make the add item accept image for the item image
+- For the POS dashboard, redesign it and make it compatible to tablet/touch screen devices because this system will be used using a tablet or an ipad
+    - Show the product images in cards once clicked it will be added to the cart or item lists
+    - add a search feature in it
+    - show product product name in the card overlaying the image
+    - show price below
+    //Continuation
+    - Once Complete Sale clicked, show a prompt where the user/cashier can add the amount of money that he/she received from the customer/buyer and make it auto compute so that she will know how much change she will be giving to the customer
+    - add a feature where the cashier can apply or add a discount (we'll work on the type of discounts later).
+    - In the Inventoty adding add a field where I can choose a type in which wheater its a grams, kilo, pack, sack etc...
+    - In the Inventory table show the product image too
+    - In the Inventory adding, make the margin computation automated based on cost and price
+    - In the side menu, make the POS Sales in priority, make it first to show in dashboard after login.
+    - In POS Sales, make the product cards bigger so it would be appealing and fit the view of using a tablet or an ipad, make it look like this POS system was made specifically for a touchscreen device.
+    //Continuation 2.0
+    - Make the product cards slightly bigger
+    - In inventory, add a product category so that I can sort/filter product category
+    - Every product category will have multiple products under it
+    - On the complete payment popup, make the Discount field as a dropdown with the dropdown values having different types and amount of discount. Create a table in the database with these values, name it tbldiscounts and these are the values
+        - Senior Citizen Discount - 10% discount
+        - PWD Discount - 10%
+        - Auto discount based on product price and package like sale or bulk sale
+    - In the reports, make a different type of reports that you think is needed for a store
+    - Add fake product datas with categories, price, some have sale price, different kind of Unit Type. Products you will be adding are focused on snacks like, roasted peanut, beans, fried corn, gummy bears, jellyace etc...
+    - Fix all error issues and errors you will see
+    //Continuation 2.1
+    - We will be needing some restructuring, slightly hehe. So basically for the inventory, when we add an inventory currently we enter the category but we need to change that, change it to like a dropdown in which I can pick existing category and if not existing I can just type it and it will automatically be added to the list of categories once saved
+    - We need also to add a product variants, In this part I can enter whichever is applicable for the product I am entering like for example I am entering a peanunt and we know that there are different kinds of peanut, right? so yeah I want to be able to enter or pick a product type or a variant for each product I am entering.
+    - Now for the POS view, what I want is to just show a product type like for example peanut, it will only show the peanut product card, once click it will show a popup in which it will show the product variants, quantity etc... anything that you can think of that will be needed for each product that has been set upon entering in inventory, also make the product name a bit larger hehe
+    - Also just a quick update, upon login make the sidenav show as closed by default.
+    - make the actions in the Inventory table and POS show as icons not text to save space
+    - make the cart width a bit smaller, not so tight not so wide
+    - make sure to have a popup confirmation for every action specially when deleting or updating data and products
+    - for the sale price on checkout popup, I notice that when a sale product is added its still showing the original price in the popup unless I picked the sale price in the discount dropdown which is wrong. Please correct that and get the sale price automatically once the product select is on sale.
+    - still for the checkout popup, add a payment methods dropdown and also add it to the database for now [Cash, Online Payment[Gcash, Maya, Bank Transfer], Food Panda]. For food panda payment method make the status of it in the backend for reporting as "Floating" because it is not live when receiving the payment there's a certain time from the app. Other methods can be added to the report immediatley as payments from those are received on time.
+    - For the reporting tab, could you create a creative dashboard with graphs and complete filters to generate and see specific amounts, breakdowns. Make sure that its all accurate and complete data.
+    - Update all existing mockup data according to updated design and architecture, make sure to add variants, right product types under the right product and category.
+    - make sure to fix all errors and bugs you will encounter while building
+    //Continuation 2.2
+    - In the reports dashboard, show all by default based on Report Type just to no show blank upon opening
+    //Continuation 2.3
+    - Need some changes on adding a product, so basically the flow will be Category first then Product type which is for example peanut then there will be a feature where I can be able to add multiple peanut type (Variants) under the product type peanut then each peanut will also be having a choice of unit like for example in pack, kilo, sack or manual where in the cashies can be able to input the grams in the product card popup before adding it to the cart. Most importantly is to make it applicable to all products, types and categories not only for peanut that I used as an example so expect to have different kinds of units.
+    - Make it clear for every fields, add label into it like price, cost, margin etc...
+    - In POS make the product image size dimension equal to make to look uniform and look good.
+    - When product is added to the card, also show the unit type used.
+    - on the checkout popup, on the discount computaion when product is already sale and I selected a discount it will be added to the sale amount as discount, do not override the sale discount amount just add the discount I selected.
+    - Make sure to fix all errors and bugs you encounter while working on this task
+    //Continuation 2.4
+    - When adding in inventory make it able to add multiple unit type in each variant as every variant can be bought in different unit types.
+    - When adding variant, show the new form on top not on the bottom, also change the +add variant text into icon.
+    - In adding a Product type, add the feature to add product type image, also add image picker to each variants so that I can be able to upload image for different variants.
+    - In the POS product card popup, show the unit types in dropdown that can be selectable, when Manual was chosen show a textbox based on what unit it is (Ex. grams) and compute automatically.
+    - Inside the POS popup add also a live search so that where there are too many variants the cashier can be able to do a search
+    - In POS product cards show the product type image, once clicked and the variants will show the variant image also along with the info of the variants for each.
+    - In POS product card do not show the price, only the image, Product type name, stock and variants count will do.
+    - In the cart, show the image of the product variant added not the product type image, also show the variant name as main title and under it the product type
+    - Retain the cart items do not remove as long as the transaction or sale is not still done, even I go to a different page.
+    - make the scrollbars hidden unless its scrolled to make it look good
+    - In the checkout popup, make the default Amount Recieved to 0 so that the Confirm Sale button is disabled unless right amount is inserted to avoid click errors.
+    - In the Payment Methods, edit data remove the text "Online -" infront of each Gcash, Maya and Bank Trasfer.
+    - Hide cart when and while empty.
+    - Make sure to fix all errors and bugs you encounter while working on this task
+

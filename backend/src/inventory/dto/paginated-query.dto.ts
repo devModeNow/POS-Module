@@ -28,4 +28,8 @@ export class PaginatedQueryDto {
   @IsOptional()
   @IsString()
   deliveryDateTo?: string;
+
+  @IsOptional()
+  @IsString()
+  category?: string;
 }

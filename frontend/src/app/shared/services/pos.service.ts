@@ -3,14 +3,39 @@ import { apiClient } from './api-client';
 
 export interface PosProduct {
   id: number;
-  partName: string;
+  name: string;
   category?: string | null;
   brand?: string | null;
+  imageUrl?: string | null;
+  variantCount: number;
+  minPrice: number;
+  maxPrice: number;
+  minSalePrice?: number | null;
+  totalStock: number;
+  hasSale: boolean;
+  inStock: boolean;
+}
+
+export interface PosVariantUnit {
+  unitType: string;
+  sellingPrice: number;
+  salePrice?: number | null;
+  isManualEntry: boolean;
+}
+
+export interface PosVariant {
+  id: number;
+  productId: number;
+  productName: string;
+  variantName: string;
+  category?: string | null;
   stockQty: number;
   sellingPrice: number;
   salePrice?: number | null;
-  imageUrl?: string | null;
   unitType?: string | null;
+  imageUrl?: string | null;
+  productImageUrl?: string | null;
+  units: PosVariantUnit[];
   inStock: boolean;
 }
 
@@ -25,15 +50,26 @@ export interface PosDiscount {
   description: string | null;
 }
 
+export interface PosPaymentMethod {
+  id: number;
+  code: string;
+  name: string;
+  parentCode: string | null;
+  settlementMode: 'immediate' | 'floating';
+}
+
 export interface CartLine {
-  inventoryId: number;
-  partName: string;
+  cartKey: string;
+  variantId: number;
+  productName: string;
+  variantName: string;
   sellingPrice: number;
   salePrice?: number | null;
   quantity: number;
   stockQty: number;
   imageUrl?: string | null;
-  unitType?: string | null;
+  unitType: string;
+  isManualEntry?: boolean;
 }
 
 export interface CheckoutResult {
@@ -44,47 +80,80 @@ export interface CheckoutResult {
   amountPaid: number | null;
   changeDue: number | null;
   itemCount: number;
+  paymentStatus?: string;
 }
 
-export interface PosDailySalesReport {
-  summary: { totalSales: number; transactionCount: number; totalDiscount: number };
-  byDay: Array<{ saleDate: string; totalSales: number; transactionCount: number }>;
+export interface PosDashboardReport {
+  summary: {
+    totalSales: number;
+    settledSales: number;
+    floatingSales: number;
+    transactionCount: number;
+    totalDiscount: number;
+  };
+  byDay: Array<{ saleDate: string; totalSales: number; settledSales: number; floatingSales: number }>;
+  byPayment: Array<{ methodName: string; paymentStatus: string; totalAmount: number; transactionCount: number }>;
+  byCategory: Array<{ category: string; totalAmount: number; quantitySold: number }>;
 }
 
-export interface PosTopProductRow {
-  partName: string;
-  category: string | null;
-  quantitySold: number;
-  totalAmount: number;
-}
-
-export interface PosCategorySalesRow {
-  category: string;
-  quantitySold: number;
-  totalAmount: number;
-}
-
-export interface PosInventoryValuationRow {
-  category: string;
-  itemCount: number;
-  totalStock: number;
-  retailValue: number;
-}
-
-export interface PosLowStockRow {
-  partName: string;
-  category: string | null;
+export interface InventoryVariantRow {
+  id: number;
+  productId: number;
+  productName: string;
+  variantName: string;
+  category?: string | null;
+  brand?: string | null;
   stockQty: number;
   stockWarning: number;
+  costPrice: number;
   sellingPrice: number;
+  salePrice?: number | null;
+  unitType?: string | null;
+  marginPercent?: number | null;
+  imageUrl?: string | null;
+}
+
+export interface InventoryProductRow {
+  id: number;
+  name: string;
+  category?: string | null;
+  brand?: string | null;
+  imageUrl?: string | null;
+  variantCount: number;
+  minPrice: number;
+  maxPrice: number;
+  totalStock: number;
+  hasSale: boolean;
+}
+
+export interface InventoryProductPayload {
+  id?: number;
+  name: string;
+  category?: string;
+  brand?: string;
+  description?: string;
+  variants: Array<{
+    id?: number;
+    variantName: string;
+    stockQty?: number;
+    stockWarning?: number;
+    costPrice?: number;
+    sellingPrice?: number;
+    salePrice?: number | null;
+    unitType?: string;
+    marginPercent?: number | null;
+    units?: Array<{
+      unitType: string;
+      sellingPrice?: number;
+      salePrice?: number | null;
+      isManualEntry?: boolean;
+    }>;
+  }>;
 }
 
 @Injectable({ providedIn: 'root' })
 export class PosService {
-  async getProducts(
-    search?: string,
-    category?: string,
-  ): Promise<{ success: boolean; data?: PosProduct[]; message?: string }> {
+  async getProducts(search?: string, category?: string) {
     const params: Record<string, string> = {};
     if (search?.trim()) params['search'] = search.trim();
     if (category?.trim()) params['category'] = category.trim();
@@ -95,26 +164,36 @@ export class PosService {
     return r.data;
   }
 
-  async getCategories(): Promise<{ success: boolean; data?: string[]; message?: string }> {
-    const r = await apiClient.get<{ success: boolean; data?: string[]; message?: string }>(
-      '/api/pos/categories',
+  async getVariants(productId: number) {
+    const r = await apiClient.get<{ success: boolean; data?: PosVariant[]; message?: string }>(
+      `/api/pos/products/${productId}/variants`,
     );
     return r.data;
   }
 
-  async getDiscounts(): Promise<{ success: boolean; data?: PosDiscount[]; message?: string }> {
-    const r = await apiClient.get<{ success: boolean; data?: PosDiscount[]; message?: string }>(
-      '/api/pos/discounts',
+  async getCategories() {
+    const r = await apiClient.get<{ success: boolean; data?: string[]; message?: string }>('/api/pos/categories');
+    return r.data;
+  }
+
+  async getDiscounts() {
+    const r = await apiClient.get<{ success: boolean; data?: PosDiscount[]; message?: string }>('/api/pos/discounts');
+    return r.data;
+  }
+
+  async getPaymentMethods() {
+    const r = await apiClient.get<{ success: boolean; data?: PosPaymentMethod[]; message?: string }>(
+      '/api/pos/payment-methods',
     );
     return r.data;
   }
 
   async checkout(payload: {
-    items: Array<{ inventoryId: number; quantity: number }>;
+    items: Array<{ variantId: number; quantity: number; unitType?: string }>;
     discountId?: number | null;
-    discountAmount?: number;
     amountPaid?: number;
-  }): Promise<{ success: boolean; data?: CheckoutResult; message?: string }> {
+    paymentMethodId?: number | null;
+  }) {
     const r = await apiClient.post<{ success: boolean; data?: CheckoutResult; message?: string }>(
       '/api/pos/checkout',
       payload,
@@ -122,12 +201,13 @@ export class PosService {
     return r.data;
   }
 
-  async getDailySalesReport(from?: string, to?: string) {
+  async getDashboardReport(from?: string, to?: string, paymentStatus?: string) {
     const params: Record<string, string> = {};
     if (from) params['from'] = from;
     if (to) params['to'] = to;
-    const r = await apiClient.get<{ success: boolean; data?: PosDailySalesReport; message?: string }>(
-      '/api/pos/reports/daily-sales',
+    if (paymentStatus) params['paymentStatus'] = paymentStatus;
+    const r = await apiClient.get<{ success: boolean; data?: PosDashboardReport; message?: string }>(
+      '/api/pos/reports/dashboard',
       { params: Object.keys(params).length ? params : undefined },
     );
     return r.data;
@@ -137,7 +217,7 @@ export class PosService {
     const params: Record<string, string> = {};
     if (from) params['from'] = from;
     if (to) params['to'] = to;
-    const r = await apiClient.get<{ success: boolean; data?: PosTopProductRow[]; message?: string }>(
+    const r = await apiClient.get<{ success: boolean; data?: Array<{ partName: string; category: string | null; quantitySold: number; totalAmount: number }>; message?: string }>(
       '/api/pos/reports/top-products',
       { params: Object.keys(params).length ? params : undefined },
     );
@@ -148,7 +228,7 @@ export class PosService {
     const params: Record<string, string> = {};
     if (from) params['from'] = from;
     if (to) params['to'] = to;
-    const r = await apiClient.get<{ success: boolean; data?: PosCategorySalesRow[]; message?: string }>(
+    const r = await apiClient.get<{ success: boolean; data?: Array<{ category: string; quantitySold: number; totalAmount: number }>; message?: string }>(
       '/api/pos/reports/sales-by-category',
       { params: Object.keys(params).length ? params : undefined },
     );
@@ -156,30 +236,98 @@ export class PosService {
   }
 
   async getInventoryValuationReport() {
-    const r = await apiClient.get<{ success: boolean; data?: PosInventoryValuationRow[]; message?: string }>(
+    const r = await apiClient.get<{ success: boolean; data?: Array<{ category: string; itemCount: number; totalStock: number; retailValue: number }>; message?: string }>(
       '/api/pos/reports/inventory-valuation',
     );
     return r.data;
   }
 
   async getLowStockReport() {
-    const r = await apiClient.get<{ success: boolean; data?: PosLowStockRow[]; message?: string }>(
+    const r = await apiClient.get<{ success: boolean; data?: Array<{ partName: string; category: string | null; stockQty: number; stockWarning: number; sellingPrice: number }>; message?: string }>(
       '/api/pos/reports/low-stock',
     );
     return r.data;
   }
 
-  /** Mirror backend discount math for checkout preview */
+  async getInventoryVariants(search?: string, category?: string) {
+    const params: Record<string, string> = {};
+    if (search) params['search'] = search;
+    if (category) params['category'] = category;
+    const r = await apiClient.get<{ success: boolean; data?: InventoryVariantRow[]; message?: string }>(
+      '/inventory/products/variants',
+      { params: Object.keys(params).length ? params : undefined },
+    );
+    return r.data;
+  }
+
+  async getInventoryProducts(search?: string, category?: string) {
+    const params: Record<string, string> = {};
+    if (search) params['search'] = search;
+    if (category) params['category'] = category;
+    const r = await apiClient.get<{ success: boolean; data?: InventoryProductRow[]; message?: string }>(
+      '/inventory/products',
+      { params: Object.keys(params).length ? params : undefined },
+    );
+    return r.data;
+  }
+
+  async getInventoryProduct(id: number) {
+    const r = await apiClient.get<{ success: boolean; data?: any; message?: string }>(`/inventory/products/${id}`);
+    return r.data;
+  }
+
+  async saveInventoryProduct(payload: InventoryProductPayload) {
+    const r = await apiClient.post<{ success: boolean; id?: number; message?: string }>(
+      '/inventory/products',
+      payload,
+    );
+    return r.data;
+  }
+
+  async deleteInventoryProduct(id: number) {
+    const r = await apiClient.delete<{ success: boolean; message?: string }>(`/inventory/products/${id}`);
+    return r.data;
+  }
+
+  async deleteInventoryVariant(variantId: number) {
+    const r = await apiClient.delete<{ success: boolean; message?: string }>(
+      `/inventory/products/variant/${variantId}`,
+    );
+    return r.data;
+  }
+
+  async uploadProductImage(productId: number, file: File) {
+    const form = new FormData();
+    form.append('image', file);
+    const r = await apiClient.post<{ success: boolean; data?: { imageUrl: string }; message?: string }>(
+      `/inventory/products/${productId}/image`,
+      form,
+    );
+    return r.data;
+  }
+
+  async uploadVariantImage(variantId: number, file: File) {
+    const form = new FormData();
+    form.append('image', file);
+    const r = await apiClient.post<{ success: boolean; data?: { imageUrl: string }; message?: string }>(
+      `/inventory/products/variant/${variantId}/image`,
+      form,
+    );
+    return r.data;
+  }
+
+  effectiveUnitPrice(sellingPrice: number, salePrice: number | null | undefined): number {
+    if (salePrice != null && salePrice > 0 && salePrice < sellingPrice) return salePrice;
+    return sellingPrice;
+  }
+
   computeLineUnitPrice(
     sellingPrice: number,
     salePrice: number | null | undefined,
     discount: PosDiscount | null,
     quantity: number,
   ): number {
-    let unit = sellingPrice;
-    if (discount?.discountType === 'auto_sale' && salePrice != null && salePrice > 0) {
-      unit = salePrice;
-    }
+    let unit = this.effectiveUnitPrice(sellingPrice, salePrice);
     if (discount?.discountType === 'auto_bulk' && discount.bulkMinQty && quantity >= discount.bulkMinQty) {
       unit = unit * (1 - discount.discountValue / 100);
     }

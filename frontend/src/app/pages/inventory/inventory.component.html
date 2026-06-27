@@ -19,7 +19,7 @@
     @if (activeTab === 'inventory') {
       <div class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div class="flex flex-wrap items-center gap-3">
-          <input type="text" [(ngModel)]="search" (ngModelChange)="loadItems()" placeholder="Search parts..."
+          <input type="text" [(ngModel)]="search" (ngModelChange)="loadItems()" [placeholder]="isPosOrg ? (posInventoryView === 'products' ? 'Search products...' : 'Search variants...') : 'Search parts...'"
             class="w-full max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" />
           <select [(ngModel)]="categoryFilter" (ngModelChange)="onCategoryFilterChange()"
             class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
@@ -28,13 +28,148 @@
               <option [value]="cat.name">{{ cat.name }}</option>
             }
           </select>
+          @if (isPosOrg) {
+          <div class="inline-flex rounded-lg border border-gray-300 p-0.5 dark:border-gray-700">
+            <button type="button" (click)="onPosInventoryViewChange('products')"
+              class="rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
+              [ngClass]="posInventoryView === 'products'
+                ? 'bg-brand-500 text-white'
+                : 'text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'">
+              Product types
+            </button>
+            <button type="button" (click)="onPosInventoryViewChange('variants')"
+              class="rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
+              [ngClass]="posInventoryView === 'variants'
+                ? 'bg-brand-500 text-white'
+                : 'text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200'">
+              Product variants
+            </button>
+          </div>
+          }
         </div>
         <div class="flex gap-2">
-          <app-button *appCan="{ menu: 'inventory', permission: 'canCreate' }" size="sm" variant="outline" (btnClick)="showImportModal = true">Import CSV</app-button>
-          <app-button *appCan="{ menu: 'inventory', permission: 'canCreate' }" size="sm" (btnClick)="openCreateItem()">Add Item</app-button>
+          @if (!isPosOrg) {
+            <app-button *appCan="{ menu: 'inventory', permission: 'canCreate' }" size="sm" variant="outline" (btnClick)="showImportModal = true">Import CSV</app-button>
+          }
+          <app-button *appCan="{ menu: 'inventory', permission: 'canCreate' }" size="sm" (btnClick)="openCreateItem()">{{ isPosOrg ? 'Add Product' : 'Add Item' }}</app-button>
         </div>
       </div>
       <div class="mt-4 overflow-x-auto">
+        @if (isPosOrg) {
+          @if (posInventoryView === 'variants') {
+          <table class="w-full min-w-[900px]">
+            <thead>
+              <tr class="border-b border-gray-200 dark:border-gray-800">
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500">Image</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500">Product</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500">Variant</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500">Category</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500">Unit</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Stock</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Selling</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @if (isLoadingItems) {
+                <tr><td colspan="8" class="px-4 py-8 text-center text-sm text-gray-500">Loading...</td></tr>
+              } @else {
+                @for (v of paginatedVariants; track v.id) {
+                  <tr class="border-b border-gray-100 hover:bg-gray-50/70 dark:border-gray-800/70">
+                    <td class="px-4 py-3">
+                      <div class="h-12 w-12 overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-800">
+                        @if (v.imageUrl) { <img [src]="v.imageUrl" [alt]="v.productName" class="h-full w-full object-cover" /> }
+                      </div>
+                    </td>
+                    <td class="px-4 py-3 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ v.productName }}</td>
+                    <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{{ v.variantName }}</td>
+                    <td class="px-4 py-3 text-xs text-gray-500">{{ v.category || '—' }}</td>
+                    <td class="px-4 py-3 text-sm capitalize text-gray-600">{{ v.unitType || 'piece' }}</td>
+                    <td class="px-4 py-3 text-right text-sm font-medium" [class.text-error-600]="isVariantLowStock(v)">{{ v.stockQty }}</td>
+                    <td class="px-4 py-3 text-right text-sm">
+                      @if (v.salePrice && v.salePrice < v.sellingPrice) {
+                        <span class="text-xs text-gray-400 line-through">₱{{ v.sellingPrice | number:'1.2-2' }}</span>
+                        <span class="ml-1 font-medium text-red-600">₱{{ v.salePrice | number:'1.2-2' }}</span>
+                      } @else {
+                        <span class="text-gray-700">₱{{ v.sellingPrice | number:'1.2-2' }}</span>
+                      }
+                    </td>
+                    <td class="px-4 py-3 text-right">
+                      <div class="flex justify-end gap-1">
+                        <button type="button" (click)="openEditProduct(v)" title="Edit"
+                          class="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">
+                          <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                        </button>
+                        <button type="button" *appCan="{ menu: 'inventory', permission: 'canDelete' }" (click)="requestDeleteVariant(v)" title="Delete variant"
+                          class="rounded-lg p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10">
+                          <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="8" class="px-4 py-8 text-center text-sm text-gray-500">No variants found.</td></tr>
+                }
+              }
+            </tbody>
+          </table>
+          } @else {
+          <table class="w-full min-w-[800px]">
+            <thead>
+              <tr class="border-b border-gray-200 dark:border-gray-800">
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500">Image</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500">Product</th>
+                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500">Category</th>
+                <th class="px-4 py-3 text-center text-xs font-medium text-gray-500">Variants</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Total stock</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Price range</th>
+                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              @if (isLoadingItems) {
+                <tr><td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500">Loading...</td></tr>
+              } @else {
+                @for (p of paginatedProducts; track p.id) {
+                  <tr class="cursor-pointer border-b border-gray-100 hover:bg-gray-50/70 dark:border-gray-800/70" (click)="openEditProductById(p.id)">
+                    <td class="px-4 py-3">
+                      <div class="h-12 w-12 overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-800">
+                        @if (p.imageUrl) { <img [src]="p.imageUrl" [alt]="p.name" class="h-full w-full object-cover" /> }
+                      </div>
+                    </td>
+                    <td class="px-4 py-3 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ p.name }}</td>
+                    <td class="px-4 py-3 text-xs text-gray-500">{{ p.category || '—' }}</td>
+                    <td class="px-4 py-3 text-center text-sm text-gray-600 dark:text-gray-400">{{ p.variantCount }}</td>
+                    <td class="px-4 py-3 text-right text-sm font-medium text-gray-800 dark:text-gray-200">{{ p.totalStock }}</td>
+                    <td class="px-4 py-3 text-right text-sm text-gray-700 dark:text-gray-300">
+                      @if (p.minPrice === p.maxPrice) {
+                        ₱{{ p.minPrice | number:'1.2-2' }}
+                      } @else {
+                        ₱{{ p.minPrice | number:'1.2-2' }} – ₱{{ p.maxPrice | number:'1.2-2' }}
+                      }
+                      @if (p.hasSale) { <span class="ml-1 text-xs text-red-500">Sale</span> }
+                    </td>
+                    <td class="px-4 py-3 text-right" (click)="$event.stopPropagation()">
+                      <div class="flex justify-end gap-1">
+                        <button type="button" (click)="openEditProductById(p.id)" title="Edit product and variants"
+                          class="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">
+                          <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                        </button>
+                        <button type="button" *appCan="{ menu: 'inventory', permission: 'canDelete' }" (click)="requestDeleteProductRow(p)" title="Delete product type"
+                          class="rounded-lg p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10">
+                          <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                } @empty {
+                  <tr><td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500">No products found. Each row is a product (e.g. Peanut) — click to edit its variants.</td></tr>
+                }
+              }
+            </tbody>
+          </table>
+          }
+        } @else {
         <table class="w-full min-w-[850px]">
           <thead>
             <tr class="border-b border-gray-200 dark:border-gray-800">
@@ -83,9 +218,18 @@
                   </td>
                   <td class="px-4 py-3 text-right">
                     <div class="flex justify-end gap-1">
-                      <button type="button" (click)="openStockHistory(item)" class="rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800" title="Stock History">📋</button>
-                      <button type="button" (click)="openAdjustStock(item)" class="rounded px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800" title="Adjust Stock">±</button>
-                      <app-button *appCan="{ menu: 'inventory', permission: 'canUpdate' }" size="xs" variant="outline" (btnClick)="openEditItem(item)">Edit</app-button>
+                      <button type="button" (click)="openStockHistory(item)" title="History"
+                        class="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">
+                        <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                      </button>
+                      <button type="button" (click)="openAdjustStock(item)" title="Adjust stock"
+                        class="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">
+                        <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
+                      </button>
+                      <button type="button" *appCan="{ menu: 'inventory', permission: 'canUpdate' }" (click)="openEditItem(item)" title="Edit"
+                        class="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">
+                        <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -95,12 +239,17 @@
             }
           </tbody>
         </table>
+        }
       </div>
       <!-- Pagination -->
       @if (totalPages > 1) {
         <div class="mt-4 flex items-center justify-between border-t border-gray-200 pt-4 dark:border-gray-700">
           <p class="text-xs text-gray-500 dark:text-gray-400">
-            Showing {{ (currentPage - 1) * pageSize + 1 }} to {{ currentPage * pageSize > filteredItems.length ? filteredItems.length : currentPage * pageSize }} of {{ filteredItems.length }} items
+            @if (isPosOrg) {
+              Showing {{ (currentPage - 1) * pageSize + 1 }} to {{ currentPage * pageSize > (posInventoryView === 'products' ? filteredProducts.length : filteredVariants.length) ? (posInventoryView === 'products' ? filteredProducts.length : filteredVariants.length) : currentPage * pageSize }} of {{ posInventoryView === 'products' ? filteredProducts.length : filteredVariants.length }} {{ posInventoryView === 'products' ? 'products' : 'variants' }}
+            } @else {
+              Showing {{ (currentPage - 1) * pageSize + 1 }} to {{ currentPage * pageSize > filteredItems.length ? filteredItems.length : currentPage * pageSize }} of {{ filteredItems.length }} items
+            }
           </p>
           <div class="flex gap-1">
             <button type="button" (click)="prevPage()" [disabled]="currentPage === 1"
@@ -214,10 +363,138 @@
     [ngClass]="isItemDrawerOpen ? 'translate-x-0' : 'translate-x-full'">
     <div class="flex h-full flex-col">
       <div class="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-800">
-        <h3 class="text-lg font-semibold text-gray-800 dark:text-white/90">{{ itemDrawerMode === 'create' ? 'Add Item' : 'Edit Item' }}</h3>
+        <h3 class="text-lg font-semibold text-gray-800 dark:text-white/90">{{ isPosOrg ? (itemDrawerMode === 'create' ? 'Add Product' : 'Edit Product') : (itemDrawerMode === 'create' ? 'Add Item' : 'Edit Item') }}</h3>
         <button type="button" (click)="closeItemDrawer()" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Close</button>
       </div>
       <div class="flex-1 space-y-4 overflow-y-auto px-6 py-5">
+        @if (isPosOrg) {
+          <p class="text-xs text-gray-500 dark:text-gray-400">Step 1 — pick or type a category, then the product type, then add variants below.</p>
+          <label><span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">1. Category *</span>
+            <input type="text" list="pos-category-list" [(ngModel)]="productForm.category" [disabled]="isSavingItem" placeholder="Pick or type new category"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+            <datalist id="pos-category-list">
+              @for (cat of categoryOptions; track cat.id) { <option [value]="cat.name"></option> }
+            </datalist>
+          </label>
+          <label><span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">2. Product Type / Name *</span>
+            <input type="text" [(ngModel)]="productForm.name" [disabled]="isSavingItem" placeholder="e.g. Peanut, Gummy Bears"
+              class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" /></label>
+          <div class="grid grid-cols-2 gap-3">
+            <label><span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Brand</span>
+              <input type="text" [(ngModel)]="productForm.brand" [disabled]="isSavingItem" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" /></label>
+            <label><span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Description</span>
+              <input type="text" [(ngModel)]="productForm.description" [disabled]="isSavingItem" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" /></label>
+          </div>
+          <div>
+            <span class="mb-2 block text-xs font-medium text-gray-600 dark:text-gray-300">Product type image</span>
+            <div class="flex items-start gap-3">
+              <div class="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800">
+                @if (productImageDisplay()) {
+                  <img [src]="productImageDisplay()!" alt="Product preview" class="h-full w-full object-cover" />
+                } @else {
+                  <svg class="h-8 w-8 text-gray-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+                }
+              </div>
+              <label class="inline-flex cursor-pointer items-center rounded-lg border border-gray-300 px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300">
+                Choose Image
+                <input id="product-type-image-input" type="file" accept="image/jpeg,image/png,image/webp,image/*" class="sr-only" (change)="onProductImageSelected($event)" [disabled]="isSavingItem" />
+              </label>
+              @if (productForm.imageFile || productForm.imagePreview) {
+                <button type="button" (click)="clearProductImageSelection()" [disabled]="isSavingItem"
+                  class="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400">Clear image</button>
+              }
+            </div>
+          </div>
+          <div class="flex items-center justify-between pt-1">
+            <span class="text-sm font-semibold text-gray-800 dark:text-gray-200">3. Variants</span>
+            <button type="button" (click)="addVariantRow()" title="Add variant"
+              class="rounded-lg p-2 text-brand-600 hover:bg-brand-50 dark:hover:bg-brand-500/10">
+              <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+              </svg>
+            </button>
+          </div>
+          @for (v of productForm.variants; track $index; let i = $index) {
+            <div class="rounded-xl border border-gray-200 p-3 dark:border-gray-700">
+              <div class="mb-2 flex items-center justify-between">
+                <span class="text-xs font-medium text-gray-500">Variant {{ i + 1 }}</span>
+                @if (productForm.variants.length > 1) {
+                  <button type="button" (click)="removeVariantRow(i)" class="text-xs text-red-500">Remove</button>
+                }
+              </div>
+              <div class="space-y-2">
+                <label class="block">
+                  <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Variant name *</span>
+                  <input type="text" [(ngModel)]="v.variantName" placeholder="e.g. Garlic, Honey roasted"
+                    class="w-full rounded-lg border px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+                </label>
+                <div class="flex items-start gap-3">
+                  <div class="flex h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800">
+                    @if (variantImageDisplay(v)) {
+                      <img [src]="variantImageDisplay(v)!" [alt]="v.variantName" class="h-full w-full object-cover" />
+                    }
+                  </div>
+                  <label class="inline-flex cursor-pointer items-center rounded-lg border border-gray-300 px-2 py-1.5 text-xs text-gray-700 dark:border-gray-700 dark:text-gray-300">
+                    Variant image
+                    <input type="file" accept="image/*" class="sr-only" (change)="onVariantImageSelected($event, i)" [disabled]="isSavingItem" />
+                  </label>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                  <label class="block">
+                    <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Stock qty</span>
+                    <input type="number" [(ngModel)]="v.stockQty" step="0.001"
+                      class="w-full rounded-lg border px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+                  </label>
+                  <label class="block">
+                    <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Cost price (₱)</span>
+                    <input type="number" [(ngModel)]="v.costPrice" (ngModelChange)="onVariantCostChange(i)" step="0.01"
+                      class="w-full rounded-lg border px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+                  </label>
+                  <label class="block col-span-2">
+                    <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Low-stock warning</span>
+                    <input type="number" [(ngModel)]="v.stockWarning" step="0.001"
+                      class="w-full rounded-lg border px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+                  </label>
+                </div>
+                <div class="rounded-lg border border-dashed border-gray-200 p-2 dark:border-gray-700">
+                  <div class="mb-2 flex items-center justify-between">
+                    <span class="text-xs font-semibold text-gray-600 dark:text-gray-300">Unit types</span>
+                    <button type="button" (click)="addUnitRow(i)" class="text-xs text-brand-600">+ Unit</button>
+                  </div>
+                  @for (u of v.units; track $index; let ui = $index) {
+                    <div class="mb-2 grid grid-cols-2 gap-2 rounded-lg bg-gray-50 p-2 last:mb-0 dark:bg-gray-800/50">
+                      <label class="block col-span-2">
+                        <span class="mb-1 block text-[10px] font-medium text-gray-500">Unit</span>
+                        <select [(ngModel)]="u.unitType" (ngModelChange)="onUnitTypeChange(i, ui)"
+                          class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900">
+                          @for (unit of unitTypeOptions; track unit.value) { <option [value]="unit.value">{{ unit.label }}</option> }
+                        </select>
+                      </label>
+                      <label class="block">
+                        <span class="mb-1 block text-[10px] font-medium text-gray-500">{{ unitPriceHint(u.unitType) }} (₱)</span>
+                        <input type="number" [(ngModel)]="u.sellingPrice" (ngModelChange)="onUnitPriceChange(i)" step="0.01"
+                          class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />
+                      </label>
+                      <label class="block">
+                        <span class="mb-1 block text-[10px] font-medium text-gray-500">Sale price (₱)</span>
+                        <input type="number" [(ngModel)]="u.salePrice" (ngModelChange)="onUnitPriceChange(i)" step="0.01"
+                          class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />
+                      </label>
+                      @if (v.units.length > 1) {
+                        <button type="button" (click)="removeUnitRow(i, ui)" class="col-span-2 text-left text-[10px] text-red-500">Remove unit</button>
+                      }
+                    </div>
+                  }
+                </div>
+                <label class="block">
+                  <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Margin (%)</span>
+                  <input type="number" [(ngModel)]="v.marginPercent" readonly
+                    class="w-full rounded-lg border bg-gray-50 px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-800" />
+                </label>
+              </div>
+            </div>
+          }
+        } @else {
         <label><span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Part Name *</span>
           <input type="text" [(ngModel)]="itemForm.partName" [disabled]="isSavingItem" class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" /></label>
         <div class="grid grid-cols-2 gap-3">
@@ -314,6 +591,7 @@
             </div>
           </div>
         </div>
+        }
       </div>
       <div class="flex justify-end gap-2 border-t border-gray-200 px-6 py-4 dark:border-gray-800">
         <button type="button" (click)="closeItemDrawer()" [disabled]="isSavingItem" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-300">Cancel</button>
@@ -683,3 +961,13 @@
     </div>
   }
 </div>
+
+<app-confirm-dialog
+  [isOpen]="confirmOpen"
+  [title]="confirmTitle"
+  [message]="confirmMessage"
+  [variant]="confirmVariant"
+  [confirmLabel]="confirmVariant === 'danger' ? 'Yes, proceed' : 'Confirm'"
+  (confirm)="onConfirmDialog()"
+  (cancel)="onCancelDialog()"
+/>

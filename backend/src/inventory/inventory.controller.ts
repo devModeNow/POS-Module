@@ -109,9 +109,18 @@ export class InventoryController {
     return this.svc.findAll(orgId(req), query);
   }
 
+  @Get('template/download')
+  async downloadTemplate(@Res() res: any) {
+    const csv = 'Part Name,Brand,Category,Description,Stock Qty,Stock Warning,Cost Price,Selling Price,Margin %\nSample Item,Brand X,Category A,Description here,10,5,100.00,150.00,50';
+    res.set({ 'Content-Type': 'text/csv', 'Content-Disposition': 'attachment; filename="inventory-import-template.csv"' });
+    res.send(csv);
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string, @Req() req: AuthReq) {
-    return this.svc.findOne(+id, orgId(req));
+    const numId = this.parseNumericId(id);
+    if (numId == null) return { success: false, message: 'Item not found' };
+    return this.svc.findOne(numId, orgId(req));
   }
 
   @Post()
@@ -124,38 +133,46 @@ export class InventoryController {
     return this.svc.bulkImport(orgId(req), body.items);
   }
 
-  @Get('template/download')
-  async downloadTemplate(@Res() res: any) {
-    const csv = 'Part Name,Brand,Category,Description,Stock Qty,Stock Warning,Cost Price,Selling Price,Margin %\nSample Item,Brand X,Category A,Description here,10,5,100.00,150.00,50';
-    res.set({ 'Content-Type': 'text/csv', 'Content-Disposition': 'attachment; filename="inventory-import-template.csv"' });
-    res.send(csv);
-  }
-
   @Patch(':id')
   update(@Param('id') id: string, @Body() body: any, @Req() req: AuthReq) {
-    return this.svc.update(+id, orgId(req), body);
+    const numId = this.parseNumericId(id);
+    if (numId == null) return { success: false, message: 'Item not found' };
+    return this.svc.update(numId, orgId(req), body);
   }
 
   @Post(':id/adjust-stock')
   adjustStock(@Param('id') id: string, @Body() body: { qty: number; notes?: string }, @Req() req: AuthReq) {
+    const numId = this.parseNumericId(id);
+    if (numId == null) return { success: false, message: 'Item not found' };
     const uId = userId(req);
     const uName = String(req.user?.['fullname'] ?? req.user?.['username'] ?? '');
-    return this.svc.adjustStock(+id, orgId(req), body.qty, body.notes, uId, uName);
+    return this.svc.adjustStock(numId, orgId(req), body.qty, body.notes, uId, uName);
   }
 
   @Post(':id/image')
   @UseInterceptors(FileInterceptor('image', { storage: memoryStorage() }))
   uploadImage(@Param('id') id: string, @UploadedFile() file: Express.Multer.File, @Req() req: AuthReq) {
-    return this.svc.uploadProductImage(+id, orgId(req), file);
+    const numId = this.parseNumericId(id);
+    if (numId == null) return { success: false, message: 'Item not found' };
+    return this.svc.uploadProductImage(numId, orgId(req), file);
   }
 
   @Delete(':id/image')
   removeImage(@Param('id') id: string, @Req() req: AuthReq) {
-    return this.svc.removeProductImage(+id, orgId(req));
+    const numId = this.parseNumericId(id);
+    if (numId == null) return { success: false, message: 'Item not found' };
+    return this.svc.removeProductImage(numId, orgId(req));
   }
 
   @Get(':id/stock-history')
   getStockHistory(@Param('id') id: string, @Req() req: AuthReq) {
-    return this.svc.getStockHistory(+id, orgId(req));
+    const numId = this.parseNumericId(id);
+    if (numId == null) return { success: false, message: 'Item not found' };
+    return this.svc.getStockHistory(numId, orgId(req));
+  }
+
+  private parseNumericId(raw: string): number | null {
+    const id = Number(raw);
+    return Number.isInteger(id) && id > 0 ? id : null;
   }
 }

@@ -19,7 +19,7 @@
     <div class="mt-5 flex flex-wrap items-end gap-3">
       <label>
         <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Report Type</span>
-        <select [(ngModel)]="reportType"
+        <select [(ngModel)]="reportType" (ngModelChange)="onReportTypeChange()"
           class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
           @for (rt of reportTypes; track rt.value) {
             <option [value]="rt.value">{{ rt.label }}</option>
@@ -30,20 +30,38 @@
       @if (needsDateRange) {
         <label>
           <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">From</span>
-          <input type="date" [(ngModel)]="fromDate"
+          <input type="date" [(ngModel)]="fromDate" (ngModelChange)="onFiltersChange()"
             class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" />
         </label>
         <label>
           <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">To</span>
-          <input type="date" [(ngModel)]="toDate"
+          <input type="date" [(ngModel)]="toDate" (ngModelChange)="onFiltersChange()"
             class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" />
         </label>
       }
 
+      @if (isPosOrg && reportType === 'pos-dashboard') {
+        <label>
+          <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Payment Status</span>
+          <select [(ngModel)]="paymentStatusFilter" (ngModelChange)="onFiltersChange()"
+            class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
+            <option value="">All</option>
+            <option value="settled">Settled only</option>
+            <option value="floating">Floating only</option>
+          </select>
+        </label>
+      }
+
       <app-button (btnClick)="generate()" [disabled]="isLoading">
-        {{ isLoading ? 'Generating...' : 'Generate Report' }}
+        {{ isLoading ? 'Loading...' : 'Refresh' }}
       </app-button>
     </div>
+
+    @if (isLoading && !hasReportData()) {
+      <div class="mt-8 flex items-center justify-center py-12 text-sm text-gray-500 dark:text-gray-400">
+        Loading report data...
+      </div>
+    }
 
     <!-- ── Sales Report ── -->
     @if (reportType === 'sales') {
@@ -82,7 +100,7 @@
                 <td class="px-4 py-3 text-right text-sm font-medium text-gray-800 dark:text-gray-200">₱{{ row.totalAmount | number:'1.2-2' }}</td>
               </tr>
             } @empty {
-              <tr><td colspan="4" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data. Click Generate Report.</td></tr>
+              <tr><td colspan="4" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data for the selected period.</td></tr>
             }
           </tbody>
         </table>
@@ -134,7 +152,7 @@
                 <td class="px-4 py-3 text-right text-sm font-medium text-gray-800 dark:text-gray-200">₱{{ row.amount | number:'1.2-2' }}</td>
               </tr>
             } @empty {
-              <tr><td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data. Click Generate Report.</td></tr>
+              <tr><td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data for the selected period.</td></tr>
             }
           </tbody>
         </table>
@@ -182,7 +200,7 @@
                 <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ row.completedAt | date:'mediumDate' }}</td>
               </tr>
             } @empty {
-              <tr><td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data. Click Generate Report.</td></tr>
+              <tr><td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data for the selected period.</td></tr>
             }
           </tbody>
         </table>
@@ -234,7 +252,7 @@
                 <td class="px-4 py-3 text-right text-sm font-medium text-gray-800 dark:text-gray-200">₱{{ row.stockValue | number:'1.2-2' }}</td>
               </tr>
             } @empty {
-              <tr><td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data. Click Generate Report.</td></tr>
+              <tr><td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data for the selected period.</td></tr>
             }
           </tbody>
         </table>
@@ -264,53 +282,59 @@
                 <td class="px-4 py-3 text-right text-sm text-gray-600 dark:text-gray-400">₱{{ row.sellingPrice | number:'1.2-2' }}</td>
               </tr>
             } @empty {
-              <tr><td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data. Click Generate Report.</td></tr>
+              <tr><td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data for the selected period.</td></tr>
             }
           </tbody>
         </table>
       </div>
     }
 
-    <!-- ── POS Daily Sales ── -->
-    @if (reportType === 'pos-daily-sales') {
-      @if (posDailySales?.summary) {
-        <div class="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+    <!-- ── POS Store Dashboard ── -->
+    @if (reportType === 'pos-dashboard') {
+      @if (posDashboard?.summary) {
+        <div class="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-5">
           <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
-            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Total Sales</p>
-            <p class="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">₱{{ posDailySales!.summary.totalSales | number:'1.2-2' }}</p>
+            <p class="text-xs uppercase text-gray-500">Total Sales</p>
+            <p class="mt-1 text-lg font-semibold">₱{{ posDashboard!.summary.totalSales | number:'1.2-2' }}</p>
           </div>
           <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
-            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Transactions</p>
-            <p class="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">{{ posDailySales!.summary.transactionCount }}</p>
+            <p class="text-xs uppercase text-gray-500">Settled</p>
+            <p class="mt-1 text-lg font-semibold text-emerald-600">₱{{ posDashboard!.summary.settledSales | number:'1.2-2' }}</p>
+          </div>
+          <div class="rounded-xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-500/10">
+            <p class="text-xs uppercase text-amber-700">Floating</p>
+            <p class="mt-1 text-lg font-semibold text-amber-700">₱{{ posDashboard!.summary.floatingSales | number:'1.2-2' }}</p>
           </div>
           <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
-            <p class="text-xs uppercase tracking-wide text-gray-500 dark:text-gray-400">Total Discounts</p>
-            <p class="mt-1 text-lg font-semibold text-gray-800 dark:text-white/90">₱{{ posDailySales!.summary.totalDiscount | number:'1.2-2' }}</p>
+            <p class="text-xs uppercase text-gray-500">Transactions</p>
+            <p class="mt-1 text-lg font-semibold">{{ posDashboard!.summary.transactionCount }}</p>
+          </div>
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <p class="text-xs uppercase text-gray-500">Discounts</p>
+            <p class="mt-1 text-lg font-semibold">₱{{ posDashboard!.summary.totalDiscount | number:'1.2-2' }}</p>
           </div>
         </div>
+        <div class="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <h4 class="mb-3 text-sm font-semibold text-gray-800 dark:text-white">Daily Sales Trend</h4>
+            <apx-chart [series]="salesChartSeries" [chart]="chartBase" [xaxis]="{ categories: salesChartCategories }"
+              [colors]="chartColors" [plotOptions]="chartPlot" [grid]="chartGrid" [dataLabels]="chartDataLabels"
+              [stroke]="chartStroke" [legend]="{ position: 'top' }"></apx-chart>
+          </div>
+          <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+            <h4 class="mb-3 text-sm font-semibold text-gray-800 dark:text-white">Sales by Category</h4>
+            <apx-chart [series]="categoryChartSeries" [chart]="chartBase" [xaxis]="{ categories: categoryChartCategories }"
+              [colors]="['#465fff']" [plotOptions]="chartPlot" [grid]="chartGrid" [dataLabels]="chartDataLabels"></apx-chart>
+          </div>
+        </div>
+        <div class="mt-6 rounded-xl border border-gray-200 p-4 dark:border-gray-800">
+          <h4 class="mb-3 text-sm font-semibold text-gray-800 dark:text-white">Payment Method Breakdown</h4>
+          <apx-chart [series]="paymentChartSeries" [chart]="chartBase" [xaxis]="{ categories: paymentChartCategories }"
+            [colors]="['#10b981']" [plotOptions]="chartPlot" [grid]="chartGrid" [dataLabels]="chartDataLabels"></apx-chart>
+        </div>
+      } @else if (!isLoading) {
+        <p class="mt-6 text-center text-sm text-gray-500">No sales data for the selected period.</p>
       }
-      <div class="mt-4 overflow-x-auto">
-        <table class="w-full min-w-[400px]">
-          <thead>
-            <tr class="border-b border-gray-200 dark:border-gray-800">
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Date</th>
-              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Transactions</th>
-              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Total Sales</th>
-            </tr>
-          </thead>
-          <tbody>
-            @for (row of posDailySales?.byDay ?? []; track row.saleDate) {
-              <tr class="border-b border-gray-100 dark:border-gray-800/70">
-                <td class="px-4 py-3 text-sm text-gray-700 dark:text-gray-300">{{ row.saleDate | date:'MMM dd, yyyy' }}</td>
-                <td class="px-4 py-3 text-right text-sm text-gray-700 dark:text-gray-300">{{ row.transactionCount }}</td>
-                <td class="px-4 py-3 text-right text-sm font-medium text-gray-800 dark:text-gray-200">₱{{ row.totalSales | number:'1.2-2' }}</td>
-              </tr>
-            } @empty {
-              <tr><td colspan="3" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data. Click Generate Report.</td></tr>
-            }
-          </tbody>
-        </table>
-      </div>
     }
 
     <!-- ── POS Top Products ── -->
@@ -334,7 +358,7 @@
                 <td class="px-4 py-3 text-right text-sm font-medium text-gray-800 dark:text-gray-200">₱{{ row.totalAmount | number:'1.2-2' }}</td>
               </tr>
             } @empty {
-              <tr><td colspan="4" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data. Click Generate Report.</td></tr>
+              <tr><td colspan="4" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data for the selected period.</td></tr>
             }
           </tbody>
         </table>
@@ -360,7 +384,7 @@
                 <td class="px-4 py-3 text-right text-sm font-medium text-gray-800 dark:text-gray-200">₱{{ row.totalAmount | number:'1.2-2' }}</td>
               </tr>
             } @empty {
-              <tr><td colspan="3" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data. Click Generate Report.</td></tr>
+              <tr><td colspan="3" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data for the selected period.</td></tr>
             }
           </tbody>
         </table>
@@ -388,7 +412,7 @@
                 <td class="px-4 py-3 text-right text-sm font-medium text-gray-800 dark:text-gray-200">₱{{ row.retailValue | number:'1.2-2' }}</td>
               </tr>
             } @empty {
-              <tr><td colspan="4" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data. Click Generate Report.</td></tr>
+              <tr><td colspan="4" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data for the selected period.</td></tr>
             }
           </tbody>
         </table>
@@ -418,7 +442,7 @@
                 <td class="px-4 py-3 text-right text-sm text-gray-600 dark:text-gray-400">₱{{ row.sellingPrice | number:'1.2-2' }}</td>
               </tr>
             } @empty {
-              <tr><td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data. Click Generate Report.</td></tr>
+              <tr><td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No data for the selected period.</td></tr>
             }
           </tbody>
         </table>
