@@ -115,10 +115,10 @@
                 <p class="truncate text-sm font-semibold text-gray-900 dark:text-white">{{ line.variantName }}</p>
                 <p class="text-xs text-gray-500">{{ line.productName }} · {{ formatQuantityWithUnit(line) }}</p>
                 @if (hasSalePrice(line)) {
-                  <p class="text-[10px] text-gray-400 line-through">₱{{ formatCurrency(line.sellingPrice) }}</p>
-                  <p class="text-sm font-semibold text-red-600">₱{{ formatCurrency(lineUnitPrice(line)) }}</p>
+                  <p class="text-[10px] text-gray-400 line-through">₱{{ formatCurrency(line.sellingPrice * line.quantity) }}</p>
+                  <p class="text-sm font-semibold text-red-600">₱{{ formatCurrency(lineTotal(line)) }}</p>
                 } @else {
-                  <p class="text-sm font-semibold text-emerald-600">₱{{ formatCurrency(lineUnitPrice(line)) }}</p>
+                  <p class="text-sm font-semibold text-emerald-600">₱{{ formatCurrency(lineTotal(line)) }}</p>
                 }
                 <div class="mt-2 flex items-center gap-2">
                   <button type="button" (click)="decrementLine(line)" class="flex h-9 w-9 items-center justify-center rounded-lg border text-lg font-bold dark:border-gray-700">−</button>
@@ -297,7 +297,7 @@
           </div>
           <label class="block">
             <span class="mb-2 block text-sm font-medium">Amount Received (₱)</span>
-            <input type="number" min="0" step="0.01" [(ngModel)]="amountReceived" class="w-full rounded-xl border px-4 py-4 text-2xl font-semibold dark:border-gray-700 dark:bg-gray-800" />
+            <input #amountReceivedInput type="number" min="0" step="0.01" [(ngModel)]="amountReceived" class="w-full rounded-xl border px-4 py-4 text-2xl font-semibold dark:border-gray-700 dark:bg-gray-800" />
           </label>
           <div class="rounded-xl border-2 px-4 py-4 text-center" [class.border-emerald-300]="changeDue() >= 0" [class.border-red-300]="changeDue() < 0">
             <p class="text-sm text-gray-500">Change</p>

@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ConfirmDialogComponent } from '../../../shared/components/ui/confirm-dialog/confirm-dialog.component';
 import {
@@ -56,6 +56,8 @@ export class PosDashboardComponent implements OnInit {
   private confirmAction: (() => void) | null = null;
 
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
+
+  @ViewChild('amountReceivedInput') amountReceivedInput?: ElementRef<HTMLInputElement>;
 
   constructor(
     private readonly posService: PosService,
@@ -397,6 +399,7 @@ export class PosDashboardComponent implements OnInit {
     this.amountReceived = 0;
     this.checkoutSuccess = null;
     this.showCheckoutModal = true;
+    setTimeout(() => this.amountReceivedInput?.nativeElement.focus(), 0);
   }
 
   closeCheckoutModal(): void {

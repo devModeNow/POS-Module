@@ -14,6 +14,7 @@ import { NotificationService } from '../../shared/services/notification.service'
 type MainTab = 'inventory' | 'purchase-orders' | 'reports';
 type DrawerMode = 'create' | 'edit';
 type PosInventoryView = 'products' | 'variants';
+type InventoryItemFilter = 'active' | 'deleted';
 
 @Component({
   selector: 'app-inventory',
@@ -29,6 +30,7 @@ export class InventoryComponent implements OnInit {
   variantItems: InventoryVariantRow[] = [];
   productItems: InventoryProductRow[] = [];
   posInventoryView: PosInventoryView = 'products';
+  inventoryItemFilter: InventoryItemFilter = 'active';
   productForm = this.emptyProductForm();
   editingProductId: number | null = null;
   search = '';
@@ -48,6 +50,14 @@ export class InventoryComponent implements OnInit {
   // Pagination
   currentPage = 1;
   pageSize = 20;
+  readonly pageSizeOptions = [10, 20, 50];
+  get isDeletedView(): boolean {
+    return this.isPosOrg && this.inventoryItemFilter === 'deleted';
+  }
+  get paginatedListLength(): number {
+    if (!this.isPosOrg) return this.filteredItems.length;
+    return this.posInventoryView === 'products' ? this.filteredProducts.length : this.filteredVariants.length;
+  }
   get totalPages(): number {
     const count = this.isPosOrg
       ? (this.posInventoryView === 'products' ? this.filteredProducts.length : this.filteredVariants.length)
@@ -96,6 +106,12 @@ export class InventoryComponent implements OnInit {
   goToPage(page: number): void { if (page >= 1 && page <= this.totalPages) this.currentPage = page; }
   nextPage(): void { this.goToPage(this.currentPage + 1); }
   prevPage(): void { this.goToPage(this.currentPage - 1); }
+  onPageSizeChange(): void { this.currentPage = 1; }
+
+  onInventoryItemFilterChange(): void {
+    this.currentPage = 1;
+    void this.loadItems();
+  }
 
   // PO tab
   purchaseOrders: PurchaseOrder[] = [];
@@ -192,14 +208,17 @@ export class InventoryComponent implements OnInit {
     this.currentPage = 1;
     try {
       if (this.isPosOrg) {
+        const deletedOnly = this.inventoryItemFilter === 'deleted';
         const [variantsR, productsR] = await Promise.all([
           this.posSvc.getInventoryVariants(
             this.search || undefined,
             this.categoryFilter || undefined,
+            deletedOnly,
           ),
           this.posSvc.getInventoryProducts(
             this.search || undefined,
             this.categoryFilter || undefined,
+            deletedOnly,
           ),
         ]);
         this.variantItems = variantsR?.success !== false && Array.isArray(variantsR?.data) ? variantsR.data : [];
@@ -618,8 +637,8 @@ export class InventoryComponent implements OnInit {
 
   requestDeleteVariant(variant: InventoryVariantRow): void {
     this.openConfirm(
-      'Delete variant?',
-      `Delete "${variant.variantName}" from ${variant.productName}? Other variants will be kept.`,
+      'Remove variant?',
+      `Remove "${variant.variantName}" from ${variant.productName}? It will be hidden from sales and inventory lists. You can restore it from Deleted Items.`,
       () => void this.deleteVariant(variant.id),
       'danger',
     );
@@ -649,11 +668,55 @@ export class InventoryComponent implements OnInit {
 
   private requestDeleteProductById(productId: number, productName: string): void {
     this.openConfirm(
-      'Delete product type?',
-      `Delete "${productName}" and all its variants? This cannot be undone.`,
+      'Remove product?',
+      `Remove "${productName}" and all its variants? Items will be hidden, not permanently deleted. Restore them from Deleted Items.`,
       () => void this.deleteProduct(productId),
       'danger',
     );
+  }
+
+  requestRestoreVariant(variant: InventoryVariantRow): void {
+    this.openConfirm(
+      'Restore variant?',
+      `Restore "${variant.variantName}" under ${variant.productName}?`,
+      () => void this.restoreVariant(variant.id),
+    );
+  }
+
+  async restoreVariant(variantId: number): Promise<void> {
+    try {
+      const r = await this.posSvc.restoreInventoryVariant(variantId);
+      if (!r.success) {
+        this.notify.error('Failed', r.message ?? 'Could not restore variant.');
+        return;
+      }
+      this.notify.success('Restored', 'Variant restored.');
+      await this.loadItems();
+    } catch {
+      this.notify.error('Error', 'Failed to restore variant.');
+    }
+  }
+
+  requestRestoreProductRow(product: InventoryProductRow): void {
+    this.openConfirm(
+      'Restore product?',
+      `Restore "${product.name}" and all its variants?`,
+      () => void this.restoreProduct(product.id),
+    );
+  }
+
+  async restoreProduct(productId: number): Promise<void> {
+    try {
+      const r = await this.posSvc.restoreInventoryProduct(productId);
+      if (!r.success) {
+        this.notify.error('Failed', r.message ?? 'Could not restore product.');
+        return;
+      }
+      this.notify.success('Restored', 'Product restored.');
+      await this.loadItems();
+    } catch {
+      this.notify.error('Error', 'Failed to restore product.');
+    }
   }
 
   async deleteProduct(productId: number): Promise<void> {

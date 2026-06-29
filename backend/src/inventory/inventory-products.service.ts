@@ -115,9 +115,10 @@ export class InventoryProductsService {
       .filter((u) => u.unitType.length > 0);
   }
 
-  private async loadUnitsMap(variantIds: number[]) {
+  private async loadUnitsMap(variantIds: number[], activeOnly = true) {
     const map = new Map<number, VariantUnitRow[]>();
     if (!variantIds.length) return map;
+    const activeClause = activeOnly ? 'AND is_active = TRUE' : '';
     const result = await this.db.query<{
       variantId: number;
       unitType: string;
@@ -129,7 +130,7 @@ export class InventoryProductsService {
               selling_price AS "sellingPrice", sale_price AS "salePrice",
               is_manual_entry AS "isManualEntry"
        FROM tblinventory_variant_units
-       WHERE variant_id = ANY($1::bigint[]) AND is_active = TRUE
+       WHERE variant_id = ANY($1::bigint[]) ${activeClause}
        ORDER BY sort_order ASC, unit_type ASC`,
       [variantIds],
     );
@@ -222,10 +223,12 @@ export class InventoryProductsService {
     return null;
   }
 
-  async listProducts(orgId: number, search?: string, category?: string) {
+  async listProducts(orgId: number, search?: string, category?: string, deletedOnly = false) {
     try {
       const params: unknown[] = [orgId];
       let extra = '';
+      const productActive = deletedOnly ? 'FALSE' : 'TRUE';
+      const variantActive = deletedOnly ? 'FALSE' : 'TRUE';
       if (search?.trim()) {
         params.push(`%${search.trim()}%`);
         const idx = params.length;
@@ -248,6 +251,7 @@ export class InventoryProductsService {
         maxPrice: string;
         totalStock: string;
         hasSale: boolean;
+        isActive: boolean;
       }>(
         `SELECT p.id,
                 p.name,
@@ -259,10 +263,11 @@ export class InventoryProductsService {
                 COALESCE(MIN(v.selling_price), 0)::text AS "minPrice",
                 COALESCE(MAX(v.selling_price), 0)::text AS "maxPrice",
                 COALESCE(SUM(v.stock_qty), 0)::text AS "totalStock",
-                BOOL_OR(v.sale_price IS NOT NULL AND v.sale_price > 0 AND v.sale_price < v.selling_price) AS "hasSale"
+                BOOL_OR(v.sale_price IS NOT NULL AND v.sale_price > 0 AND v.sale_price < v.selling_price) AS "hasSale",
+                p.is_active AS "isActive"
          FROM tblinventory_products p
-         LEFT JOIN tblinventory_variants v ON v.product_id = p.id AND v.is_active = TRUE
-         WHERE p.org_id = $1 AND p.is_active = TRUE ${extra}
+         LEFT JOIN tblinventory_variants v ON v.product_id = p.id AND v.is_active = ${variantActive}
+         WHERE p.org_id = $1 AND p.is_active = ${productActive} ${extra}
          GROUP BY p.id
          ORDER BY p.category ASC NULLS LAST, p.name ASC`,
         params,
@@ -282,6 +287,7 @@ export class InventoryProductsService {
           maxPrice: Number(r.maxPrice),
           totalStock: Number(r.totalStock),
           hasSale: r.hasSale,
+          isActive: r.isActive,
         })),
       };
     } catch (e) {
@@ -331,10 +337,11 @@ export class InventoryProductsService {
     }
   }
 
-  async listAllVariants(orgId: number, search?: string, category?: string) {
+  async listAllVariants(orgId: number, search?: string, category?: string, deletedOnly = false) {
     try {
       const params: unknown[] = [orgId];
       let extra = '';
+      const variantActive = deletedOnly ? 'FALSE' : 'TRUE';
       if (search?.trim()) {
         params.push(`%${search.trim()}%`);
         const idx = params.length;
@@ -360,10 +367,11 @@ export class InventoryProductsService {
                 v.unit_type AS "unitType",
                 v.margin_percent AS "marginPercent",
                 v.image_url AS "imageUrl",
-                p.image_url AS "productImageUrl"
+                p.image_url AS "productImageUrl",
+                v.is_active AS "isActive"
          FROM tblinventory_variants v
          INNER JOIN tblinventory_products p ON p.id = v.product_id
-         WHERE v.org_id = $1 AND v.is_active = TRUE AND p.is_active = TRUE ${extra}
+         WHERE v.org_id = $1 AND v.is_active = ${variantActive} ${extra}
          ORDER BY p.category ASC NULLS LAST, p.name ASC, v.sort_order ASC`,
         params,
       );
@@ -376,7 +384,7 @@ export class InventoryProductsService {
         marginPercent: r['marginPercent'] != null ? Number(r['marginPercent']) : null,
         imageUrl: r['imageUrl'] ?? r['productImageUrl'] ?? null,
       })) as Array<{ id: number } & Record<string, unknown>>;
-      const unitsMap = await this.loadUnitsMap(rows.map((r) => r.id));
+      const unitsMap = await this.loadUnitsMap(rows.map((r) => r.id), !deletedOnly);
 
       return {
         success: true,
@@ -586,19 +594,85 @@ export class InventoryProductsService {
     try {
       await this.db.withTransaction(async (client) => {
         await client.query(
+          `UPDATE tblinventory_variant_units SET is_active = FALSE, updated_at = NOW()
+           WHERE org_id = $2 AND variant_id IN (
+             SELECT id FROM tblinventory_variants WHERE product_id = $1 AND org_id = $2
+           )`,
+          [productId, orgId],
+        );
+        await client.query(
           `UPDATE tblinventory_variants SET is_active = FALSE, updated_at = NOW()
            WHERE product_id = $1 AND org_id = $2`,
           [productId, orgId],
         );
-        await client.query(
+        const result = await client.query(
           `UPDATE tblinventory_products SET is_active = FALSE, updated_at = NOW()
-           WHERE id = $1 AND org_id = $2`,
+           WHERE id = $1 AND org_id = $2 RETURNING id`,
+          [productId, orgId],
+        );
+        if (result.rowCount === 0) throw new Error('Product not found');
+      });
+      return { success: true };
+    } catch (e) {
+      return { success: false, message: e instanceof Error ? e.message : 'Failed to delete product' };
+    }
+  }
+
+  async restoreProduct(productId: number, orgId: number) {
+    try {
+      await this.db.withTransaction(async (client) => {
+        const product = await client.query<{ id: number }>(
+          `UPDATE tblinventory_products SET is_active = TRUE, updated_at = NOW()
+           WHERE id = $1 AND org_id = $2 AND is_active = FALSE
+           RETURNING id`,
+          [productId, orgId],
+        );
+        if (product.rowCount === 0) throw new Error('Deleted product not found');
+
+        await client.query(
+          `UPDATE tblinventory_variants SET is_active = TRUE, updated_at = NOW()
+           WHERE product_id = $1 AND org_id = $2`,
+          [productId, orgId],
+        );
+        await client.query(
+          `UPDATE tblinventory_variant_units SET is_active = TRUE, updated_at = NOW()
+           WHERE org_id = $2 AND variant_id IN (
+             SELECT id FROM tblinventory_variants WHERE product_id = $1 AND org_id = $2
+           )`,
           [productId, orgId],
         );
       });
       return { success: true };
     } catch (e) {
-      return { success: false, message: e instanceof Error ? e.message : 'Failed to delete product' };
+      return { success: false, message: e instanceof Error ? e.message : 'Failed to restore product' };
+    }
+  }
+
+  async restoreVariant(variantId: number, orgId: number) {
+    try {
+      await this.db.withTransaction(async (client) => {
+        const variant = await client.query<{ productId: number }>(
+          `UPDATE tblinventory_variants SET is_active = TRUE, updated_at = NOW()
+           WHERE id = $1 AND org_id = $2 AND is_active = FALSE
+           RETURNING product_id AS "productId"`,
+          [variantId, orgId],
+        );
+        if (variant.rowCount === 0) throw new Error('Deleted variant not found');
+
+        await client.query(
+          `UPDATE tblinventory_variant_units SET is_active = TRUE, updated_at = NOW()
+           WHERE variant_id = $1 AND org_id = $2`,
+          [variantId, orgId],
+        );
+        await client.query(
+          `UPDATE tblinventory_products SET is_active = TRUE, updated_at = NOW()
+           WHERE id = $1 AND org_id = $2 AND is_active = FALSE`,
+          [variant.rows[0].productId, orgId],
+        );
+      });
+      return { success: true };
+    } catch (e) {
+      return { success: false, message: e instanceof Error ? e.message : 'Failed to restore variant' };
     }
   }
 

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
@@ -13,13 +13,23 @@ export class InventoryProductsController {
   constructor(private readonly svc: InventoryProductsService) {}
 
   @Get()
-  listProducts(@Query('search') search: string, @Query('category') category: string, @Req() req: AuthReq) {
-    return this.svc.listProducts(orgId(req), search, category);
+  listProducts(
+    @Query('search') search: string,
+    @Query('category') category: string,
+    @Query('deleted') deleted: string,
+    @Req() req: AuthReq,
+  ) {
+    return this.svc.listProducts(orgId(req), search, category, deleted === 'true');
   }
 
   @Get('variants')
-  listVariants(@Query('search') search: string, @Query('category') category: string, @Req() req: AuthReq) {
-    return this.svc.listAllVariants(orgId(req), search, category);
+  listVariants(
+    @Query('search') search: string,
+    @Query('category') category: string,
+    @Query('deleted') deleted: string,
+    @Req() req: AuthReq,
+  ) {
+    return this.svc.listAllVariants(orgId(req), search, category, deleted === 'true');
   }
 
   @Post('variant/:variantId/image')
@@ -36,6 +46,18 @@ export class InventoryProductsController {
   @Delete('variant/:variantId/image')
   removeVariantImage(@Param('variantId') variantId: string, @Req() req: AuthReq) {
     return this.svc.removeVariantImageFile(+variantId, orgId(req));
+  }
+
+  @Patch('variant/:variantId/restore')
+  restoreVariant(@Param('variantId') variantId: string, @Req() req: AuthReq) {
+    return this.svc.restoreVariant(+variantId, orgId(req));
+  }
+
+  @Patch(':id/restore')
+  restoreProduct(@Param('id') id: string, @Req() req: AuthReq) {
+    const numId = this.parseNumericId(id);
+    if (numId == null) return { success: false, message: 'Product not found' };
+    return this.svc.restoreProduct(numId, orgId(req));
   }
 
   @Get(':id')

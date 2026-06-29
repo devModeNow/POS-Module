@@ -249,10 +249,11 @@ export class PosService {
     return r.data;
   }
 
-  async getInventoryVariants(search?: string, category?: string) {
+  async getInventoryVariants(search?: string, category?: string, deletedOnly = false) {
     const params: Record<string, string> = {};
     if (search) params['search'] = search;
     if (category) params['category'] = category;
+    if (deletedOnly) params['deleted'] = 'true';
     const r = await apiClient.get<{ success: boolean; data?: InventoryVariantRow[]; message?: string }>(
       '/inventory/products/variants',
       { params: Object.keys(params).length ? params : undefined },
@@ -260,10 +261,11 @@ export class PosService {
     return r.data;
   }
 
-  async getInventoryProducts(search?: string, category?: string) {
+  async getInventoryProducts(search?: string, category?: string, deletedOnly = false) {
     const params: Record<string, string> = {};
     if (search) params['search'] = search;
     if (category) params['category'] = category;
+    if (deletedOnly) params['deleted'] = 'true';
     const r = await apiClient.get<{ success: boolean; data?: InventoryProductRow[]; message?: string }>(
       '/inventory/products',
       { params: Object.keys(params).length ? params : undefined },
@@ -292,6 +294,19 @@ export class PosService {
   async deleteInventoryVariant(variantId: number) {
     const r = await apiClient.delete<{ success: boolean; message?: string }>(
       `/inventory/products/variant/${variantId}`,
+    );
+    return r.data;
+  }
+
+  async restoreInventoryProduct(id: number) {
+    const r = await apiClient.patch<{ success: boolean; message?: string }>(`/inventory/products/${id}/restore`, {});
+    return r.data;
+  }
+
+  async restoreInventoryVariant(variantId: number) {
+    const r = await apiClient.patch<{ success: boolean; message?: string }>(
+      `/inventory/products/variant/${variantId}/restore`,
+      {},
     );
     return r.data;
   }
