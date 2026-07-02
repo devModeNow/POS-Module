@@ -15,6 +15,14 @@ type MainTab = 'inventory' | 'purchase-orders' | 'reports';
 type DrawerMode = 'create' | 'edit';
 type PosInventoryView = 'products' | 'variants';
 type InventoryItemFilter = 'active' | 'deleted';
+type SortDirection = 'asc' | 'desc';
+
+type InventoryTableColumn = {
+  key: string;
+  label: string;
+  sortable: boolean;
+  hideable: boolean;
+};
 
 @Component({
   selector: 'app-inventory',
@@ -33,6 +41,8 @@ export class InventoryComponent implements OnInit {
   inventoryItemFilter: InventoryItemFilter = 'active';
   productForm = this.emptyProductForm();
   editingProductId: number | null = null;
+  editingVariantOnly = false;
+  editingVariantId: number | null = null;
   search = '';
   categoryFilter = '';
   categoryOptions: { id: number; name: string }[] = [];
@@ -51,6 +61,70 @@ export class InventoryComponent implements OnInit {
   currentPage = 1;
   pageSize = 20;
   readonly pageSizeOptions = [10, 20, 50];
+  sortColumn = '';
+  sortDirection: SortDirection = 'asc';
+  tableSettingsOpen = false;
+
+  readonly variantTableColumns: InventoryTableColumn[] = [
+    { key: 'image', label: 'Image', sortable: false, hideable: false },
+    { key: 'variantName', label: 'Variant', sortable: true, hideable: true },
+    { key: 'productName', label: 'Product', sortable: true, hideable: true },
+    { key: 'category', label: 'Category', sortable: true, hideable: true },
+    { key: 'unitType', label: 'Unit', sortable: true, hideable: true },
+    { key: 'stockQty', label: 'Stock', sortable: true, hideable: true },
+    { key: 'sellingPrice', label: 'Selling', sortable: true, hideable: true },
+    { key: 'actions', label: 'Actions', sortable: false, hideable: false },
+  ];
+
+  readonly productTableColumns: InventoryTableColumn[] = [
+    { key: 'image', label: 'Image', sortable: false, hideable: false },
+    { key: 'name', label: 'Product', sortable: true, hideable: true },
+    { key: 'category', label: 'Category', sortable: true, hideable: true },
+    { key: 'variantCount', label: 'Variants', sortable: true, hideable: true },
+    { key: 'totalStock', label: 'Total stock', sortable: true, hideable: true },
+    { key: 'priceRange', label: 'Price range', sortable: true, hideable: true },
+    { key: 'actions', label: 'Actions', sortable: false, hideable: false },
+  ];
+
+  variantColumnVisible: Record<string, boolean> = Object.fromEntries(
+    this.variantTableColumns.map((c) => [c.key, true]),
+  );
+  productColumnVisible: Record<string, boolean> = Object.fromEntries(
+    this.productTableColumns.map((c) => [c.key, true]),
+  );
+
+  get activeTableColumns(): InventoryTableColumn[] {
+    return this.posInventoryView === 'variants' ? this.variantTableColumns : this.productTableColumns;
+  }
+
+  get activeColumnVisible(): Record<string, boolean> {
+    return this.posInventoryView === 'variants' ? this.variantColumnVisible : this.productColumnVisible;
+  }
+
+  get visibleColumnCount(): number {
+    return this.activeTableColumns.filter((c) => this.activeColumnVisible[c.key] !== false).length;
+  }
+
+  get isEditingVariantOnly(): boolean {
+    return this.editingVariantOnly && this.editingVariantId != null;
+  }
+
+  get itemDrawerTitle(): string {
+    if (!this.isPosOrg) {
+      return this.itemDrawerMode === 'create' ? 'Add Item' : 'Edit Item';
+    }
+    if (this.isEditingVariantOnly) return 'Edit Variant';
+    return this.itemDrawerMode === 'create' ? 'Add Product' : 'Edit Product';
+  }
+
+  get sortedFilteredVariants(): InventoryVariantRow[] {
+    return this.applySort(this.filteredVariants, this.sortColumn);
+  }
+
+  get sortedFilteredProducts(): InventoryProductRow[] {
+    return this.applySort(this.filteredProducts, this.sortColumn);
+  }
+
   get isDeletedView(): boolean {
     return this.isPosOrg && this.inventoryItemFilter === 'deleted';
   }
@@ -97,16 +171,72 @@ export class InventoryComponent implements OnInit {
   }
   get paginatedVariants(): InventoryVariantRow[] {
     const start = (this.currentPage - 1) * this.pageSize;
-    return this.filteredVariants.slice(start, start + this.pageSize);
+    return this.sortedFilteredVariants.slice(start, start + this.pageSize);
   }
   get paginatedProducts(): InventoryProductRow[] {
     const start = (this.currentPage - 1) * this.pageSize;
-    return this.filteredProducts.slice(start, start + this.pageSize);
+    return this.sortedFilteredProducts.slice(start, start + this.pageSize);
   }
   goToPage(page: number): void { if (page >= 1 && page <= this.totalPages) this.currentPage = page; }
   nextPage(): void { this.goToPage(this.currentPage + 1); }
   prevPage(): void { this.goToPage(this.currentPage - 1); }
   onPageSizeChange(): void { this.currentPage = 1; }
+
+  toggleSort(column: string): void {
+    if (this.sortColumn === column) {
+      this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+      this.sortColumn = column;
+      this.sortDirection = 'asc';
+    }
+    this.currentPage = 1;
+  }
+
+  sortIndicator(column: string): string {
+    if (this.sortColumn !== column) return '';
+    return this.sortDirection === 'asc' ? ' ↑' : ' ↓';
+  }
+
+  isColumnVisible(key: string): boolean {
+    return this.activeColumnVisible[key] !== false;
+  }
+
+  toggleColumnVisibility(key: string): void {
+    const target = this.posInventoryView === 'variants' ? this.variantColumnVisible : this.productColumnVisible;
+    target[key] = !target[key];
+  }
+
+  resetTableSettings(): void {
+    for (const col of this.activeTableColumns) {
+      if (col.hideable) {
+        this.activeColumnVisible[col.key] = true;
+      }
+    }
+    this.sortColumn = '';
+    this.sortDirection = 'asc';
+    this.currentPage = 1;
+  }
+
+  private applySort<T>(rows: T[], column: string): T[] {
+    if (!column) return rows;
+    const dir = this.sortDirection === 'asc' ? 1 : -1;
+    return [...rows].sort((left, right) => {
+      const leftValue = this.sortValue(left as Record<string, unknown>, column);
+      const rightValue = this.sortValue(right as Record<string, unknown>, column);
+      if (typeof leftValue === 'number' && typeof rightValue === 'number') {
+        return (leftValue - rightValue) * dir;
+      }
+      return String(leftValue).localeCompare(String(rightValue), undefined, { sensitivity: 'base' }) * dir;
+    });
+  }
+
+  private sortValue(row: Record<string, unknown>, column: string): string | number {
+    if (column === 'priceRange') return Number(row['minPrice'] ?? 0);
+    const value = row[column];
+    if (typeof value === 'number') return value;
+    if (value == null) return '';
+    return String(value);
+  }
 
   onInventoryItemFilterChange(): void {
     this.currentPage = 1;
@@ -259,6 +389,8 @@ export class InventoryComponent implements OnInit {
     if (this.isPosOrg) {
       this.productForm = this.emptyProductForm();
       this.editingProductId = null;
+      this.editingVariantOnly = false;
+      this.editingVariantId = null;
       this.itemDrawerMode = 'create';
       this.isItemDrawerOpen = true;
       return;
@@ -294,16 +426,21 @@ export class InventoryComponent implements OnInit {
     this.isItemDrawerOpen = true;
   }
 
-  closeItemDrawer(): void { if (!this.isSavingItem) this.isItemDrawerOpen = false; }
+  closeItemDrawer(): void {
+    if (!this.isSavingItem) {
+      this.isItemDrawerOpen = false;
+      this.editingVariantOnly = false;
+      this.editingVariantId = null;
+    }
+  }
 
-  readonly unitTypes = ['piece', 'grams', 'kilo', 'pack', 'sack', 'liter', 'box', 'bottle', 'can', 'tray', 'manual'];
+  readonly unitTypes = ['piece', 'grams', 'kilo', 'pack', 'sack', 'liter', 'box', 'bottle', 'can', 'tray'];
   readonly unitTypeOptions: { value: string; label: string }[] = [
     { value: 'piece', label: 'Piece' },
     { value: 'pack', label: 'Pack' },
     { value: 'kilo', label: 'Kilo' },
     { value: 'sack', label: 'Sack' },
-    { value: 'grams', label: 'Grams (fixed unit)' },
-    { value: 'manual', label: 'Manual (enter grams at POS)' },
+    { value: 'grams', label: 'Grams' },
     { value: 'liter', label: 'Liter' },
     { value: 'box', label: 'Box' },
     { value: 'bottle', label: 'Bottle' },
@@ -312,9 +449,8 @@ export class InventoryComponent implements OnInit {
   ];
 
   unitPriceHint(unitType: string): string {
-    if (unitType === 'manual') return 'Price per gram';
     if (unitType === 'kilo') return 'Price per kilo';
-    if (unitType === 'grams') return 'Price per gram pack/unit';
+    if (unitType === 'grams') return 'Price per gram';
     return 'Selling price per unit';
   }
 
@@ -364,26 +500,35 @@ export class InventoryComponent implements OnInit {
   onPosInventoryViewChange(view: PosInventoryView): void {
     this.posInventoryView = view;
     this.currentPage = 1;
+    this.sortColumn = '';
+    this.sortDirection = 'asc';
+    this.tableSettingsOpen = false;
   }
 
-  async openEditProductById(productId: number): Promise<void> {
+  async openEditProductById(productId: number, singleVariantId?: number): Promise<void> {
     try {
       const r = await this.posSvc.getInventoryProduct(productId);
       if (!r.success || !r.data) {
         this.notify.error('Error', r.message ?? 'Failed to load product.');
         return;
       }
-      await this.populateProductForm(r.data);
+      await this.populateProductForm(r.data, singleVariantId);
     } catch {
       this.notify.error('Error', 'Failed to load product.');
     }
   }
 
   async openEditProduct(variant: InventoryVariantRow): Promise<void> {
-    await this.openEditProductById(variant.productId);
+    await this.openEditProductById(variant.productId, variant.id);
   }
 
-  private async populateProductForm(d: {
+  private normalizeUnitType(unitType: string | null | undefined): string {
+    const normalized = String(unitType ?? 'piece').trim().toLowerCase();
+    return normalized === 'manual' ? 'grams' : normalized || 'piece';
+  }
+
+  private async populateProductForm(
+    d: {
     id: number;
     name: string;
     category?: string | null;
@@ -391,7 +536,9 @@ export class InventoryComponent implements OnInit {
     description?: string | null;
     imageUrl?: string | null;
     variants?: Array<InventoryVariantRow & { units?: Array<{ unitType: string; sellingPrice: number; salePrice?: number | null; isManualEntry?: boolean }> }>;
-  }): Promise<void> {
+  },
+    singleVariantId?: number,
+  ): Promise<void> {
       this.productForm = {
         id: d.id,
         name: d.name,
@@ -409,18 +556,18 @@ export class InventoryComponent implements OnInit {
           costPrice: v.costPrice ?? 0,
           sellingPrice: v.sellingPrice ?? 0,
           salePrice: v.salePrice ?? null,
-          unitType: v.unitType ?? 'piece',
+          unitType: this.normalizeUnitType(v.unitType),
           marginPercent: v.marginPercent ?? null,
           units: (v.units?.length ? v.units : [{
-            unitType: v.unitType ?? 'piece',
+            unitType: this.normalizeUnitType(v.unitType),
             sellingPrice: v.sellingPrice ?? 0,
             salePrice: v.salePrice ?? null,
-            isManualEntry: v.unitType === 'manual',
+            isManualEntry: false,
           }]).map((u) => ({
-            unitType: u.unitType,
+            unitType: this.normalizeUnitType(u.unitType),
             sellingPrice: u.sellingPrice ?? 0,
             salePrice: u.salePrice ?? null,
-            isManualEntry: Boolean(u.isManualEntry) || u.unitType === 'manual',
+            isManualEntry: false,
           })),
           imageUrl: v.imageUrl ?? null,
           imagePreview: v.imageUrl ?? null,
@@ -429,6 +576,18 @@ export class InventoryComponent implements OnInit {
       };
       if (!this.productForm.variants.length) {
         this.productForm.variants = [this.emptyVariantRow()];
+      }
+      if (singleVariantId) {
+        this.productForm.variants = this.productForm.variants.filter((v) => v.id === singleVariantId);
+        if (!this.productForm.variants.length) {
+          this.notify.error('Error', 'Variant not found on this product.');
+          return;
+        }
+        this.editingVariantOnly = true;
+        this.editingVariantId = singleVariantId;
+      } else {
+        this.editingVariantOnly = false;
+        this.editingVariantId = null;
       }
       this.editingProductId = d.id;
       this.itemDrawerMode = 'edit';
@@ -440,7 +599,7 @@ export class InventoryComponent implements OnInit {
   }
 
   addUnitRow(variantIndex: number): void {
-    this.productForm.variants[variantIndex].units.push(this.emptyUnitRow());
+    this.productForm.variants[variantIndex].units.unshift(this.emptyUnitRow());
   }
 
   removeUnitRow(variantIndex: number, unitIndex: number): void {
@@ -452,7 +611,7 @@ export class InventoryComponent implements OnInit {
 
   onUnitTypeChange(variantIndex: number, unitIndex: number): void {
     const unit = this.productForm.variants[variantIndex].units[unitIndex];
-    unit.isManualEntry = unit.unitType === 'manual';
+    unit.isManualEntry = false;
     this.syncVariantPrimaryUnit(variantIndex);
   }
 
@@ -532,7 +691,7 @@ export class InventoryComponent implements OnInit {
 
   requestSaveProduct(): void {
     if (this.isSavingItem) return;
-    if (!this.productForm.name.trim()) {
+    if (!this.isEditingVariantOnly && !this.productForm.name.trim()) {
       this.notify.warning('Required', 'Product name is required.');
       return;
     }
@@ -547,8 +706,34 @@ export class InventoryComponent implements OnInit {
       this.notify.warning('Duplicate variants', 'Each variant must have a unique name.');
       return;
     }
-    const label = this.itemDrawerMode === 'create' ? 'Add this product?' : 'Save changes to this product?';
+    const label = this.isEditingVariantOnly
+      ? 'Save changes to this variant?'
+      : this.itemDrawerMode === 'create'
+        ? 'Add this product?'
+        : 'Save changes to this product?';
     this.openConfirm('Confirm save', label, () => void this.saveProduct());
+  }
+
+  private buildVariantPayload(v: (typeof this.productForm.variants)[number]) {
+    const sellingPrice = this.toFiniteNumber(v.units[0]?.sellingPrice ?? v.sellingPrice, 0);
+    const costPrice = this.toFiniteNumber(v.costPrice, 0);
+    return {
+      id: v.id,
+      variantName: v.variantName.trim(),
+      stockQty: this.toFiniteNumber(v.stockQty, 0),
+      stockWarning: this.toFiniteNumber(v.stockWarning, 0),
+      costPrice,
+      sellingPrice,
+      salePrice: v.units[0]?.salePrice ?? v.salePrice ?? null,
+      unitType: v.units[0]?.unitType ?? v.unitType,
+      marginPercent: this.computeMargin(costPrice, sellingPrice),
+      units: v.units.map((u) => ({
+        unitType: u.unitType,
+        sellingPrice: this.toFiniteNumber(u.sellingPrice, 0),
+        salePrice: u.salePrice ?? null,
+        isManualEntry: false,
+      })),
+    };
   }
 
   async saveProduct(): Promise<void> {
@@ -560,40 +745,44 @@ export class InventoryComponent implements OnInit {
         await this.loadCategoryOptions();
       }
       const productId = this.productForm.id ?? this.editingProductId ?? undefined;
+      const variantPayloads = this.productForm.variants
+        .filter((v) => v.variantName.trim())
+        .map((v) => this.buildVariantPayload(v));
+
+      if (!variantPayloads.length) {
+        this.notify.warning('Required', 'Add at least one variant.');
+        return;
+      }
+
+      if (this.isEditingVariantOnly && this.editingVariantId) {
+        const r = await this.posSvc.saveInventoryVariant(this.editingVariantId, variantPayloads[0]);
+        if (!r.success) {
+          this.notify.error('Failed', r.message ?? 'Could not save variant.');
+          return;
+        }
+        const local = this.productForm.variants[0];
+        if (local?.imageFile) {
+          const upload = await this.posSvc.uploadVariantImage(this.editingVariantId, local.imageFile);
+          if (!upload.success) {
+            this.notify.warning('Image', upload.message ?? 'Variant image upload failed.');
+          }
+        }
+        this.notify.success('Saved', 'Variant updated.');
+        this.isItemDrawerOpen = false;
+        this.editingVariantOnly = false;
+        this.editingVariantId = null;
+        await this.loadItems();
+        return;
+      }
+
       const payload = {
         id: productId,
         name: this.productForm.name.trim(),
         category: this.productForm.category || undefined,
         brand: this.productForm.brand || undefined,
         description: this.productForm.description || undefined,
-        variants: this.productForm.variants
-          .filter((v) => v.variantName.trim())
-          .map((v) => {
-            const sellingPrice = this.toFiniteNumber(v.units[0]?.sellingPrice ?? v.sellingPrice, 0);
-            const costPrice = this.toFiniteNumber(v.costPrice, 0);
-            return {
-              id: v.id,
-              variantName: v.variantName.trim(),
-              stockQty: this.toFiniteNumber(v.stockQty, 0),
-              stockWarning: this.toFiniteNumber(v.stockWarning, 0),
-              costPrice,
-              sellingPrice,
-              salePrice: v.units[0]?.salePrice ?? v.salePrice ?? null,
-              unitType: v.units[0]?.unitType ?? v.unitType,
-              marginPercent: this.computeMargin(costPrice, sellingPrice),
-              units: v.units.map((u) => ({
-                unitType: u.unitType,
-                sellingPrice: this.toFiniteNumber(u.sellingPrice, 0),
-                salePrice: u.salePrice ?? null,
-                isManualEntry: u.isManualEntry || u.unitType === 'manual',
-              })),
-            };
-          }),
+        variants: variantPayloads,
       };
-      if (!payload.variants.length) {
-        this.notify.warning('Required', 'Add at least one variant.');
-        return;
-      }
       const r = await this.posSvc.saveInventoryProduct(payload);
       if (!r.success) {
         this.notify.error('Failed', r.message ?? 'Could not save product.');

@@ -53,6 +53,11 @@ export class InventoryProductsController {
     return this.svc.restoreVariant(+variantId, orgId(req));
   }
 
+  @Patch('variant/:variantId')
+  updateVariant(@Param('variantId') variantId: string, @Body() body: Record<string, unknown>, @Req() req: AuthReq) {
+    return this.svc.updateVariant(+variantId, orgId(req), body as never);
+  }
+
   @Patch(':id/restore')
   restoreProduct(@Param('id') id: string, @Req() req: AuthReq) {
     const numId = this.parseNumericId(id);

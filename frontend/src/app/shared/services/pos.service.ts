@@ -278,6 +278,14 @@ export class PosService {
     return r.data;
   }
 
+  async saveInventoryVariant(variantId: number, payload: Record<string, unknown>) {
+    const r = await apiClient.patch<{ success: boolean; id?: number; message?: string }>(
+      `/inventory/products/variant/${variantId}`,
+      payload,
+    );
+    return r.data;
+  }
+
   async saveInventoryProduct(payload: InventoryProductPayload) {
     const r = await apiClient.post<{ success: boolean; id?: number; message?: string }>(
       '/inventory/products',

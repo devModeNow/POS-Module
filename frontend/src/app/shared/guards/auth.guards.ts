@@ -1,10 +1,14 @@
 import { inject } from '@angular/core';
 import { CanActivateChildFn, CanActivateFn, CanMatchFn, Router, UrlTree } from '@angular/router';
-import { getAccessToken } from '../services/auth-storage';
+import { getAccessToken, getRefreshToken, clearAccessToken } from '../services/auth-storage';
 import { MenuKey, PermissionKey, RbacService } from '../services/rbac.service';
 
-function hasToken(): boolean {
-  return Boolean(getAccessToken());
+function hasSession(): boolean {
+  const rbacService = inject(RbacService);
+  if (rbacService.isAuthenticated()) {
+    return true;
+  }
+  return Boolean(getRefreshToken());
 }
 
 function toDashboard(): UrlTree {
@@ -31,19 +35,33 @@ function toLogin(): UrlTree {
 }
 
 export const authGuard: CanActivateFn = () => {
-  return hasToken() ? true : toLogin();
+  return hasSession() ? true : toLogin();
 };
 
 export const authChildGuard: CanActivateChildFn = () => {
-  return hasToken() ? true : toLogin();
+  return hasSession() ? true : toLogin();
 };
 
 export const guestOnlyGuard: CanActivateFn = () => {
-  return hasToken() ? toDashboard() : true;
+  const rbacService = inject(RbacService);
+  if (rbacService.isAuthenticated()) {
+    return toDashboard();
+  }
+  if (getAccessToken() && !getRefreshToken()) {
+    clearAccessToken();
+  }
+  return true;
 };
 
 export const guestOnlyMatchGuard: CanMatchFn = () => {
-  return hasToken() ? toDashboard() : true;
+  const rbacService = inject(RbacService);
+  if (rbacService.isAuthenticated()) {
+    return toDashboard();
+  }
+  if (getAccessToken() && !getRefreshToken()) {
+    clearAccessToken();
+  }
+  return true;
 };
 
 export const rbacGuard: CanActivateFn = (route) => {

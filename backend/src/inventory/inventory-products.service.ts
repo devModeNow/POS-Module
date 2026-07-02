@@ -106,12 +106,16 @@ export class InventoryProductsService {
           isManualEntry: v.unitType === 'manual',
         }];
     return raw
-      .map((u) => ({
-        unitType: String(u.unitType ?? 'piece').trim(),
-        sellingPrice: Number(u.sellingPrice ?? 0),
-        salePrice: u.salePrice != null ? Number(u.salePrice) : null,
-        isManualEntry: Boolean(u.isManualEntry) || u.unitType === 'manual',
-      }))
+      .map((u) => {
+        const rawType = String(u.unitType ?? 'piece').trim();
+        const unitType = rawType.toLowerCase() === 'manual' ? 'grams' : rawType;
+        return {
+          unitType,
+          sellingPrice: Number(u.sellingPrice ?? 0),
+          salePrice: u.salePrice != null ? Number(u.salePrice) : null,
+          isManualEntry: Boolean(u.isManualEntry),
+        };
+      })
       .filter((u) => u.unitType.length > 0);
   }
 
@@ -645,6 +649,81 @@ export class InventoryProductsService {
       return { success: true };
     } catch (e) {
       return { success: false, message: e instanceof Error ? e.message : 'Failed to restore product' };
+    }
+  }
+
+  async updateVariant(
+    variantId: number,
+    orgId: number,
+    dto: {
+      variantName: string;
+      stockQty?: number;
+      stockWarning?: number;
+      costPrice?: number;
+      sellingPrice?: number;
+      salePrice?: number | null;
+      unitType?: string;
+      units?: Array<{
+        unitType?: string;
+        sellingPrice?: number;
+        salePrice?: number | null;
+        isManualEntry?: boolean;
+      }>;
+    },
+  ) {
+    const vName = String(dto.variantName ?? '').trim();
+    if (!vName) return { success: false, message: 'Variant name is required' };
+
+    try {
+      await this.db.withTransaction(async (client) => {
+        const existing = await client.query<{ productId: number }>(
+          `SELECT product_id AS "productId"
+           FROM tblinventory_variants
+           WHERE id = $1 AND org_id = $2 AND is_active = TRUE
+           LIMIT 1`,
+          [variantId, orgId],
+        );
+        if (existing.rowCount === 0) throw new Error('Variant not found');
+
+        const productId = existing.rows[0].productId;
+        const duplicate = await client.query<{ id: number }>(
+          `SELECT id FROM tblinventory_variants
+           WHERE product_id = $1 AND org_id = $2 AND lower(variant_name) = lower($3)
+             AND id != $4 AND is_active = TRUE
+           LIMIT 1`,
+          [productId, orgId, vName, variantId],
+        );
+        if (duplicate.rowCount) {
+          throw new Error('Each variant must have a unique name under the same product.');
+        }
+
+        const units = this.normalizeUnits(dto);
+        const primary = units[0];
+        const stockQty = this.toFiniteNumber(dto.stockQty, 0);
+        const stockWarning = this.toFiniteNumber(dto.stockWarning, 0);
+        const costPrice = this.toFiniteNumber(dto.costPrice, 0);
+        const sellingPrice = this.toFiniteNumber(primary?.sellingPrice ?? dto.sellingPrice, 0);
+        const salePrice = this.toOptionalNumber(primary?.salePrice ?? dto.salePrice);
+        const marginPercent = this.computeMarginPercent(costPrice, sellingPrice);
+
+        await client.query(
+          `UPDATE tblinventory_variants
+           SET variant_name = $1, stock_qty = $2, stock_warning = $3,
+               cost_price = $4, selling_price = $5, sale_price = $6,
+               unit_type = $7, margin_percent = $8, updated_at = NOW()
+           WHERE id = $9 AND org_id = $10`,
+          [
+            vName, stockQty, stockWarning,
+            costPrice, sellingPrice, salePrice,
+            primary?.unitType ?? null, marginPercent,
+            variantId, orgId,
+          ],
+        );
+        await this.saveVariantUnits(client, orgId, variantId, units);
+      });
+      return { success: true, id: variantId };
+    } catch (e) {
+      return { success: false, message: this.formatSaveError(e) };
     }
   }
 

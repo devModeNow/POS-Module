@@ -63,4 +63,22 @@
     - In the Payment Methods, edit data remove the text "Online -" infront of each Gcash, Maya and Bank Trasfer.
     - Hide cart when and while empty.
     - Make sure to fix all errors and bugs you encounter while working on this task
+    //Continuation 2.5
+    - In the invetory, when deleting an item/s make sure to just sof delete it, do not delete it peremanently/
+    - Add a filter like "Deleted Items"so that I can still be able to see the deleted items and be able to restore it.
+    - Add pagination in the inventory table
+    - Change the Add Product button in the inventory into icon
+    - In the cart,change the showing amount under unit type for each added variant into its total price not the price itself per unit.
+    - Make sure to fix all errors and bugs you encounter while working on this task.
+    //Continuation 2.6
+    - In adding inventory, when adding a unit, make the newly added unit on top not on bottom
+    - in Inventory, Product variant views, when opening a specific variant, make the edit form able to edit the specific variant selected only not the whole Product type
+    - add a differect shade of background color in adding unit form so that its not confusing to see.
+    - In inventory Product Variants view, make the Variant column as priority not the product type. So for example Product = Peanut, Variant = Sweet peanut. It should show Variant column first but in Product types view it show the Product column first.
+    - In the inventory table, add a settings where in we can hide,unhide columns and add also a sorting function.
+    - In inventory adding unit, remove the Manual and make the Grams (Fixed unit) as Grams
+    - In POS view, sort the products best selling first and so on.
+    - In POS view,add a toggle where in they can choose a different views like, list view or products cards view.
+    - Make sure to fix all errors and bugs you encounter while working on this task.
+    
 

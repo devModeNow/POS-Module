@@ -17,8 +17,8 @@
 
     <!-- ── Inventory Tab ── -->
     @if (activeTab === 'inventory') {
-      <div class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div class="flex flex-wrap items-center gap-3">
+      <div class="mt-5 flex flex-col gap-3 overflow-visible sm:flex-row sm:items-center sm:justify-between">
+        <div class="flex flex-wrap items-center gap-3 overflow-visible">
           <input type="text" [(ngModel)]="search" (ngModelChange)="loadItems()" [placeholder]="isPosOrg ? (posInventoryView === 'products' ? 'Search products...' : 'Search variants...') : 'Search parts...'"
             class="w-full max-w-xs rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" />
           <select [(ngModel)]="categoryFilter" (ngModelChange)="onCategoryFilterChange()"
@@ -50,6 +50,28 @@
               Product variants
             </button>
           </div>
+          <div class="relative">
+            <button type="button" (click)="tableSettingsOpen = !tableSettingsOpen" title="Table settings"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+              <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+              Columns
+            </button>
+            @if (tableSettingsOpen) {
+              <div class="fixed inset-0 z-40" (click)="tableSettingsOpen = false" aria-hidden="true"></div>
+              <div class="absolute left-0 top-full z-50 mt-2 w-56 rounded-xl border border-gray-200 bg-white p-3 shadow-lg dark:border-gray-700 dark:bg-gray-900">
+                <p class="mb-2 text-xs font-semibold text-gray-700 dark:text-gray-300">Show columns</p>
+                @for (col of activeTableColumns; track col.key) {
+                  @if (col.hideable) {
+                    <label class="mb-1 flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                      <input type="checkbox" [checked]="isColumnVisible(col.key)" (change)="toggleColumnVisibility(col.key)" />
+                      {{ col.label }}
+                    </label>
+                  }
+                }
+                <button type="button" (click)="resetTableSettings()" class="mt-2 text-xs text-brand-600 hover:underline">Reset sort & columns</button>
+              </div>
+            }
+          </div>
           }
         </div>
         <div class="flex gap-2">
@@ -73,32 +95,52 @@
           <table class="w-full min-w-[900px]">
             <thead>
               <tr class="border-b border-gray-200 dark:border-gray-800">
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500">Image</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500">Product</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500">Variant</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500">Category</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500">Unit</th>
-                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Stock</th>
-                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Selling</th>
-                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Actions</th>
+                @for (col of variantTableColumns; track col.key) {
+                  @if (isColumnVisible(col.key)) {
+                    <th class="px-4 py-3 text-xs font-medium text-gray-500"
+                      [class.text-left]="col.key !== 'stockQty' && col.key !== 'sellingPrice' && col.key !== 'actions'"
+                      [class.text-right]="col.key === 'stockQty' || col.key === 'sellingPrice' || col.key === 'actions'">
+                      @if (col.sortable) {
+                        <button type="button" (click)="toggleSort(col.key)" class="inline-flex items-center gap-0.5 hover:text-gray-800 dark:hover:text-gray-200">
+                          {{ col.label }}{{ sortIndicator(col.key) }}
+                        </button>
+                      } @else {
+                        {{ col.label }}
+                      }
+                    </th>
+                  }
+                }
               </tr>
             </thead>
             <tbody>
               @if (isLoadingItems) {
-                <tr><td colspan="8" class="px-4 py-8 text-center text-sm text-gray-500">Loading...</td></tr>
+                <tr><td [attr.colspan]="visibleColumnCount" class="px-4 py-8 text-center text-sm text-gray-500">Loading...</td></tr>
               } @else {
                 @for (v of paginatedVariants; track v.id) {
                   <tr class="border-b border-gray-100 hover:bg-gray-50/70 dark:border-gray-800/70" [class.opacity-60]="isDeletedView">
+                    @if (isColumnVisible('image')) {
                     <td class="px-4 py-3">
                       <div class="h-12 w-12 overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-800">
-                        @if (v.imageUrl) { <img [src]="v.imageUrl" [alt]="v.productName" class="h-full w-full object-cover" /> }
+                        @if (v.imageUrl) { <img [src]="v.imageUrl" [alt]="v.variantName" class="h-full w-full object-cover" /> }
                       </div>
                     </td>
-                    <td class="px-4 py-3 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ v.productName }}</td>
-                    <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{{ v.variantName }}</td>
+                    }
+                    @if (isColumnVisible('variantName')) {
+                    <td class="px-4 py-3 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ v.variantName }}</td>
+                    }
+                    @if (isColumnVisible('productName')) {
+                    <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{{ v.productName }}</td>
+                    }
+                    @if (isColumnVisible('category')) {
                     <td class="px-4 py-3 text-xs text-gray-500">{{ v.category || '—' }}</td>
+                    }
+                    @if (isColumnVisible('unitType')) {
                     <td class="px-4 py-3 text-sm capitalize text-gray-600">{{ v.unitType || 'piece' }}</td>
+                    }
+                    @if (isColumnVisible('stockQty')) {
                     <td class="px-4 py-3 text-right text-sm font-medium" [class.text-error-600]="isVariantLowStock(v)">{{ v.stockQty }}</td>
+                    }
+                    @if (isColumnVisible('sellingPrice')) {
                     <td class="px-4 py-3 text-right text-sm">
                       @if (v.salePrice && v.salePrice < v.sellingPrice) {
                         <span class="text-xs text-gray-400 line-through">₱{{ v.sellingPrice | number:'1.2-2' }}</span>
@@ -107,6 +149,8 @@
                         <span class="text-gray-700">₱{{ v.sellingPrice | number:'1.2-2' }}</span>
                       }
                     </td>
+                    }
+                    @if (isColumnVisible('actions')) {
                     <td class="px-4 py-3 text-right">
                       <div class="flex justify-end gap-1">
                         @if (isDeletedView) {
@@ -115,7 +159,7 @@
                             <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                           </button>
                         } @else {
-                        <button type="button" (click)="openEditProduct(v)" title="Edit"
+                        <button type="button" (click)="openEditProduct(v)" title="Edit variant"
                           class="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">
                           <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                         </button>
@@ -126,9 +170,10 @@
                         }
                       </div>
                     </td>
+                    }
                   </tr>
                 } @empty {
-                  <tr><td colspan="8" class="px-4 py-8 text-center text-sm text-gray-500">No variants found.</td></tr>
+                  <tr><td [attr.colspan]="visibleColumnCount" class="px-4 py-8 text-center text-sm text-gray-500">No variants found.</td></tr>
                 }
               }
             </tbody>
@@ -137,33 +182,53 @@
           <table class="w-full min-w-[800px]">
             <thead>
               <tr class="border-b border-gray-200 dark:border-gray-800">
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500">Image</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500">Product</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500">Category</th>
-                <th class="px-4 py-3 text-center text-xs font-medium text-gray-500">Variants</th>
-                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Total stock</th>
-                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Price range</th>
-                <th class="px-4 py-3 text-right text-xs font-medium text-gray-500">Actions</th>
+                @for (col of productTableColumns; track col.key) {
+                  @if (isColumnVisible(col.key)) {
+                    <th class="px-4 py-3 text-xs font-medium text-gray-500"
+                      [class.text-left]="col.key !== 'variantCount' && col.key !== 'totalStock' && col.key !== 'priceRange' && col.key !== 'actions'"
+                      [class.text-center]="col.key === 'variantCount'"
+                      [class.text-right]="col.key === 'totalStock' || col.key === 'priceRange' || col.key === 'actions'">
+                      @if (col.sortable) {
+                        <button type="button" (click)="toggleSort(col.key)" class="inline-flex items-center gap-0.5 hover:text-gray-800 dark:hover:text-gray-200">
+                          {{ col.label }}{{ sortIndicator(col.key) }}
+                        </button>
+                      } @else {
+                        {{ col.label }}
+                      }
+                    </th>
+                  }
+                }
               </tr>
             </thead>
             <tbody>
               @if (isLoadingItems) {
-                <tr><td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500">Loading...</td></tr>
+                <tr><td [attr.colspan]="visibleColumnCount" class="px-4 py-8 text-center text-sm text-gray-500">Loading...</td></tr>
               } @else {
                 @for (p of paginatedProducts; track p.id) {
                   <tr class="border-b border-gray-100 hover:bg-gray-50/70 dark:border-gray-800/70"
                     [class.cursor-pointer]="!isDeletedView"
                     [class.opacity-60]="isDeletedView"
                     (click)="!isDeletedView && openEditProductById(p.id)">
+                    @if (isColumnVisible('image')) {
                     <td class="px-4 py-3">
                       <div class="h-12 w-12 overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-800">
                         @if (p.imageUrl) { <img [src]="p.imageUrl" [alt]="p.name" class="h-full w-full object-cover" /> }
                       </div>
                     </td>
+                    }
+                    @if (isColumnVisible('name')) {
                     <td class="px-4 py-3 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ p.name }}</td>
+                    }
+                    @if (isColumnVisible('category')) {
                     <td class="px-4 py-3 text-xs text-gray-500">{{ p.category || '—' }}</td>
+                    }
+                    @if (isColumnVisible('variantCount')) {
                     <td class="px-4 py-3 text-center text-sm text-gray-600 dark:text-gray-400">{{ p.variantCount }}</td>
+                    }
+                    @if (isColumnVisible('totalStock')) {
                     <td class="px-4 py-3 text-right text-sm font-medium text-gray-800 dark:text-gray-200">{{ p.totalStock }}</td>
+                    }
+                    @if (isColumnVisible('priceRange')) {
                     <td class="px-4 py-3 text-right text-sm text-gray-700 dark:text-gray-300">
                       @if (p.minPrice === p.maxPrice) {
                         ₱{{ p.minPrice | number:'1.2-2' }}
@@ -172,6 +237,8 @@
                       }
                       @if (p.hasSale) { <span class="ml-1 text-xs text-red-500">Sale</span> }
                     </td>
+                    }
+                    @if (isColumnVisible('actions')) {
                     <td class="px-4 py-3 text-right" (click)="$event.stopPropagation()">
                       <div class="flex justify-end gap-1">
                         @if (isDeletedView) {
@@ -191,9 +258,10 @@
                         }
                       </div>
                     </td>
+                    }
                   </tr>
                 } @empty {
-                  <tr><td colspan="7" class="px-4 py-8 text-center text-sm text-gray-500">No products found. Each row is a product (e.g. Peanut) — click to edit its variants.</td></tr>
+                  <tr><td [attr.colspan]="visibleColumnCount" class="px-4 py-8 text-center text-sm text-gray-500">No products found. Each row is a product (e.g. Peanut) — click to edit its variants.</td></tr>
                 }
               }
             </tbody>
@@ -404,11 +472,18 @@
     [ngClass]="isItemDrawerOpen ? 'translate-x-0' : 'translate-x-full'">
     <div class="flex h-full flex-col">
       <div class="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-800">
-        <h3 class="text-lg font-semibold text-gray-800 dark:text-white/90">{{ isPosOrg ? (itemDrawerMode === 'create' ? 'Add Product' : 'Edit Product') : (itemDrawerMode === 'create' ? 'Add Item' : 'Edit Item') }}</h3>
+        <h3 class="text-lg font-semibold text-gray-800 dark:text-white/90">{{ itemDrawerTitle }}</h3>
         <button type="button" (click)="closeItemDrawer()" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Close</button>
       </div>
       <div class="flex-1 space-y-4 overflow-y-auto px-6 py-5">
         @if (isPosOrg) {
+          @if (isEditingVariantOnly) {
+            <p class="text-xs text-gray-500 dark:text-gray-400">Editing variant only under <strong>{{ productForm.name }}</strong>.</p>
+            <div class="rounded-xl border border-gray-200 bg-gray-50 p-3 text-sm dark:border-gray-700 dark:bg-gray-800/50">
+              <p class="font-medium text-gray-800 dark:text-gray-200">{{ productForm.name }}</p>
+              <p class="text-xs text-gray-500">{{ productForm.category || 'No category' }}</p>
+            </div>
+          } @else {
           <p class="text-xs text-gray-500 dark:text-gray-400">Step 1 — pick or type a category, then the product type, then add variants below.</p>
           <label><span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">1. Category *</span>
             <input type="text" list="pos-category-list" [(ngModel)]="productForm.category" [disabled]="isSavingItem" placeholder="Pick or type new category"
@@ -455,11 +530,12 @@
               </svg>
             </button>
           </div>
+          }
           @for (v of productForm.variants; track $index; let i = $index) {
             <div class="rounded-xl border border-gray-200 p-3 dark:border-gray-700">
               <div class="mb-2 flex items-center justify-between">
                 <span class="text-xs font-medium text-gray-500">Variant {{ i + 1 }}</span>
-                @if (productForm.variants.length > 1) {
+                @if (productForm.variants.length > 1 && !isEditingVariantOnly) {
                   <button type="button" (click)="removeVariantRow(i)" class="text-xs text-red-500">Remove</button>
                 }
               </div>
@@ -497,13 +573,13 @@
                       class="w-full rounded-lg border px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
                   </label>
                 </div>
-                <div class="rounded-lg border border-dashed border-gray-200 p-2 dark:border-gray-700">
+                <div class="rounded-lg border border-brand-200 bg-brand-50/70 p-2 dark:border-brand-500/30 dark:bg-brand-500/10">
                   <div class="mb-2 flex items-center justify-between">
-                    <span class="text-xs font-semibold text-gray-600 dark:text-gray-300">Unit types</span>
-                    <button type="button" (click)="addUnitRow(i)" class="text-xs text-brand-600">+ Unit</button>
+                    <span class="text-xs font-semibold text-brand-800 dark:text-brand-200">Unit types</span>
+                    <button type="button" (click)="addUnitRow(i)" class="text-xs font-medium text-brand-700 dark:text-brand-300">+ Unit</button>
                   </div>
                   @for (u of v.units; track $index; let ui = $index) {
-                    <div class="mb-2 grid grid-cols-2 gap-2 rounded-lg bg-gray-50 p-2 last:mb-0 dark:bg-gray-800/50">
+                    <div class="mb-2 grid grid-cols-2 gap-2 rounded-lg border border-brand-100 bg-white/90 p-2 last:mb-0 dark:border-brand-500/20 dark:bg-gray-900/70">
                       <label class="block col-span-2">
                         <span class="mb-1 block text-[10px] font-medium text-gray-500">Unit</span>
                         <select [(ngModel)]="u.unitType" (ngModelChange)="onUnitTypeChange(i, ui)"

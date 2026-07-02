@@ -79,10 +79,17 @@ export class PosTerminalService {
                 BOOL_OR(v.sale_price IS NOT NULL AND v.sale_price > 0 AND v.sale_price < v.selling_price) AS "hasSale"
          FROM tblinventory_products p
          LEFT JOIN tblinventory_variants v ON v.product_id = p.id AND v.is_active = TRUE
+         LEFT JOIN (
+           SELECT v2.product_id, COALESCE(SUM(st.quantity_sold), 0)::bigint AS total_sold
+           FROM tblsales_transactions st
+           INNER JOIN tblinventory_variants v2 ON v2.id = st.variant_id
+           WHERE st.org_id = $1 AND st.variant_id IS NOT NULL
+           GROUP BY v2.product_id
+         ) sales ON sales.product_id = p.id
          WHERE p.org_id = $1 AND p.is_active = TRUE ${extra}
-         GROUP BY p.id
+         GROUP BY p.id, sales.total_sold
          HAVING COUNT(v.id) > 0
-         ORDER BY p.category ASC NULLS LAST, p.name ASC`,
+         ORDER BY COALESCE(sales.total_sold, 0) DESC, p.category ASC NULLS LAST, p.name ASC`,
         params,
       );
 

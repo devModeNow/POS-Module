@@ -25,7 +25,13 @@ export class DatabaseService implements OnModuleDestroy {
 
     try {
       this.pool = connectionString
-        ? new Pool({ connectionString, ssl })
+        ? new Pool({
+            connectionString,
+            ssl,
+            connectionTimeoutMillis: 10_000,
+            idleTimeoutMillis: 30_000,
+            max: 10,
+          })
         : new Pool({
             host: this.configService.get<string>('DB_HOST', '127.0.0.1'),
             port: Number(this.configService.get<string>('DB_PORT', '5432')),
@@ -33,6 +39,9 @@ export class DatabaseService implements OnModuleDestroy {
             user: this.configService.get<string>('DB_USER', 'postgres'),
             password: this.configService.get<string>('DB_PASSWORD', ''),
             ssl,
+            connectionTimeoutMillis: 10_000,
+            idleTimeoutMillis: 30_000,
+            max: 10,
           });
 
       console.log('✅ Database pool created successfully');

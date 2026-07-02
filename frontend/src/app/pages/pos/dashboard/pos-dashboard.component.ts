@@ -29,6 +29,7 @@ export class PosDashboardComponent implements OnInit {
   selectedCategory = '';
   categories: string[] = [];
   products: PosProduct[] = [];
+  productViewMode: 'grid' | 'list' = 'grid';
   discounts: PosDiscount[] = [];
   paymentMethods: PosPaymentMethod[] = [];
   cart: CartLine[] = [];
@@ -77,6 +78,10 @@ export class PosDashboardComponent implements OnInit {
 
   ngOnInit(): void {
     this.orgName = this.orgService.getContext().name ?? 'POS';
+    const savedView = sessionStorage.getItem('posProductViewMode');
+    if (savedView === 'grid' || savedView === 'list') {
+      this.productViewMode = savedView;
+    }
     this.cart = this.cartService.load(this.orgId()).map((line) => ({
       ...line,
       cartKey: line.cartKey ?? this.cartService.cartKey(line.variantId, line.unitType ?? 'piece'),
@@ -162,6 +167,11 @@ export class PosDashboardComponent implements OnInit {
     void this.loadProducts();
   }
 
+  setProductViewMode(mode: 'grid' | 'list'): void {
+    this.productViewMode = mode;
+    sessionStorage.setItem('posProductViewMode', mode);
+  }
+
   async openProduct(product: PosProduct): Promise<void> {
     if (product.totalStock <= 0) {
       this.notify.warning('Out of stock', `${product.name} is currently unavailable.`);
@@ -178,10 +188,10 @@ export class PosDashboardComponent implements OnInit {
       this.variants = (r.data ?? []).map((v) => ({
         ...v,
         units: v.units?.length ? v.units : [{
-          unitType: v.unitType ?? 'piece',
+          unitType: v.unitType === 'manual' ? 'grams' : (v.unitType ?? 'piece'),
           sellingPrice: v.sellingPrice,
           salePrice: v.salePrice,
-          isManualEntry: v.unitType === 'manual',
+          isManualEntry: Boolean(v.units?.find((u) => u.isManualEntry)?.isManualEntry),
         }],
       }));
       for (const v of this.variants) {

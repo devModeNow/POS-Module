@@ -39,8 +39,9 @@ export class AuthService {
 
     if (response.data.success && response.data.accessToken && response.data.refreshToken) {
       setSessionTokens(response.data.accessToken, response.data.refreshToken, persist);
-      await this.rbacService.syncEffectivePermissions();
-      this.syncOrgContext();
+      void this.rbacService.syncEffectivePermissions().then(() => {
+        this.syncOrgContext();
+      });
     }
 
     return response.data;

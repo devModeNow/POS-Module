@@ -231,9 +231,13 @@ export class LoginService {
         },
       };
     } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to connect to PostgreSQL';
+      const isTimeout = /connection timeout|timeout expired|ETIMEDOUT|ECONNREFUSED/i.test(message);
       return {
         success: false,
-        message: error instanceof Error ? error.message : 'Unable to connect to PostgreSQL',
+        message: isTimeout
+          ? 'Unable to connect to the database. Check that PostgreSQL is running and DATABASE_URL in backend/.env is correct.'
+          : message,
       };
     }
   }
