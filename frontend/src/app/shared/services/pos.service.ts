@@ -61,6 +61,7 @@ export interface PosPaymentMethod {
 export interface CartLine {
   cartKey: string;
   variantId: number;
+  productId?: number;
   productName: string;
   variantName: string;
   sellingPrice: number;
@@ -70,6 +71,7 @@ export interface CartLine {
   imageUrl?: string | null;
   unitType: string;
   isManualEntry?: boolean;
+  units?: PosVariantUnit[];
 }
 
 export interface CheckoutResult {

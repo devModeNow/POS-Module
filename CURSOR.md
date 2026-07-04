@@ -80,5 +80,15 @@
     - In POS view, sort the products best selling first and so on.
     - In POS view,add a toggle where in they can choose a different views like, list view or products cards view.
     - Make sure to fix all errors and bugs you encounter while working on this task.
-    
+    //Continuation 2.7
+    - since,this system will be used mainly on tablet device, could you make the texts a bit bigger specially on the forms.
+    - change the forms in the inventory into popup modals instead of a side form so it will be bigger
+    - In the UI part, as you can see on the popup after you clicked a product you will see that the unit dropdown and the quantity box is not equal in position, could you fix that and make sure that its equal in position.
+    - make the (first if many variant) quantity box auto focus when variant popup show.
+    - make the main search feature in the POS able to search even the variant, not only the product type.
+    - position the main search textbox below view type and above the category pills in 100% width.
+    - make the items in the cart editable like whe  I click an item, I can be able to edit the unit of it.
+    - In inventory table, make the "Stock" or "Total stock" column values use the right number formatting like when its 20000 it should be 20,000
+    - In inventory view, "Product types" view, add red pill in the text "Sale" in "Price Range" column.
+    - Make sure to fix all errors and bugs you encounter while working on this task.
 

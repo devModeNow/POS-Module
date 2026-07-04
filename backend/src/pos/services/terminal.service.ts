@@ -46,7 +46,15 @@ export class PosTerminalService {
       if (search?.trim()) {
         params.push(`%${search.trim()}%`);
         const idx = params.length;
-        extra += ` AND (LOWER(p.name) LIKE LOWER($${idx}) OR LOWER(COALESCE(p.category,'')) LIKE LOWER($${idx}))`;
+        extra += ` AND (
+          LOWER(p.name) LIKE LOWER($${idx})
+          OR LOWER(COALESCE(p.category,'')) LIKE LOWER($${idx})
+          OR EXISTS (
+            SELECT 1 FROM tblinventory_variants sv
+            WHERE sv.product_id = p.id AND sv.is_active = TRUE
+              AND LOWER(sv.variant_name) LIKE LOWER($${idx})
+          )
+        )`;
       }
       if (category?.trim()) {
         params.push(category.trim());

@@ -138,7 +138,7 @@
                     <td class="px-4 py-3 text-sm capitalize text-gray-600">{{ v.unitType || 'piece' }}</td>
                     }
                     @if (isColumnVisible('stockQty')) {
-                    <td class="px-4 py-3 text-right text-sm font-medium" [class.text-error-600]="isVariantLowStock(v)">{{ v.stockQty }}</td>
+                    <td class="px-4 py-3 text-right text-sm font-medium" [class.text-error-600]="isVariantLowStock(v)">{{ v.stockQty | number:'1.0-3' }}</td>
                     }
                     @if (isColumnVisible('sellingPrice')) {
                     <td class="px-4 py-3 text-right text-sm">
@@ -226,7 +226,7 @@
                     <td class="px-4 py-3 text-center text-sm text-gray-600 dark:text-gray-400">{{ p.variantCount }}</td>
                     }
                     @if (isColumnVisible('totalStock')) {
-                    <td class="px-4 py-3 text-right text-sm font-medium text-gray-800 dark:text-gray-200">{{ p.totalStock }}</td>
+                    <td class="px-4 py-3 text-right text-sm font-medium text-gray-800 dark:text-gray-200">{{ p.totalStock | number:'1.0-3' }}</td>
                     }
                     @if (isColumnVisible('priceRange')) {
                     <td class="px-4 py-3 text-right text-sm text-gray-700 dark:text-gray-300">
@@ -235,7 +235,7 @@
                       } @else {
                         ₱{{ p.minPrice | number:'1.2-2' }} – ₱{{ p.maxPrice | number:'1.2-2' }}
                       }
-                      @if (p.hasSale) { <span class="ml-1 text-xs text-red-500">Sale</span> }
+                      @if (p.hasSale) { <span class="ml-1 inline-flex rounded-full bg-red-500 px-2 py-0.5 text-xs font-semibold text-white">Sale</span> }
                     </td>
                     }
                     @if (isColumnVisible('actions')) {
@@ -305,7 +305,7 @@
                   <td class="px-4 py-3 text-sm capitalize text-gray-600 dark:text-gray-400">{{ item.unitType || 'piece' }}</td>
                   <td class="px-4 py-3 text-right">
                     <span class="text-sm font-medium" [ngClass]="isLow(item) ? 'text-error-600 dark:text-error-400' : 'text-gray-800 dark:text-gray-200'">
-                      {{ item.stockQty }}
+                      {{ item.stockQty | number:'1.0-3' }}
                     </span>
                     @if (isLow(item)) { <span class="ml-1 text-xs text-error-500">LOW</span> }
                   </td>
@@ -451,7 +451,7 @@
                   <tr class="border-b border-gray-100 dark:border-gray-800/70">
                     <td class="px-4 py-3 text-sm font-medium text-error-700 dark:text-error-400">{{ item.partName }}</td>
                     <td class="px-4 py-3 text-xs text-gray-500 dark:text-gray-400">{{ item.category || '—' }} / {{ item.brand || '—' }}</td>
-                    <td class="px-4 py-3 text-right text-sm font-bold text-error-600 dark:text-error-400">{{ item.stockQty }}</td>
+                    <td class="px-4 py-3 text-right text-sm font-bold text-error-600 dark:text-error-400">{{ item.stockQty | number:'1.0-3' }}</td>
                     <td class="px-4 py-3 text-right text-sm text-gray-600 dark:text-gray-400">{{ item.stockWarning }}</td>
                     <td class="px-4 py-3 text-right text-sm text-gray-600 dark:text-gray-400">₱{{ item.sellingPrice | number:'1.2-2' }}</td>
                   </tr>
@@ -466,16 +466,15 @@
     }
   </div>
 
-  <!-- Item Drawer -->
-  @if (isItemDrawerOpen) { <div class="fixed inset-0 z-[100000] bg-gray-900/40" (click)="closeItemDrawer()"></div> }
-  <aside class="fixed right-0 top-0 z-[100001] h-full w-full max-w-md transform border-l border-gray-200 bg-white shadow-2xl transition-transform duration-300 dark:border-gray-800 dark:bg-gray-900"
-    [ngClass]="isItemDrawerOpen ? 'translate-x-0' : 'translate-x-full'">
-    <div class="flex h-full flex-col">
-      <div class="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-800">
-        <h3 class="text-lg font-semibold text-gray-800 dark:text-white/90">{{ itemDrawerTitle }}</h3>
-        <button type="button" (click)="closeItemDrawer()" class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Close</button>
+  <!-- Item form modal -->
+  @if (isItemDrawerOpen) {
+  <div class="fixed inset-0 z-[100000] flex items-end justify-center bg-gray-900/50 p-4 md:items-center" (click)="closeItemDrawer()">
+    <div class="flex max-h-[92vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl dark:bg-gray-900 [&_input:not([type=file]):not([readonly])]:py-3 [&_input:not([type=file])]:text-base [&_select]:py-3 [&_select]:text-base [&_textarea]:text-base [&_label>span]:text-sm [&_label>span]:font-medium" (click)="$event.stopPropagation()">
+      <div class="flex items-center justify-between border-b border-gray-200 px-6 py-5 dark:border-gray-800">
+        <h3 class="text-2xl font-semibold text-gray-800 dark:text-white/90">{{ itemDrawerTitle }}</h3>
+        <button type="button" (click)="closeItemDrawer()" class="rounded-lg border border-gray-300 px-4 py-2 text-base text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">Close</button>
       </div>
-      <div class="flex-1 space-y-4 overflow-y-auto px-6 py-5">
+      <div class="flex-1 space-y-5 overflow-y-auto px-6 py-6">
         @if (isPosOrg) {
           @if (isEditingVariantOnly) {
             <p class="text-xs text-gray-500 dark:text-gray-400">Editing variant only under <strong>{{ productForm.name }}</strong>.</p>
@@ -710,14 +709,15 @@
         </div>
         }
       </div>
-      <div class="flex justify-end gap-2 border-t border-gray-200 px-6 py-4 dark:border-gray-800">
-        <button type="button" (click)="closeItemDrawer()" [disabled]="isSavingItem" class="rounded-lg border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-300">Cancel</button>
-        <button type="button" (click)="saveItem()" [disabled]="isSavingItem" class="rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-60">
+      <div class="flex justify-end gap-3 border-t border-gray-200 px-6 py-5 dark:border-gray-800">
+        <button type="button" (click)="closeItemDrawer()" [disabled]="isSavingItem" class="rounded-xl border border-gray-300 px-5 py-3 text-base text-gray-700 hover:bg-gray-50 disabled:opacity-60 dark:border-gray-700 dark:text-gray-300">Cancel</button>
+        <button type="button" (click)="saveItem()" [disabled]="isSavingItem" class="rounded-xl bg-brand-500 px-5 py-3 text-base font-medium text-white hover:bg-brand-600 disabled:opacity-60">
           {{ isSavingItem ? 'Saving...' : (itemDrawerMode === 'create' ? 'Add Item' : 'Save Changes') }}
         </button>
       </div>
     </div>
-  </aside>
+  </div>
+  }
 
   <!-- PO Create Drawer -->
   @if (isPODrawerOpen) { <div class="fixed inset-0 z-[100000] bg-gray-900/40" (click)="closePODrawer()"></div> }

@@ -44,6 +44,13 @@ export class PosDashboardComponent implements OnInit {
   variantSelectedUnit: Record<number, string> = {};
   variantSearch = '';
 
+  showCartUnitModal = false;
+  editingCartLine: CartLine | null = null;
+  editCartUnit = '';
+  editCartQty = 1;
+  cartEditUnits: PosVariantUnit[] = [];
+  cartEditUnitsLoading = false;
+
   showCheckoutModal = false;
   selectedDiscountId: number | null = null;
   selectedPaymentMethodId: number | null = null;
@@ -202,6 +209,7 @@ export class PosDashboardComponent implements OnInit {
       this.variants = [];
     } finally {
       this.variantsLoading = false;
+      setTimeout(() => this.focusFirstVariantQty(), 0);
     }
   }
 
@@ -273,6 +281,7 @@ export class PosDashboardComponent implements OnInit {
         {
           cartKey,
           variantId: variant.id,
+          productId: variant.productId,
           productName: variant.productName,
           variantName: variant.variantName,
           sellingPrice: unit.sellingPrice,
@@ -282,6 +291,7 @@ export class PosDashboardComponent implements OnInit {
           imageUrl,
           unitType: unit.unitType,
           isManualEntry: unit.isManualEntry,
+          units: variant.units,
         },
       ];
     }
@@ -316,6 +326,151 @@ export class PosDashboardComponent implements OnInit {
       this.cart = this.cart.filter((l) => l.cartKey !== line.cartKey);
       this.persistCart();
     });
+  }
+
+  async openCartUnitEdit(line: CartLine): Promise<void> {
+    this.editingCartLine = line;
+    this.editCartUnit = line.unitType;
+    this.editCartQty = line.quantity;
+    this.showCartUnitModal = true;
+    if (line.units?.length) {
+      this.cartEditUnits = line.units;
+      setTimeout(() => this.focusCartEditQty(), 0);
+      return;
+    }
+    this.cartEditUnitsLoading = true;
+    try {
+      const productId = line.productId;
+      if (!productId) {
+        this.notify.warning('Unable to edit', 'Unit options are not available for this item.');
+        this.closeCartUnitEdit();
+        return;
+      }
+      const r = await this.posService.getVariants(productId);
+      const variant = (r.data ?? []).find((v) => v.id === line.variantId);
+      if (!variant?.units?.length) {
+        this.notify.warning('Unable to edit', 'No unit options found.');
+        this.closeCartUnitEdit();
+        return;
+      }
+      line.units = variant.units;
+      line.productId = variant.productId;
+      this.cartEditUnits = variant.units;
+      setTimeout(() => this.focusCartEditQty(), 0);
+    } catch {
+      this.notify.error('Error', 'Could not load unit options.');
+      this.closeCartUnitEdit();
+    } finally {
+      this.cartEditUnitsLoading = false;
+    }
+  }
+
+  closeCartUnitEdit(): void {
+    this.showCartUnitModal = false;
+    this.editingCartLine = null;
+    this.editCartUnit = '';
+    this.editCartQty = 1;
+    this.cartEditUnits = [];
+    this.cartEditUnitsLoading = false;
+  }
+
+  selectedCartEditUnit(): PosVariantUnit | null {
+    return this.cartEditUnits.find((u) => u.unitType === this.editCartUnit) ?? null;
+  }
+
+  cartEditQtyLabel(): string {
+    const unit = this.selectedCartEditUnit();
+    if (!unit) return 'Quantity';
+    if (unit.isManualEntry) return this.manualQtyLabel(unit.unitType);
+    return this.unitLabel(unit.unitType);
+  }
+
+  onCartEditUnitChange(): void {
+    const unit = this.selectedCartEditUnit();
+    if (!unit) return;
+    this.editCartQty = unit.isManualEntry ? 100 : 1;
+    setTimeout(() => this.focusCartEditQty(), 0);
+  }
+
+  applyCartUnitEdit(): void {
+    const line = this.editingCartLine;
+    if (!line) return;
+    const unit = this.selectedCartEditUnit();
+    if (!unit) return;
+
+    const isManual = unit.isManualEntry;
+    const rawQty = Number(this.editCartQty) || 0;
+    const qty = isManual
+      ? Math.round(Math.max(0.01, rawQty) * 1000) / 1000
+      : Math.max(1, Math.floor(rawQty));
+
+    if (rawQty <= 0) {
+      this.notify.warning('Invalid quantity', 'Enter a valid quantity.');
+      return;
+    }
+    if (qty > line.stockQty) {
+      this.notify.warning('Stock limit', `Only ${line.stockQty} ${this.unitLabel(unit.unitType)} available.`);
+      return;
+    }
+
+    const newKey = this.cartService.cartKey(line.variantId, unit.unitType);
+    const unitChanged = unit.unitType !== line.unitType;
+    const qtyChanged = qty !== line.quantity;
+
+    if (!unitChanged && !qtyChanged) {
+      this.closeCartUnitEdit();
+      return;
+    }
+
+    if (unitChanged && newKey !== line.cartKey) {
+      const existing = this.cart.find((l) => l.cartKey === newKey);
+      if (existing) {
+        const combined = Math.round((existing.quantity + qty) * 1000) / 1000;
+        if (combined > line.stockQty) {
+          this.notify.warning('Stock limit', `Only ${line.stockQty} ${this.unitLabel(unit.unitType)} available.`);
+          return;
+        }
+        existing.quantity = combined;
+        existing.sellingPrice = unit.sellingPrice;
+        existing.salePrice = unit.salePrice;
+        existing.isManualEntry = unit.isManualEntry;
+        existing.units = line.units;
+        this.cart = this.cart.filter((l) => l.cartKey !== line.cartKey);
+      } else {
+        line.cartKey = newKey;
+        line.unitType = unit.unitType;
+        line.sellingPrice = unit.sellingPrice;
+        line.salePrice = unit.salePrice;
+        line.isManualEntry = unit.isManualEntry;
+        line.quantity = qty;
+      }
+    } else {
+      line.quantity = qty;
+      if (unitChanged) {
+        line.cartKey = newKey;
+        line.unitType = unit.unitType;
+        line.sellingPrice = unit.sellingPrice;
+        line.salePrice = unit.salePrice;
+        line.isManualEntry = unit.isManualEntry;
+      }
+    }
+
+    this.persistCart();
+    this.closeCartUnitEdit();
+  }
+
+  private focusCartEditQty(): void {
+    const el = document.getElementById('cart-edit-qty') as HTMLInputElement | null;
+    el?.focus();
+    el?.select();
+  }
+
+  private focusFirstVariantQty(): void {
+    const first = this.filteredModalVariants[0];
+    if (!first || first.stockQty <= 0) return;
+    const el = document.getElementById(`variant-qty-${first.id}`) as HTMLInputElement | null;
+    el?.focus();
+    el?.select();
   }
 
   requestClearCart(): void {
