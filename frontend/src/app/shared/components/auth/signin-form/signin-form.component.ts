@@ -67,7 +67,7 @@ export class SigninFormComponent {
           this.errorMessage = apiMessage;
         } else if (error.code === 'ERR_NETWORK' || !error.response) {
           this.errorMessage =
-            'Unable to reach backend API. Make sure the backend is running on http://localhost:3000';
+            'Unable to reach backend API. Check that the backend is running and reachable.';
         } else {
           this.errorMessage = 'Unable to reach backend API';
         }

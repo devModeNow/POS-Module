@@ -1,48 +1,51 @@
 # Deployment Guide
 
 ## Target Setup
-- Frontend: Vercel
-- Backend: Render (Web Service)
+- Frontend: Vercel (proxies `/api/*` to the backend to avoid browser CORS issues)
+- Backend: Render free tier (recommended) or any Node host (DigitalOcean, Railway, etc.)
 
-## 1. Backend Deployment (Render)
+## 1. Backend Deployment (Render — free tier)
 
-### 1.1 Prepare backend env
-For local development, keep using `backend/.env`.
+Render’s free web service includes **750 hours/month** (enough for one app 24/7), **no credit card**, and services sleep after **15 minutes** of inactivity (first request may take ~30–60s to wake up).
 
-For production, use values from `backend/.env.production` (or `.env.production.example`) and set real secrets:
+### 1.1 Connect GitHub to Render
+1. Open [Render Account Settings → Git Providers](https://dashboard.render.com/u/settings#integrations).
+2. Connect your GitHub account and grant access to `devModeNow/POS-Module`.
 
-- `DATABASE_URL` (or DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD)
-- `DB_SSL=true`
-- `DB_SSL_REJECT_UNAUTHORIZED=false` (for Supabase pooler setups)
-- `JWT_SECRET`
-- `JWT_EXPIRES_IN`
-- `CORS_ORIGINS` (include your Vercel domain)
+### 1.2 Deploy with Blueprint
+1. In Render Dashboard, click **New +** → **Blueprint**.
+2. Connect repo `devModeNow/POS-Module` (branch `master`).
+3. Render reads `render.yaml` at the repo root and creates `cbis-backend`.
+4. When prompted, set these secret env vars (copy from `backend/.env`):
+   - `DATABASE_URL` — Supabase pooler URL
+   - `JWT_SECRET`
+   - `CORS_ORIGINS` — include your Vercel URL, e.g. `https://frontend-xi-beige-65.vercel.app,http://localhost:4200`
+5. Deploy. Note the service URL, e.g. `https://cbis-backend.onrender.com`.
 
-Production example:
+### 1.3 Alternative: manual Web Service
+If you prefer not to use Blueprint:
+- Root Directory: `backend`
+- Runtime: Node
+- Build Command: `npm install && npm run build`
+- Start Command: `npm run start:prod`
+- Health Check Path: `/health`
+- Instance type: **Free**
+
+Production env example:
 
 ```env
-DATABASE_URL=postgresql://postgres.badhwkvofjzyoeuhpkhp:<YOUR-PASSWORD>@aws-1-ap-south-1.pooler.supabase.com:6543/postgres
+DATABASE_URL=postgresql://postgres.<project>:<password>@aws-1-ap-south-1.pooler.supabase.com:6543/postgres
 DB_SSL=true
 DB_SSL_REJECT_UNAUTHORIZED=false
 JWT_SECRET=use-a-strong-secret
 JWT_EXPIRES_IN=1h
-CORS_ORIGINS=https://your-frontend.vercel.app
+CORS_ORIGINS=https://frontend-xi-beige-65.vercel.app,http://localhost:4200
 ```
 
-### 1.2 Create Render service
-In Render dashboard:
+### 1.4 Point Vercel at your Render backend (optional)
+Once Render is live, update `frontend/vercel.json` rewrite destination to your Render URL, or set `NG_APP_API_BASE_URL` in Vercel to the Render URL and remove the `/api` proxy.
 
-1. Create `New +` -> `Web Service`.
-2. Connect your repository.
-3. Configure:
-   - Root Directory: `backend`
-   - Runtime: `Node`
-   - Build Command: `npm install && npm run build`
-   - Start Command: `npm run start:prod`
-4. Add all production env vars from step 1.1.
-5. Deploy.
-
-Backend will be available at your Render URL, for example `https://sts-incorporated-cdis-backend-6upj7.ondigitalocean.app`.
+Backend will be available at your Render URL, for example `https://cbis-backend.onrender.com`.
 
 ## 2. Frontend Deployment (Vercel)
 

@@ -3,6 +3,10 @@
   "outputDirectory": "dist/ng-tailadmin/browser",
   "rewrites": [
     {
+      "source": "/api/:path*",
+      "destination": "https://sts-incorporated-cdis-backend-6upj7.ondigitalocean.app/:path*"
+    },
+    {
       "source": "/(.*)",
       "destination": "/index.html"
     }

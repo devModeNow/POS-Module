@@ -12,12 +12,16 @@ import {
 type RetryConfig = InternalAxiosRequestConfig & { _retry?: boolean };
 
 const appEnv = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
-const configuredApiBaseUrl = String(appEnv?.['NG_APP_API_BASE_URL'] ?? '').trim();
+const rawConfiguredApiBaseUrl = String(appEnv?.['NG_APP_API_BASE_URL'] ?? '').trim();
 const nodeEnv = String(appEnv?.['NODE_ENV'] ?? '').trim().toLowerCase();
 const hostName = String(globalThis.location?.hostname ?? '').trim().toLowerCase();
 const isLocalHost = hostName === 'localhost' || hostName === '127.0.0.1';
 const isProductionBuild = nodeEnv === 'production' || !isLocalHost;
-const fallbackProductionApiBaseUrl = 'https://sts-incorporated-cdis-backend-6upj7.ondigitalocean.app/';
+const fallbackProductionApiBaseUrl = `${globalThis.location?.origin ?? ''}/api`.replace(/\/+$/, '');
+const isLocalApiUrl =
+  rawConfiguredApiBaseUrl.includes('localhost') || rawConfiguredApiBaseUrl.includes('127.0.0.1');
+const configuredApiBaseUrl =
+  rawConfiguredApiBaseUrl && !(isProductionBuild && isLocalApiUrl) ? rawConfiguredApiBaseUrl : '';
 
 if (!configuredApiBaseUrl && isProductionBuild) {
   console.warn(
@@ -25,7 +29,9 @@ if (!configuredApiBaseUrl && isProductionBuild) {
   );
 }
 
-const API_BASE_URL = configuredApiBaseUrl || (isLocalHost ? 'http://localhost:3000' : fallbackProductionApiBaseUrl);
+export const API_BASE_URL = (
+  configuredApiBaseUrl || (isLocalHost ? 'http://localhost:3000' : fallbackProductionApiBaseUrl)
+).replace(/\/+$/, '');
 const ACTIVE_BRANCH_STORAGE_KEY = 'activeBranchId';
 
 export const apiClient = axios.create({
