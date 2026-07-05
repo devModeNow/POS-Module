@@ -80,6 +80,10 @@ export class SigninFormComponent {
   }
 
   private getPostLoginRoute(): string {
+    if (this.rbacService.isCashier()) {
+      return '/users/pos-dashboard';
+    }
+
     const menus = this.rbacService.getAllowedMenus();
 
     if (menus.has('pos-dashboard') || menus.has('pos-terminal')) {

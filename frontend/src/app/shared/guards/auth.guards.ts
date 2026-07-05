@@ -15,8 +15,14 @@ function toDashboard(): UrlTree {
   const router = inject(Router);
   const rbacService = inject(RbacService);
 
-  // Find the user's first available menu to avoid redirect loops
+  if (rbacService.isCashier()) {
+    return router.createUrlTree(['/users/pos-dashboard']);
+  }
+
   const menus = rbacService.getAllowedMenus();
+  if (menus.has('pos-dashboard') || menus.has('pos-terminal')) {
+    return router.createUrlTree(['/users/pos-dashboard']);
+  }
   if (menus.has('dashboard')) {
     return router.createUrlTree(['/users/dashboard']);
   }
@@ -66,9 +72,17 @@ export const guestOnlyMatchGuard: CanMatchFn = () => {
 
 export const rbacGuard: CanActivateFn = (route) => {
   const rbacService = inject(RbacService);
+  const router = inject(Router);
 
   const menu = route.data?.['menu'] as string | undefined;
   const permission = route.data?.['permission'] as PermissionKey | undefined;
+
+  if (rbacService.isCashier()) {
+    const path = route.routeConfig?.path ?? '';
+    if (path !== 'pos-dashboard' && path !== 'pos-terminal') {
+      return router.createUrlTree(['/users/pos-dashboard']);
+    }
+  }
 
   if (!menu) {
     return rbacService.isAuthenticated() ? true : toLogin();

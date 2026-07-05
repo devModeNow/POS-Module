@@ -166,6 +166,17 @@ export class PosService {
     return r.data;
   }
 
+  async getVariantsCatalog(search?: string, category?: string) {
+    const params: Record<string, string> = {};
+    if (search?.trim()) params['search'] = search.trim();
+    if (category?.trim()) params['category'] = category.trim();
+    const r = await apiClient.get<{ success: boolean; data?: PosVariant[]; message?: string }>(
+      '/api/pos/variants',
+      { params: Object.keys(params).length ? params : undefined },
+    );
+    return r.data;
+  }
+
   async getVariants(productId: number) {
     const r = await apiClient.get<{ success: boolean; data?: PosVariant[]; message?: string }>(
       `/api/pos/products/${productId}/variants`,

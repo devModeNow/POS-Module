@@ -398,4 +398,13 @@ export class RbacService {
     const role = String(this.getPayload()?.roleName ?? '').trim().toLowerCase();
     return role === 'superadmin' || role === 'super admin' || role === 'admin';
   }
+
+  isCashier(): boolean {
+    const role = String(this.getPayload()?.roleName ?? '').trim().toLowerCase();
+    return role === 'cashier' || role.includes('cashier');
+  }
+
+  getRoleName(): string {
+    return String(this.getPayload()?.roleName ?? '').trim();
+  }
 }

@@ -29,9 +29,8 @@ export class AppComponent implements OnInit {
 
   private async bootstrapSession(): Promise<void> {
     if (this.rbacService.isAuthenticated()) {
-      void this.rbacService.syncEffectivePermissions().then(() => {
-        this.authService.syncOrgContext();
-      });
+      this.authService.syncOrgContext();
+      void this.rbacService.syncEffectivePermissions();
       return;
     }
 

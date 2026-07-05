@@ -1,5 +1,6 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { Component, OnDestroy, OnInit } from '@angular/core';
+import { Subscription } from 'rxjs';
 import { FormsModule } from '@angular/forms';
 import { PageBreadcrumbComponent } from '../../shared/components/common/page-breadcrumb/page-breadcrumb.component';
 import { ButtonComponent } from '../../shared/components/ui/button/button.component';
@@ -9,6 +10,7 @@ import { ConfirmDialogComponent } from '../../shared/components/ui/confirm-dialo
 import { InventoryItem, InventoryService, PurchaseOrder, PurchaseOrderItem, Supplier } from '../../shared/services/inventory.service';
 import { InventoryProductRow, InventoryVariantRow, PosService } from '../../shared/services/pos.service';
 import { OrgService } from '../../shared/services/org.service';
+import { RbacService } from '../../shared/services/rbac.service';
 import { NotificationService } from '../../shared/services/notification.service';
 
 type MainTab = 'inventory' | 'purchase-orders' | 'reports';
@@ -29,7 +31,8 @@ type InventoryTableColumn = {
   imports: [CommonModule, FormsModule, PageBreadcrumbComponent, ButtonComponent, DatePickerComponent, CanDirective, ConfirmDialogComponent],
   templateUrl: './inventory.component.html',
 })
-export class InventoryComponent implements OnInit {
+export class InventoryComponent implements OnInit, OnDestroy {
+  private orgContextSub?: Subscription;
   activeTab: MainTab = 'inventory';
   isPosOrg = false;
 
@@ -314,19 +317,43 @@ export class InventoryComponent implements OnInit {
     private readonly svc: InventoryService,
     private readonly posSvc: PosService,
     private readonly orgSvc: OrgService,
+    private readonly rbacSvc: RbacService,
     private readonly notify: NotificationService,
   ) {}
 
   ngOnInit(): void {
-    this.isPosOrg = this.orgSvc.isPosOrg();
+    this.syncPosOrgFlag();
     void this.loadCategoryOptions();
     void this.loadItems();
     void this.loadSuppliers();
+
+    this.orgContextSub = this.orgSvc.context$.subscribe(() => {
+      const wasPosOrg = this.isPosOrg;
+      this.syncPosOrgFlag();
+      if (wasPosOrg !== this.isPosOrg) {
+        void this.loadItems();
+      }
+    });
+  }
+
+  ngOnDestroy(): void {
+    this.orgContextSub?.unsubscribe();
+  }
+
+  private syncPosOrgFlag(): void {
+    this.isPosOrg = this.orgSvc.isPosOrg() || this.rbacSvc.isPosOrg();
+  }
+
+  private hasInventoryData(): boolean {
+    if (this.isPosOrg) {
+      return this.productItems.length > 0 || this.variantItems.length > 0;
+    }
+    return this.items.length > 0;
   }
 
   switchTab(tab: MainTab): void {
     this.activeTab = tab;
-    if (tab === 'inventory' && this.items.length === 0) void this.loadItems();
+    if (tab === 'inventory' && !this.hasInventoryData()) void this.loadItems();
     if (tab === 'purchase-orders' && this.purchaseOrders.length === 0) void this.loadPO();
     if (tab === 'reports') void this.loadLowStock();
   }
@@ -387,7 +414,8 @@ export class InventoryComponent implements OnInit {
 
   openCreateItem(): void {
     if (this.isPosOrg) {
-      this.productForm = this.emptyProductForm();
+      const draft = this.loadProductFormDraft();
+      this.productForm = draft ?? this.emptyProductForm();
       this.editingProductId = null;
       this.editingVariantOnly = false;
       this.editingVariantId = null;
@@ -395,7 +423,8 @@ export class InventoryComponent implements OnInit {
       this.isItemDrawerOpen = true;
       return;
     }
-    this.itemForm = this.emptyItemForm();
+    const itemDraft = this.loadItemFormDraft();
+    this.itemForm = itemDraft ?? this.emptyItemForm();
     this.itemDrawerMode = 'create';
     this.editingItemId = null;
     this.itemImageFile = null;
@@ -428,10 +457,95 @@ export class InventoryComponent implements OnInit {
 
   closeItemDrawer(): void {
     if (!this.isSavingItem) {
+      this.persistFormDraft();
       this.isItemDrawerOpen = false;
       this.editingVariantOnly = false;
       this.editingVariantId = null;
     }
+  }
+
+  private draftStorageKey(suffix: string): string {
+    const orgId = this.orgSvc.getContext().id ?? 0;
+    return `inventoryFormDraft:${orgId}:${suffix}`;
+  }
+
+  private productFormHasDraftContent(): boolean {
+    return Boolean(
+      this.productForm.name.trim()
+      || this.productForm.category.trim()
+      || this.productForm.brand.trim()
+      || this.productForm.description.trim()
+      || this.productForm.variants.some((v) => v.variantName.trim()),
+    );
+  }
+
+  private itemFormHasDraftContent(): boolean {
+    return Boolean(this.itemForm.partName.trim() || this.itemForm.category.trim() || this.itemForm.brand.trim());
+  }
+
+  private persistFormDraft(): void {
+    if (this.itemDrawerMode !== 'create') return;
+    if (this.isPosOrg) {
+      if (!this.productFormHasDraftContent()) {
+        sessionStorage.removeItem(this.draftStorageKey('product'));
+        return;
+      }
+      sessionStorage.setItem(this.draftStorageKey('product'), JSON.stringify({
+        productForm: {
+          ...this.productForm,
+          imageFile: null,
+          imagePreview: this.productForm.imageUrl ?? null,
+          variants: this.productForm.variants.map((v) => ({
+            ...v,
+            imageFile: null,
+            imagePreview: v.imageUrl ?? null,
+          })),
+        },
+      }));
+      return;
+    }
+    if (!this.itemFormHasDraftContent()) {
+      sessionStorage.removeItem(this.draftStorageKey('item'));
+      return;
+    }
+    sessionStorage.setItem(this.draftStorageKey('item'), JSON.stringify({ itemForm: this.itemForm }));
+  }
+
+  private loadProductFormDraft(): typeof this.productForm | null {
+    try {
+      const raw = sessionStorage.getItem(this.draftStorageKey('product'));
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { productForm?: unknown };
+      if (!parsed.productForm || typeof parsed.productForm !== 'object') return null;
+      const form = parsed.productForm as typeof this.productForm;
+      return {
+        ...form,
+        imageFile: null,
+        variants: (form.variants?.length ? form.variants : [this.emptyVariantRow()]).map((v: typeof form.variants[number]) => ({
+          ...v,
+          imageFile: null,
+        })),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  private loadItemFormDraft(): typeof this.itemForm | null {
+    try {
+      const raw = sessionStorage.getItem(this.draftStorageKey('item'));
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as { itemForm?: unknown };
+      if (!parsed.itemForm || typeof parsed.itemForm !== 'object') return null;
+      return parsed.itemForm as typeof this.itemForm;
+    } catch {
+      return null;
+    }
+  }
+
+  private clearFormDrafts(): void {
+    sessionStorage.removeItem(this.draftStorageKey('product'));
+    sessionStorage.removeItem(this.draftStorageKey('item'));
   }
 
   readonly unitTypes = ['piece', 'grams', 'kilo', 'pack', 'sack', 'liter', 'box', 'bottle', 'can', 'tray'];
@@ -771,6 +885,7 @@ export class InventoryComponent implements OnInit {
         this.isItemDrawerOpen = false;
         this.editingVariantOnly = false;
         this.editingVariantId = null;
+        this.clearFormDrafts();
         await this.loadItems();
         return;
       }
@@ -816,6 +931,9 @@ export class InventoryComponent implements OnInit {
       this.notify.success('Saved', this.itemDrawerMode === 'create' ? 'Product added.' : 'Product updated.');
       this.isItemDrawerOpen = false;
       this.editingProductId = null;
+      if (this.itemDrawerMode === 'create') {
+        this.clearFormDrafts();
+      }
       await this.loadItems();
     } catch {
       this.notify.error('Error', 'Unexpected error.');
@@ -988,6 +1106,9 @@ export class InventoryComponent implements OnInit {
       this.isItemDrawerOpen = false;
       this.itemImageFile = null;
       this.itemImagePreview = null;
+      if (this.itemDrawerMode === 'create') {
+        this.clearFormDrafts();
+      }
       await this.loadItems();
     } catch { this.notify.error('Error', 'Unexpected error.'); }
     finally { this.isSavingItem = false; }

@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { ConfirmDialogComponent } from '../../../shared/components/ui/confirm-dialog/confirm-dialog.component';
 import {
   CartLine,
@@ -14,6 +15,8 @@ import {
 import { PosCartService } from '../../../shared/services/pos-cart.service';
 import { OrgService } from '../../../shared/services/org.service';
 import { NotificationService } from '../../../shared/services/notification.service';
+import { RbacService } from '../../../shared/services/rbac.service';
+import { AuthService } from '../../../shared/services/auth.service';
 
 @Component({
   selector: 'app-pos-dashboard',
@@ -29,7 +32,10 @@ export class PosDashboardComponent implements OnInit {
   selectedCategory = '';
   categories: string[] = [];
   products: PosProduct[] = [];
+  variantCatalog: PosVariant[] = [];
+  catalogMode: 'types' | 'variants' = 'types';
   productViewMode: 'grid' | 'list' = 'grid';
+  readonly isCashierMode: boolean;
   discounts: PosDiscount[] = [];
   paymentMethods: PosPaymentMethod[] = [];
   cart: CartLine[] = [];
@@ -72,7 +78,20 @@ export class PosDashboardComponent implements OnInit {
     private readonly cartService: PosCartService,
     private readonly orgService: OrgService,
     private readonly notify: NotificationService,
-  ) {}
+    private readonly rbac: RbacService,
+    private readonly auth: AuthService,
+    private readonly router: Router,
+  ) {
+    this.isCashierMode = this.rbac.isCashier();
+  }
+
+  get useCategoryDropdown(): boolean {
+    return this.categories.length > 5;
+  }
+
+  get isVariantCatalogView(): boolean {
+    return this.catalogMode === 'variants' || this.search.trim().length > 0;
+  }
 
   private orgId(): number {
     return this.orgService.getContext().id ?? 0;
@@ -89,6 +108,10 @@ export class PosDashboardComponent implements OnInit {
     if (savedView === 'grid' || savedView === 'list') {
       this.productViewMode = savedView;
     }
+    const savedCatalog = sessionStorage.getItem('posCatalogMode');
+    if (savedCatalog === 'types' || savedCatalog === 'variants') {
+      this.catalogMode = savedCatalog;
+    }
     this.cart = this.cartService.load(this.orgId()).map((line) => ({
       ...line,
       cartKey: line.cartKey ?? this.cartService.cartKey(line.variantId, line.unitType ?? 'piece'),
@@ -98,7 +121,7 @@ export class PosDashboardComponent implements OnInit {
     void this.loadCategories();
     void this.loadDiscounts();
     void this.loadPaymentMethods();
-    void this.loadProducts();
+    void this.loadCatalog();
   }
 
   get selectedDiscount(): PosDiscount | null {
@@ -136,6 +159,14 @@ export class PosDashboardComponent implements OnInit {
     }
   }
 
+  async loadCatalog(): Promise<void> {
+    if (this.isVariantCatalogView) {
+      await this.loadVariantCatalog();
+    } else {
+      await this.loadProducts();
+    }
+  }
+
   async loadProducts(): Promise<void> {
     this.state = 'loading';
     this.errorMessage = '';
@@ -147,6 +178,7 @@ export class PosDashboardComponent implements OnInit {
         return;
       }
       this.products = r.data;
+      this.variantCatalog = [];
       this.syncCartStock();
       this.state = 'loaded';
     } catch {
@@ -155,23 +187,49 @@ export class PosDashboardComponent implements OnInit {
     }
   }
 
+  async loadVariantCatalog(): Promise<void> {
+    this.state = 'loading';
+    this.errorMessage = '';
+    try {
+      const r = await this.posService.getVariantsCatalog(this.search, this.selectedCategory || undefined);
+      if (!r.success || !r.data) {
+        this.state = 'error';
+        this.errorMessage = r.message ?? 'Failed to load variants.';
+        return;
+      }
+      this.variantCatalog = (r.data ?? []).map((v) => this.normalizeVariant(v));
+      this.products = [];
+      this.syncCartStock();
+      this.state = 'loaded';
+    } catch {
+      this.state = 'error';
+      this.errorMessage = 'Failed to load variants. Please try again.';
+    }
+  }
+
   onSearchInput(): void {
     if (this.searchTimer) clearTimeout(this.searchTimer);
-    this.searchTimer = setTimeout(() => void this.loadProducts(), 300);
+    this.searchTimer = setTimeout(() => void this.loadCatalog(), 300);
   }
 
   onCategoryChange(): void {
-    void this.loadProducts();
+    void this.loadCatalog();
   }
 
   clearSearch(): void {
     this.search = '';
-    void this.loadProducts();
+    void this.loadCatalog();
   }
 
   clearCategory(): void {
     this.selectedCategory = '';
-    void this.loadProducts();
+    void this.loadCatalog();
+  }
+
+  setCatalogMode(mode: 'types' | 'variants'): void {
+    this.catalogMode = mode;
+    sessionStorage.setItem('posCatalogMode', mode);
+    void this.loadCatalog();
   }
 
   setProductViewMode(mode: 'grid' | 'list'): void {
@@ -192,24 +250,68 @@ export class PosDashboardComponent implements OnInit {
     this.variantSearch = '';
     try {
       const r = await this.posService.getVariants(product.id);
-      this.variants = (r.data ?? []).map((v) => ({
-        ...v,
-        units: v.units?.length ? v.units : [{
-          unitType: v.unitType === 'manual' ? 'grams' : (v.unitType ?? 'piece'),
-          sellingPrice: v.sellingPrice,
-          salePrice: v.salePrice,
-          isManualEntry: Boolean(v.units?.find((u) => u.isManualEntry)?.isManualEntry),
-        }],
-      }));
-      for (const v of this.variants) {
-        this.variantQty[v.id] = this.defaultVariantQty(v);
-        this.variantSelectedUnit[v.id] = v.units[0]?.unitType ?? 'piece';
-      }
+      this.variants = (r.data ?? []).map((v) => this.normalizeVariant(v));
+      this.initVariantModalState();
     } catch {
       this.variants = [];
     } finally {
       this.variantsLoading = false;
-      setTimeout(() => this.focusFirstVariantQty(), 0);
+    }
+  }
+
+  async openVariantFromCatalog(variant: PosVariant): Promise<void> {
+    if (variant.stockQty <= 0) {
+      this.notify.warning('Out of stock', `${variant.variantName} is unavailable.`);
+      return;
+    }
+    let full = variant;
+    if (!variant.units?.length) {
+      try {
+        const r = await this.posService.getVariants(variant.productId);
+        full = (r.data ?? []).find((v) => v.id === variant.id) ?? variant;
+      } catch {
+        full = variant;
+      }
+    }
+    full = this.normalizeVariant(full);
+    this.selectedProduct = {
+      id: variant.productId,
+      name: variant.productName,
+      category: variant.category,
+      imageUrl: variant.productImageUrl ?? null,
+      variantCount: 1,
+      minPrice: full.sellingPrice,
+      maxPrice: full.sellingPrice,
+      minSalePrice: full.salePrice ?? null,
+      totalStock: variant.stockQty,
+      hasSale: full.salePrice != null && full.salePrice > 0 && full.salePrice < full.sellingPrice,
+      inStock: variant.stockQty > 0,
+    };
+    this.variants = [full];
+    this.showVariantModal = true;
+    this.variantsLoading = false;
+    this.variantSearch = '';
+    this.initVariantModalState();
+  }
+
+  private normalizeVariant(v: PosVariant): PosVariant {
+    return {
+      ...v,
+      units: v.units?.length ? v.units : [{
+        unitType: v.unitType === 'manual' ? 'grams' : (v.unitType ?? 'piece'),
+        sellingPrice: v.sellingPrice,
+        salePrice: v.salePrice,
+        isManualEntry: v.unitType === 'manual' || v.unitType === 'grams',
+      }],
+    };
+  }
+
+  private initVariantModalState(): void {
+    this.variantQty = {};
+    this.variantSelectedUnit = {};
+    for (const v of this.variants) {
+      this.variantQty[v.id] = this.defaultVariantQty(v);
+      this.variantSelectedUnit[v.id] = v.units[0]?.unitType ?? 'piece';
     }
   }
 
@@ -246,6 +348,40 @@ export class PosDashboardComponent implements OnInit {
   onVariantUnitChange(variant: PosVariant): void {
     const unit = this.selectedUnitFor(variant);
     this.variantQty[variant.id] = unit.isManualEntry ? 100 : 1;
+  }
+
+  incrementVariantQty(variant: PosVariant): void {
+    const unit = this.selectedUnitFor(variant);
+    const step = unit.isManualEntry ? 10 : 1;
+    const current = Number(this.variantQty[variant.id]) || 0;
+    const next = Math.round((current + step) * 1000) / 1000;
+    if (next > variant.stockQty) {
+      this.notify.warning('Stock limit', `Only ${variant.stockQty} ${this.unitLabel(unit.unitType)} available.`);
+      return;
+    }
+    this.variantQty[variant.id] = next;
+  }
+
+  decrementVariantQty(variant: PosVariant): void {
+    const unit = this.selectedUnitFor(variant);
+    const step = unit.isManualEntry ? 10 : 1;
+    const minQty = unit.isManualEntry ? 0.01 : 1;
+    const current = Number(this.variantQty[variant.id]) || minQty;
+    this.variantQty[variant.id] = Math.max(minQty, Math.round((current - step) * 1000) / 1000);
+  }
+
+  async logout(): Promise<void> {
+    this.auth.logout();
+    await this.router.navigateByUrl('/', { replaceUrl: true });
+  }
+
+  requestLogout(): void {
+    this.openConfirm(
+      'Sign out?',
+      'Are you sure you want to log out of the POS?',
+      () => void this.logout(),
+      'danger',
+    );
   }
 
   addVariantToCart(variant: PosVariant): void {
@@ -465,14 +601,6 @@ export class PosDashboardComponent implements OnInit {
     el?.select();
   }
 
-  private focusFirstVariantQty(): void {
-    const first = this.filteredModalVariants[0];
-    if (!first || first.stockQty <= 0) return;
-    const el = document.getElementById(`variant-qty-${first.id}`) as HTMLInputElement | null;
-    el?.focus();
-    el?.select();
-  }
-
   requestClearCart(): void {
     if (!this.cart.length) return;
     this.openConfirm('Clear cart?', 'Remove all items from the cart?', () => {
@@ -625,7 +753,7 @@ export class PosDashboardComponent implements OnInit {
       this.cartOpen = false;
       this.selectedDiscountId = null;
       this.amountReceived = 0;
-      await this.loadProducts();
+      await this.loadCatalog();
       setTimeout(() => {
         this.showCheckoutModal = false;
         this.checkoutSuccess = null;
@@ -722,8 +850,21 @@ export class PosDashboardComponent implements OnInit {
     this.confirmAction = null;
   }
 
+  variantHasSale(variant: PosVariant): boolean {
+    return variant.salePrice != null && variant.salePrice > 0 && variant.salePrice < variant.sellingPrice;
+  }
+
+  catalogVariantImage(variant: PosVariant): string | null {
+    return variant.imageUrl ?? variant.productImageUrl ?? null;
+  }
+
   private syncCartStock(): void {
     for (const line of this.cart) {
+      const variant = this.variantCatalog.find((v) => v.id === line.variantId);
+      if (variant) {
+        line.stockQty = variant.stockQty;
+        continue;
+      }
       const product = this.products.find((p) => p.name === line.productName);
       if (product) {
         line.stockQty = product.totalStock;
