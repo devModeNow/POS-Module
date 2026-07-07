@@ -91,4 +91,26 @@
     - In inventory table, make the "Stock" or "Total stock" column values use the right number formatting like when its 20000 it should be 20,000
     - In inventory view, "Product types" view, add red pill in the text "Sale" in "Price Range" column.
     - Make sure to fix all errors and bugs you encounter while working on this task.
-
+    //Continuation 2.8
+    - I created a new user specifically for cashier, I want you to remove all the header and side bar when cashier is logged in, I want it to show only the POS dashbaord itself.
+    - remove the autofocus on quantity inputs on product popup forms. Add a - and + icons on left and right so its more easy to use on a touchscreen environment.
+    - In the pos dashboard, under the seachbox, you see the product categories pills that can be use as filters, I want you to chage it into a dropdown when the pills counts are more than 5.
+    - In the adding product form modal, make the form radius less, I want it to look more shap edges, same to the buttons.
+    - Use icons instead of text in the forms.
+    - In image selectors, remove the choose image/variant image button and make the image template as the main button when picking an image, its just to make it look more modern.
+    - Make sure to fix all errors and bugs you encounter while working on this task.
+    //Continuation 2.8
+    - In adding product form modal, while I am typing product details I suddenly clicked outside the form and the form closed and the details I inserted was gone. Could you make it retain the details I input even I accidentally closed the form.
+    - In the POS, add an option to view the products by product type or by product variants, if product vriants are picked, product cards or list will show each products not each product type.
+    - In the POS main search, show result by products so that when they search an specific product it will show the product card not the product type.
+    - Make all the borders radius including the images, buttons, modal forms etc... more sharp, I dont want those too rounded.
+    - In the POS account dashboard, add a confirmation message before logging out to lessen the sudden logout error.
+    - Make sure to fix all errors and bugs you encounter while working on this task.
+    //Continuation 2.9
+    - for posadmin dashboard, add a complete user management feature, apply all settings you know is applicable and usable.
+    - for posadmin dashboard, add a feature where I can add unit types, so those unit types will be available on a dropdown selector when adding a product variant.
+    - in adding a product under each variant, edit the Unit types form, add a feature where in I can set which unit type and value will be the default unit type for that specific variant so that when the product variant is selected in POS the selected default unit type will the first one.
+    - In POS account dashboard, make the whole UI automatically fit on any landscape window size so there will be no horizontal and vertical scroll except the scroll on the product cards.
+    - In POS account dasboard, on checkout modal popup fix the sizing of it because currently its not fit on the tablet, make it dynamic in sizing make it scrollable and max 98% in height, remove autofocus on Amount Recieved textbox.
+    - In POS product cards, make the format of the in stock text into right number format for example 19800 in stock to 19,800 in stock.
+    - Make sure to fix all errors and bugs you encounter while working on this task.

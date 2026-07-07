@@ -21,6 +21,28 @@ type PermissionKeyInput = {
 export class UsersService {
   constructor(private readonly databaseService: DatabaseService) {}
 
+  private async assertUserOrgAccess(
+    userId: number,
+    scopedOrgId: number | null,
+  ): Promise<{ ok: true } | { ok: false; message: string }> {
+    if (scopedOrgId == null) return { ok: true };
+
+    const result = await this.databaseService.query<{ orgId: number | null }>(
+      `SELECT org_id AS "orgId" FROM tblusers WHERE id = $1 LIMIT 1`,
+      [userId],
+    );
+
+    if (result.rowCount === 0) {
+      return { ok: false, message: 'User not found' };
+    }
+
+    if (result.rows[0].orgId !== scopedOrgId) {
+      return { ok: false, message: 'Access denied' };
+    }
+
+    return { ok: true };
+  }
+
   async findPermissionKeys() {
     try {
       const result = await this.databaseService.query<{
@@ -832,7 +854,7 @@ export class UsersService {
     }
   }
 
-  async update(id: number, updateUserDto: UpdateUserDto) {
+  async update(id: number, updateUserDto: UpdateUserDto, scopedOrgId: number | null = null) {
     if (!Number.isFinite(id) || id <= 0) {
       return {
         success: false,
@@ -841,6 +863,11 @@ export class UsersService {
     }
 
     try {
+      const access = await this.assertUserOrgAccess(id, scopedOrgId);
+      if (!access.ok) {
+        return { success: false, message: access.message };
+      }
+
       const existingUser = await this.databaseService.query<{ id: number }>(
         `SELECT id FROM tblusers WHERE id = $1 LIMIT 1`,
         [id],
@@ -1004,7 +1031,7 @@ export class UsersService {
     }
   }
 
-  async remove(id: number) {
+  async remove(id: number, scopedOrgId: number | null = null) {
     if (!Number.isFinite(id) || id <= 0) {
       return {
         success: false,
@@ -1013,6 +1040,11 @@ export class UsersService {
     }
 
     try {
+      const access = await this.assertUserOrgAccess(id, scopedOrgId);
+      if (!access.ok) {
+        return { success: false, message: access.message };
+      }
+
       const columns = await this.getTableColumns('tblusers');
       const isDeletedColumn = this.pickColumn(columns, ['is_deleted', 'isDeleted']);
       const deletedAtColumn = this.pickColumn(columns, ['deleted_at', 'deletedAt']);
@@ -1102,7 +1134,7 @@ export class UsersService {
     }
   }
 
-  async restore(id: number) {
+  async restore(id: number, scopedOrgId: number | null = null) {
     if (!Number.isFinite(id) || id <= 0) {
       return {
         success: false,
@@ -1111,6 +1143,11 @@ export class UsersService {
     }
 
     try {
+      const access = await this.assertUserOrgAccess(id, scopedOrgId);
+      if (!access.ok) {
+        return { success: false, message: access.message };
+      }
+
       const columns = await this.getTableColumns('tblusers');
       const isDeletedColumn = this.pickColumn(columns, ['is_deleted', 'isDeleted']);
       const deletedAtColumn = this.pickColumn(columns, ['deleted_at', 'deletedAt']);

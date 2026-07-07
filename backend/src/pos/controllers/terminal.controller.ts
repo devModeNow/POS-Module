@@ -26,6 +26,15 @@ export class PosTerminalController {
     return this.terminalService.listProducts(orgId(req), search, category);
   }
 
+  @Get('variants')
+  listAllVariants(
+    @Query('search') search: string,
+    @Query('category') category: string,
+    @Req() req: AuthReq,
+  ) {
+    return this.terminalService.listAllVariants(orgId(req), search, category);
+  }
+
   @Get('products/:id/variants')
   listVariants(@Param('id') id: string, @Req() req: AuthReq) {
     return this.terminalService.listVariants(+id, orgId(req));

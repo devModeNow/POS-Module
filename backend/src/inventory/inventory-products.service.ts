@@ -10,6 +10,7 @@ export type VariantUnitRow = {
   sellingPrice: number;
   salePrice: number | null;
   isManualEntry: boolean;
+  isDefault?: boolean;
 };
 
 export type VariantRow = {
@@ -94,6 +95,7 @@ export class InventoryProductsService {
         sellingPrice?: number;
         salePrice?: number | null;
         isManualEntry?: boolean;
+        isDefault?: boolean;
       }>;
     },
   ): VariantUnitRow[] {
@@ -104,9 +106,10 @@ export class InventoryProductsService {
           sellingPrice: v.sellingPrice ?? 0,
           salePrice: v.salePrice ?? null,
           isManualEntry: v.unitType === 'manual',
+          isDefault: true,
         }];
     return raw
-      .map((u) => {
+      .map((u, index) => {
         const rawType = String(u.unitType ?? 'piece').trim();
         const unitType = rawType.toLowerCase() === 'manual' ? 'grams' : rawType;
         return {
@@ -114,29 +117,41 @@ export class InventoryProductsService {
           sellingPrice: Number(u.sellingPrice ?? 0),
           salePrice: u.salePrice != null ? Number(u.salePrice) : null,
           isManualEntry: Boolean(u.isManualEntry),
+          isDefault: Boolean(u.isDefault) || (index === 0 && !raw.some((x) => x.isDefault)),
         };
       })
       .filter((u) => u.unitType.length > 0);
   }
 
-  private async loadUnitsMap(variantIds: number[], activeOnly = true) {
+  private async loadUnitsMap(variantIds: number[], orgId: number, activeOnly = true) {
     const map = new Map<number, VariantUnitRow[]>();
     if (!variantIds.length) return map;
-    const activeClause = activeOnly ? 'AND is_active = TRUE' : '';
+    const activeClause = activeOnly ? 'AND vu.is_active = TRUE' : '';
     const result = await this.db.query<{
       variantId: number;
       unitType: string;
       sellingPrice: string;
       salePrice: string | null;
       isManualEntry: boolean;
+      isDefault: boolean;
     }>(
-      `SELECT variant_id AS "variantId", unit_type AS "unitType",
-              selling_price AS "sellingPrice", sale_price AS "salePrice",
-              is_manual_entry AS "isManualEntry"
-       FROM tblinventory_variant_units
-       WHERE variant_id = ANY($1::bigint[]) ${activeClause}
-       ORDER BY sort_order ASC, unit_type ASC`,
-      [variantIds],
+      `SELECT vu.variant_id AS "variantId", vu.unit_type AS "unitType",
+              vu.selling_price AS "sellingPrice", vu.sale_price AS "salePrice",
+              vu.is_manual_entry AS "isManualEntry",
+              vu.is_default AS "isDefault"
+       FROM tblinventory_variant_units vu
+       WHERE vu.variant_id = ANY($1::bigint[]) ${activeClause}
+         AND (
+           NOT EXISTS (SELECT 1 FROM tblorg_unit_types WHERE org_id = $2)
+           OR EXISTS (
+             SELECT 1 FROM tblorg_unit_types ut
+             WHERE ut.org_id = $2
+               AND lower(ut.code) = lower(vu.unit_type)
+               AND ut.is_active = TRUE
+           )
+         )
+       ORDER BY vu.is_default DESC, vu.sort_order ASC, vu.unit_type ASC`,
+      [variantIds, orgId],
     );
     for (const row of result.rows) {
       const list = map.get(row.variantId) ?? [];
@@ -145,6 +160,7 @@ export class InventoryProductsService {
         sellingPrice: Number(row.sellingPrice ?? 0),
         salePrice: row.salePrice != null ? Number(row.salePrice) : null,
         isManualEntry: row.isManualEntry,
+        isDefault: row.isDefault,
       });
       map.set(row.variantId, list);
     }
@@ -168,8 +184,13 @@ export class InventoryProductsService {
       throw new Error('Each variant needs at least one unit type.');
     }
     const kept: string[] = [];
-    for (let i = 0; i < units.length; i++) {
-      const u = units[i];
+    const defaultIndex = units.findIndex((u) => u.isDefault);
+    const orderedUnits = defaultIndex > 0
+      ? [units[defaultIndex], ...units.filter((_, i) => i !== defaultIndex)]
+      : units;
+    for (let i = 0; i < orderedUnits.length; i++) {
+      const u = orderedUnits[i];
+      const isDefault = Boolean(u.isDefault) || (defaultIndex < 0 && i === 0);
       const existing = await client.query<{ id: number }>(
         `SELECT id FROM tblinventory_variant_units
          WHERE variant_id = $1 AND lower(unit_type) = lower($2)
@@ -180,20 +201,35 @@ export class InventoryProductsService {
         await client.query(
           `UPDATE tblinventory_variant_units
            SET selling_price = $1, sale_price = $2, is_manual_entry = $3,
-               sort_order = $4, is_active = TRUE, updated_at = NOW()
-           WHERE id = $5`,
-          [u.sellingPrice, u.salePrice, u.isManualEntry, i + 1, existing.rows[0].id],
+               sort_order = $4, is_default = $5, is_active = TRUE, updated_at = NOW()
+           WHERE id = $6`,
+          [u.sellingPrice, u.salePrice, u.isManualEntry, i + 1, isDefault, existing.rows[0].id],
         );
       } else {
         await client.query(
           `INSERT INTO tblinventory_variant_units
-             (org_id, variant_id, unit_type, selling_price, sale_price, is_manual_entry, sort_order)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-          [orgId, variantId, u.unitType, u.sellingPrice, u.salePrice, u.isManualEntry, i + 1],
+             (org_id, variant_id, unit_type, selling_price, sale_price, is_manual_entry, sort_order, is_default)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+          [orgId, variantId, u.unitType, u.sellingPrice, u.salePrice, u.isManualEntry, i + 1, isDefault],
         );
       }
       kept.push(u.unitType.toLowerCase());
     }
+    await client.query(
+      `UPDATE tblinventory_variant_units SET is_default = FALSE, updated_at = NOW()
+       WHERE variant_id = $1 AND org_id = $2 AND is_active = TRUE`,
+      [variantId, orgId],
+    );
+    await client.query(
+      `UPDATE tblinventory_variant_units SET is_default = TRUE, updated_at = NOW()
+       WHERE id = (
+         SELECT id FROM tblinventory_variant_units
+         WHERE variant_id = $1 AND org_id = $2 AND is_active = TRUE
+         ORDER BY sort_order ASC, id ASC
+         LIMIT 1
+       )`,
+      [variantId, orgId],
+    );
     await client.query(
       `UPDATE tblinventory_variant_units SET is_active = FALSE, updated_at = NOW()
        WHERE variant_id = $1 AND org_id = $2 AND lower(unit_type) != ALL($3::text[])`,
@@ -331,7 +367,7 @@ export class InventoryProductsService {
         marginPercent: r['marginPercent'] != null ? Number(r['marginPercent']) : null,
         imageUrl: r['imageUrl'] ?? null,
       })) as Array<{ id: number } & Record<string, unknown>>;
-      const unitsMap = await this.loadUnitsMap(rows.map((r) => r.id));
+      const unitsMap = await this.loadUnitsMap(rows.map((r) => r.id), orgId);
       return {
         success: true,
         data: this.attachUnits(rows, unitsMap),
@@ -388,7 +424,7 @@ export class InventoryProductsService {
         marginPercent: r['marginPercent'] != null ? Number(r['marginPercent']) : null,
         imageUrl: r['imageUrl'] ?? r['productImageUrl'] ?? null,
       })) as Array<{ id: number } & Record<string, unknown>>;
-      const unitsMap = await this.loadUnitsMap(rows.map((r) => r.id), !deletedOnly);
+      const unitsMap = await this.loadUnitsMap(rows.map((r) => r.id), orgId, !deletedOnly);
 
       return {
         success: true,

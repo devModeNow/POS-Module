@@ -8,6 +8,7 @@ import { PosDiscountsService } from './services/discounts.service';
 import { PosPaymentMethodsService } from './services/payment-methods.service';
 import { PosStoreReportsService } from './services/store-reports.service';
 import { PosTerminalService } from './services/terminal.service';
+import { PosOrgBootstrapService } from './services/pos-org-bootstrap.service';
 
 @Module({
   imports: [DatabaseModule],
@@ -18,6 +19,7 @@ import { PosTerminalService } from './services/terminal.service';
     PosDiscountsService,
     PosPaymentMethodsService,
     PosStoreReportsService,
+    PosOrgBootstrapService,
   ],
 })
 export class PosModule {}

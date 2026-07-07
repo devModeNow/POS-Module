@@ -164,6 +164,7 @@ export class PosTerminalService {
         sellingPrice: number;
         salePrice: number | null;
         isManualEntry: boolean;
+        isDefault: boolean;
       }>>();
       if (variantIds.length) {
         const unitsResult = await this.db.query<{
@@ -172,14 +173,25 @@ export class PosTerminalService {
           sellingPrice: string;
           salePrice: string | null;
           isManualEntry: boolean;
+          isDefault: boolean;
         }>(
-          `SELECT variant_id AS "variantId", unit_type AS "unitType",
-                  selling_price AS "sellingPrice", sale_price AS "salePrice",
-                  is_manual_entry AS "isManualEntry"
-           FROM tblinventory_variant_units
-           WHERE variant_id = ANY($1::bigint[]) AND is_active = TRUE
-           ORDER BY sort_order ASC, unit_type ASC`,
-          [variantIds],
+          `SELECT vu.variant_id AS "variantId", vu.unit_type AS "unitType",
+                  vu.selling_price AS "sellingPrice", vu.sale_price AS "salePrice",
+                  vu.is_manual_entry AS "isManualEntry",
+                  vu.is_default AS "isDefault"
+           FROM tblinventory_variant_units vu
+           WHERE vu.variant_id = ANY($1::bigint[]) AND vu.is_active = TRUE
+             AND (
+               NOT EXISTS (SELECT 1 FROM tblorg_unit_types WHERE org_id = $2)
+               OR EXISTS (
+                 SELECT 1 FROM tblorg_unit_types ut
+                 WHERE ut.org_id = $2
+                   AND lower(ut.code) = lower(vu.unit_type)
+                   AND ut.is_active = TRUE
+               )
+             )
+           ORDER BY vu.is_default DESC, vu.sort_order ASC, vu.unit_type ASC`,
+          [variantIds, orgId],
         );
         for (const u of unitsResult.rows) {
           const list = unitsMap.get(u.variantId) ?? [];
@@ -188,6 +200,7 @@ export class PosTerminalService {
             sellingPrice: Number(u.sellingPrice ?? 0),
             salePrice: u.salePrice != null ? Number(u.salePrice) : null,
             isManualEntry: u.isManualEntry,
+            isDefault: u.isDefault,
           });
           unitsMap.set(u.variantId, list);
         }
@@ -197,14 +210,14 @@ export class PosTerminalService {
         success: true,
         data: result.rows.map((row) => {
           const units = unitsMap.get(row.id) ?? [];
-          const fallbackUnit = row.unitType ?? 'piece';
           const resolvedUnits = units.length
             ? units
             : [{
-                unitType: fallbackUnit,
+                unitType: 'piece',
                 sellingPrice: Number(row.sellingPrice ?? 0),
                 salePrice: row.salePrice != null ? Number(row.salePrice) : null,
-                isManualEntry: fallbackUnit === 'manual',
+                isManualEntry: false,
+                isDefault: true,
               }];
           const primary = resolvedUnits[0];
           return {
@@ -217,6 +230,147 @@ export class PosTerminalService {
           };
         }),
       };
+    } catch (e) {
+      return {
+        success: false,
+        message: e instanceof Error ? e.message : 'Failed to load variants',
+      };
+    }
+  }
+
+  async listAllVariants(orgId: number, search?: string, category?: string) {
+    try {
+      const params: unknown[] = [orgId];
+      let extra = '';
+      if (search?.trim()) {
+        params.push(`%${search.trim()}%`);
+        const idx = params.length;
+        extra += ` AND (
+          LOWER(v.variant_name) LIKE LOWER($${idx})
+          OR LOWER(p.name) LIKE LOWER($${idx})
+          OR LOWER(COALESCE(p.category,'')) LIKE LOWER($${idx})
+        )`;
+      }
+      if (category?.trim()) {
+        params.push(category.trim());
+        extra += ` AND LOWER(TRIM(p.category)) = LOWER(TRIM($${params.length}))`;
+      }
+
+      const result = await this.db.query<{
+        id: number;
+        productId: number;
+        productName: string;
+        variantName: string;
+        category: string | null;
+        stockQty: number;
+        sellingPrice: string;
+        salePrice: string | null;
+        unitType: string | null;
+        imageUrl: string | null;
+        productImageUrl: string | null;
+      }>(
+        `SELECT v.id,
+                v.product_id AS "productId",
+                p.name AS "productName",
+                v.variant_name AS "variantName",
+                p.category,
+                v.stock_qty AS "stockQty",
+                v.selling_price AS "sellingPrice",
+                v.sale_price AS "salePrice",
+                v.unit_type AS "unitType",
+                v.image_url AS "imageUrl",
+                p.image_url AS "productImageUrl"
+         FROM tblinventory_variants v
+         INNER JOIN tblinventory_products p ON p.id = v.product_id
+         LEFT JOIN (
+           SELECT st.variant_id, COALESCE(SUM(st.quantity_sold), 0)::bigint AS total_sold
+           FROM tblsales_transactions st
+           WHERE st.org_id = $1 AND st.variant_id IS NOT NULL
+           GROUP BY st.variant_id
+         ) sales ON sales.variant_id = v.id
+         WHERE v.org_id = $1 AND v.is_active = TRUE AND p.is_active = TRUE ${extra}
+         ORDER BY COALESCE(sales.total_sold, 0) DESC, p.category ASC NULLS LAST, p.name ASC, v.variant_name ASC`,
+        params,
+      );
+
+      const variantIds = result.rows.map((r) => r.id);
+      const unitsMap = new Map<number, Array<{
+        unitType: string;
+        sellingPrice: number;
+        salePrice: number | null;
+        isManualEntry: boolean;
+        isDefault: boolean;
+      }>>();
+      if (variantIds.length) {
+        const unitsResult = await this.db.query<{
+          variantId: number;
+          unitType: string;
+          sellingPrice: string;
+          salePrice: string | null;
+          isManualEntry: boolean;
+          isDefault: boolean;
+        }>(
+          `SELECT vu.variant_id AS "variantId", vu.unit_type AS "unitType",
+                  vu.selling_price AS "sellingPrice", vu.sale_price AS "salePrice",
+                  vu.is_manual_entry AS "isManualEntry",
+                  vu.is_default AS "isDefault"
+           FROM tblinventory_variant_units vu
+           WHERE vu.variant_id = ANY($1::bigint[]) AND vu.is_active = TRUE
+             AND (
+               NOT EXISTS (SELECT 1 FROM tblorg_unit_types WHERE org_id = $2)
+               OR EXISTS (
+                 SELECT 1 FROM tblorg_unit_types ut
+                 WHERE ut.org_id = $2
+                   AND lower(ut.code) = lower(vu.unit_type)
+                   AND ut.is_active = TRUE
+               )
+             )
+           ORDER BY vu.is_default DESC, vu.sort_order ASC, vu.unit_type ASC`,
+          [variantIds, orgId],
+        );
+        for (const u of unitsResult.rows) {
+          const list = unitsMap.get(u.variantId) ?? [];
+          list.push({
+            unitType: u.unitType,
+            sellingPrice: Number(u.sellingPrice ?? 0),
+            salePrice: u.salePrice != null ? Number(u.salePrice) : null,
+            isManualEntry: u.isManualEntry,
+            isDefault: u.isDefault,
+          });
+          unitsMap.set(u.variantId, list);
+        }
+      }
+
+      const data = result.rows.map((row) => {
+        const units = unitsMap.get(row.id) ?? [];
+        const resolvedUnits = units.length
+          ? units
+          : [{
+              unitType: 'piece',
+              sellingPrice: Number(row.sellingPrice ?? 0),
+              salePrice: row.salePrice != null ? Number(row.salePrice) : null,
+              isManualEntry: false,
+              isDefault: true,
+            }];
+        const primary = resolvedUnits[0];
+        return {
+          id: row.id,
+          productId: row.productId,
+          productName: row.productName,
+          variantName: row.variantName,
+          category: row.category,
+          stockQty: row.stockQty,
+          sellingPrice: primary.sellingPrice,
+          salePrice: primary.salePrice,
+          unitType: primary.unitType,
+          imageUrl: row.imageUrl,
+          productImageUrl: row.productImageUrl,
+          units: resolvedUnits,
+          inStock: row.stockQty > 0,
+        };
+      });
+
+      return { success: true, data };
     } catch (e) {
       return {
         success: false,
