@@ -1,23 +1,28 @@
 @if (isCashierMode) {
-  <div class="min-h-screen bg-gray-50 dark:bg-gray-950">
+  <div class="h-screen max-h-screen overflow-hidden bg-gray-50 dark:bg-gray-950">
     <router-outlet></router-outlet>
   </div>
 } @else {
-  <div class="min-h-screen xl:flex">
+  <div
+    class="flex min-h-0 flex-col xl:flex"
+    [ngClass]="isPosDashboardRoute ? 'h-screen max-h-screen overflow-hidden' : 'xl:min-h-screen'">
     <div>
       <app-sidebar></app-sidebar>
       <app-backdrop></app-backdrop>
     </div>
     <div
-        class="flex-1 transition-all duration-300 ease-in-out"
+        class="flex min-h-0 flex-1 flex-col transition-all duration-300 ease-in-out"
         [ngClass]="{
           'xl:ml-[290px]': (isExpanded$ | async) || (isHovered$ | async),
           'xl:ml-[90px]': !(isExpanded$ | async) && !(isHovered$ | async),
-          'ml-0': (isMobileOpen$ | async)
+          'ml-0': (isMobileOpen$ | async),
+          'overflow-hidden': isPosDashboardRoute
         }"
     >
       <app-header/>
-      <div class="p-4 mx-auto max-w-(--breakpoint-2xl) md:p-6">
+      <div
+        class="mx-auto w-full max-w-(--breakpoint-2xl) flex-1 min-h-0"
+        [ngClass]="isPosDashboardRoute ? 'flex flex-col overflow-hidden p-0 max-w-none' : 'p-4 md:p-6'">
         <router-outlet></router-outlet>
       </div>
     </div>

@@ -21,6 +21,7 @@ export interface PosVariantUnit {
   sellingPrice: number;
   salePrice?: number | null;
   isManualEntry: boolean;
+  isDefault?: boolean;
 }
 
 export interface PosVariant {

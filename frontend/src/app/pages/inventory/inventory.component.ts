@@ -26,6 +26,14 @@ type InventoryTableColumn = {
   hideable: boolean;
 };
 
+type VariantUnitFormRow = {
+  unitType: string;
+  sellingPrice: number;
+  salePrice: number | null;
+  isManualEntry: boolean;
+  isDefault: boolean;
+};
+
 @Component({
   selector: 'app-inventory',
   imports: [CommonModule, FormsModule, PageBreadcrumbComponent, ButtonComponent, DatePickerComponent, CanDirective, ConfirmDialogComponent],
@@ -42,6 +50,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
   productItems: InventoryProductRow[] = [];
   posInventoryView: PosInventoryView = 'products';
   inventoryItemFilter: InventoryItemFilter = 'active';
+  unitTypeOptions: { value: string; label: string }[] = [];
   productForm = this.emptyProductForm();
   editingProductId: number | null = null;
   editingVariantOnly = false;
@@ -324,6 +333,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
   ngOnInit(): void {
     this.syncPosOrgFlag();
     void this.loadCategoryOptions();
+    void this.loadUnitTypeOptions();
     void this.loadItems();
     void this.loadSuppliers();
 
@@ -331,6 +341,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
       const wasPosOrg = this.isPosOrg;
       this.syncPosOrgFlag();
       if (wasPosOrg !== this.isPosOrg) {
+        void this.loadUnitTypeOptions();
         void this.loadItems();
       }
     });
@@ -408,19 +419,38 @@ export class InventoryComponent implements OnInit, OnDestroy {
     }
   }
 
+  async loadUnitTypeOptions(): Promise<void> {
+    if (!this.isPosOrg) return;
+    try {
+      const r = await this.svc.getUnitTypes();
+      if (r.success && r.data) {
+        this.unitTypeOptions = r.data
+          .filter((u) => u.isActive !== false)
+          .map((u) => ({ value: u.code, label: u.label }));
+      } else {
+        this.unitTypeOptions = [];
+      }
+    } catch {
+      this.unitTypeOptions = [];
+    }
+  }
+
   onCategoryFilterChange(): void {
     void this.loadItems();
   }
 
   openCreateItem(): void {
     if (this.isPosOrg) {
-      const draft = this.loadProductFormDraft();
-      this.productForm = draft ?? this.emptyProductForm();
-      this.editingProductId = null;
-      this.editingVariantOnly = false;
-      this.editingVariantId = null;
-      this.itemDrawerMode = 'create';
-      this.isItemDrawerOpen = true;
+      void this.loadUnitTypeOptions().then(() => {
+        const draft = this.loadProductFormDraft();
+        this.productForm = draft ?? this.emptyProductForm();
+        this.sanitizeProductFormUnits();
+        this.editingProductId = null;
+        this.editingVariantOnly = false;
+        this.editingVariantId = null;
+        this.itemDrawerMode = 'create';
+        this.isItemDrawerOpen = true;
+      });
       return;
     }
     const itemDraft = this.loadItemFormDraft();
@@ -549,18 +579,39 @@ export class InventoryComponent implements OnInit, OnDestroy {
   }
 
   readonly unitTypes = ['piece', 'grams', 'kilo', 'pack', 'sack', 'liter', 'box', 'bottle', 'can', 'tray'];
-  readonly unitTypeOptions: { value: string; label: string }[] = [
-    { value: 'piece', label: 'Piece' },
-    { value: 'pack', label: 'Pack' },
-    { value: 'kilo', label: 'Kilo' },
-    { value: 'sack', label: 'Sack' },
-    { value: 'grams', label: 'Grams' },
-    { value: 'liter', label: 'Liter' },
-    { value: 'box', label: 'Box' },
-    { value: 'bottle', label: 'Bottle' },
-    { value: 'can', label: 'Can' },
-    { value: 'tray', label: 'Tray' },
-  ];
+
+  private defaultUnitTypeCode(): string {
+    return this.unitTypeOptions?.[0]?.value ?? 'piece';
+  }
+
+  private activeUnitTypeCodes(): Set<string> {
+    return new Set(this.unitTypeOptions.map((o) => o.value.toLowerCase()));
+  }
+
+  private sanitizeProductFormUnits(): void {
+    const activeCodes = this.activeUnitTypeCodes();
+    if (!activeCodes.size) return;
+
+    const defaultCode = this.defaultUnitTypeCode();
+    for (let vi = 0; vi < this.productForm.variants.length; vi++) {
+      const v = this.productForm.variants[vi];
+      v.units = v.units.filter((u) =>
+        activeCodes.has(this.normalizeUnitType(u.unitType).toLowerCase()),
+      );
+      if (!v.units.length) {
+        v.units = [this.emptyUnitRow()];
+      }
+      if (!v.units.some((u) => u.isDefault)) {
+        v.units[0].isDefault = true;
+      }
+      for (const u of v.units) {
+        if (!activeCodes.has(this.normalizeUnitType(u.unitType).toLowerCase())) {
+          u.unitType = defaultCode;
+        }
+      }
+      this.syncVariantPrimaryUnit(vi);
+    }
+  }
 
   unitPriceHint(unitType: string): string {
     if (unitType === 'kilo') return 'Price per kilo';
@@ -621,6 +672,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
 
   async openEditProductById(productId: number, singleVariantId?: number): Promise<void> {
     try {
+      await this.loadUnitTypeOptions();
       const r = await this.posSvc.getInventoryProduct(productId);
       if (!r.success || !r.data) {
         this.notify.error('Error', r.message ?? 'Failed to load product.');
@@ -649,7 +701,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
     brand?: string | null;
     description?: string | null;
     imageUrl?: string | null;
-    variants?: Array<InventoryVariantRow & { units?: Array<{ unitType: string; sellingPrice: number; salePrice?: number | null; isManualEntry?: boolean }> }>;
+    variants?: Array<InventoryVariantRow & { units?: VariantUnitFormRow[] }>;
   },
     singleVariantId?: number,
   ): Promise<void> {
@@ -662,7 +714,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
         imageUrl: d.imageUrl ?? null,
         imagePreview: d.imageUrl ?? null,
         imageFile: null,
-        variants: (d.variants ?? []).map((v: InventoryVariantRow & { units?: Array<{ unitType: string; sellingPrice: number; salePrice?: number | null; isManualEntry?: boolean }> }) => ({
+        variants: (d.variants ?? []).map((v: InventoryVariantRow & { units?: VariantUnitFormRow[] }) => ({
           id: v.id,
           variantName: v.variantName,
           stockQty: v.stockQty,
@@ -677,11 +729,13 @@ export class InventoryComponent implements OnInit, OnDestroy {
             sellingPrice: v.sellingPrice ?? 0,
             salePrice: v.salePrice ?? null,
             isManualEntry: false,
-          }]).map((u) => ({
+            isDefault: true,
+          } satisfies VariantUnitFormRow]).map((u, ui): VariantUnitFormRow => ({
             unitType: this.normalizeUnitType(u.unitType),
             sellingPrice: u.sellingPrice ?? 0,
             salePrice: u.salePrice ?? null,
             isManualEntry: false,
+            isDefault: Boolean(u.isDefault) || ui === 0,
           })),
           imageUrl: v.imageUrl ?? null,
           imagePreview: v.imageUrl ?? null,
@@ -703,6 +757,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
         this.editingVariantOnly = false;
         this.editingVariantId = null;
       }
+      this.sanitizeProductFormUnits();
       this.editingProductId = d.id;
       this.itemDrawerMode = 'edit';
       this.isItemDrawerOpen = true;
@@ -713,13 +768,35 @@ export class InventoryComponent implements OnInit, OnDestroy {
   }
 
   addUnitRow(variantIndex: number): void {
-    this.productForm.variants[variantIndex].units.unshift(this.emptyUnitRow());
+    const used = new Set(
+      this.productForm.variants[variantIndex].units.map((u) =>
+        this.normalizeUnitType(u.unitType).toLowerCase(),
+      ),
+    );
+    const available = this.unitTypeOptions.find((o) => !used.has(o.value.toLowerCase()));
+    const row = this.emptyUnitRow();
+    if (available) {
+      row.unitType = available.value;
+    }
+    row.isDefault = false;
+    this.productForm.variants[variantIndex].units.unshift(row);
+  }
+
+  setDefaultUnit(variantIndex: number, unitIndex: number): void {
+    this.productForm.variants[variantIndex].units.forEach((u, i) => {
+      u.isDefault = i === unitIndex;
+    });
+    this.syncVariantPrimaryUnit(variantIndex);
   }
 
   removeUnitRow(variantIndex: number, unitIndex: number): void {
     const units = this.productForm.variants[variantIndex].units;
     if (units.length <= 1) return;
+    const wasDefault = units[unitIndex].isDefault;
     units.splice(unitIndex, 1);
+    if (wasDefault && units.length) {
+      units[0].isDefault = true;
+    }
     this.syncVariantPrimaryUnit(variantIndex);
   }
 
@@ -846,6 +923,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
         sellingPrice: this.toFiniteNumber(u.sellingPrice, 0),
         salePrice: u.salePrice ?? null,
         isManualEntry: false,
+        isDefault: Boolean(u.isDefault),
       })),
     };
   }
@@ -1531,12 +1609,13 @@ export class InventoryComponent implements OnInit, OnDestroy {
 
   selectPoItemCategory(index: number, name: string): void { this.poItems[index].category = name; this.showPoItemCategoryDropdown[index] = false; }
 
-  private emptyUnitRow() {
+  private emptyUnitRow(): VariantUnitFormRow {
     return {
-      unitType: 'piece',
+      unitType: this.defaultUnitTypeCode(),
       sellingPrice: 0,
-      salePrice: null as number | null,
+      salePrice: null,
       isManualEntry: false,
+      isDefault: true,
     };
   }
 

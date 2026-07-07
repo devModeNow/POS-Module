@@ -183,7 +183,8 @@ export class UserManagementComponent implements OnInit {
     this.isLoadingUsers = true;
     this.errorMessage = '';
     try {
-      const response = await this.userManagementService.getUsers(this.showDeletedUsers);
+      const orgId = this.isPlatformUser ? undefined : this.rbacService.getOrgId();
+      const response = await this.userManagementService.getUsers(this.showDeletedUsers, orgId ?? undefined);
       if (!response.success) { this.errorMessage = response.message ?? 'Failed to load users'; this.users = []; return; }
       this.users = (response.data ?? []).map((i) => this.mapUserItem(i));
       this.page = 1;

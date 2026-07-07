@@ -188,6 +188,7 @@ export class AppSidebarComponent {
       'job-orders',
       'customers',
       'reports',
+      'user-management',
       'settings',
     ];
 
@@ -204,8 +205,8 @@ export class AppSidebarComponent {
   }
 
   private buildOrgNavItem(menuKey: string): NavItem | null {
-    // Temporarily hidden menu items
-    const hiddenMenus = ['sales', 'user-management', 'vehicles'];
+    // Temporarily hidden menu items (user-management shown for POS org via roleMenus)
+    const hiddenMenus = ['sales', 'vehicles'];
     if (hiddenMenus.includes(menuKey)) return null;
 
     const labelMap: Record<string, string> = {

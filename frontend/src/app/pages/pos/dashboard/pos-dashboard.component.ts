@@ -23,6 +23,7 @@ import { AuthService } from '../../../shared/services/auth.service';
   standalone: true,
   imports: [CommonModule, FormsModule, ConfirmDialogComponent],
   templateUrl: './pos-dashboard.component.html',
+  styles: `:host { display: block; height: 100%; min-height: 0; }`,
 })
 export class PosDashboardComponent implements OnInit {
   state: 'loading' | 'loaded' | 'error' = 'loading';
@@ -311,8 +312,12 @@ export class PosDashboardComponent implements OnInit {
     this.variantSelectedUnit = {};
     for (const v of this.variants) {
       this.variantQty[v.id] = this.defaultVariantQty(v);
-      this.variantSelectedUnit[v.id] = v.units[0]?.unitType ?? 'piece';
+      this.variantSelectedUnit[v.id] = this.defaultUnitType(v);
     }
+  }
+
+  private defaultUnitType(variant: PosVariant): string {
+    return variant.units.find((u) => u.isDefault)?.unitType ?? variant.units[0]?.unitType ?? 'piece';
   }
 
   closeVariantModal(): void {
@@ -692,7 +697,6 @@ export class PosDashboardComponent implements OnInit {
     this.amountReceived = 0;
     this.checkoutSuccess = null;
     this.showCheckoutModal = true;
-    setTimeout(() => this.amountReceivedInput?.nativeElement.focus(), 0);
   }
 
   closeCheckoutModal(): void {
@@ -767,6 +771,12 @@ export class PosDashboardComponent implements OnInit {
 
   formatCurrency(value: number): string {
     return value.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  formatStock(value: number): string {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '0';
+    return n.toLocaleString('en-PH', { maximumFractionDigits: 3 });
   }
 
   productImage(product: PosProduct): string | null {

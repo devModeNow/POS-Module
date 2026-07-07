@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, ElementRef, OnDestroy, OnInit, ViewChild, AfterViewChecked } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { PageBreadcrumbComponent } from '../../shared/components/common/page-breadcrumb/page-breadcrumb.component';
+import { ConfirmDialogComponent } from '../../shared/components/ui/confirm-dialog/confirm-dialog.component';
 import {
   BusinessProfileSettings,
   BusinessSettingsService,
@@ -14,11 +15,13 @@ import {
   UserManagementService,
 } from '../../shared/services/user-management.service';
 import { BackupService } from '../../shared/services/backup.service';
+import { InventoryService, OrgUnitType } from '../../shared/services/inventory.service';
+import { OrgService } from '../../shared/services/org.service';
 import type { BackupMetadata, BackupType, BackupFormat } from '../../shared/interfaces/backup.interfaces';
 import axios from 'axios';
 import { shouldPoll, extractFilename, formatBackupDate, formatFileSize, getStatusBadgeClasses, getStatusAriaLabel } from '../../shared/utils/backup-utils';
 
-type SettingsTab = 'system' | 'print-settings' | 'rbac-configs' | 'database-backup';
+type SettingsTab = 'system' | 'print-settings' | 'rbac-configs' | 'unit-types' | 'database-backup';
 
 interface SettingsPermissionOption {
   key: string;
@@ -30,7 +33,7 @@ interface SettingsPermissionOption {
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule, PageBreadcrumbComponent],
+  imports: [CommonModule, FormsModule, PageBreadcrumbComponent, ConfirmDialogComponent],
   templateUrl: './settings.component.html',
   styles: ``,
 })
@@ -91,6 +94,17 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
   backupForm: { type: BackupType; format: BackupFormat } = { type: 'full', format: 'plain' };
   showDeleteConfirm = false;
   deleteTargetId: string | null = null;
+
+  unitTypes: OrgUnitType[] = [];
+  isLoadingUnitTypes = false;
+  isSavingUnitType = false;
+  unitTypeForm = { code: '', label: '', isManualEntry: false };
+
+  confirmOpen = false;
+  confirmTitle = '';
+  confirmMessage = '';
+  confirmVariant: 'primary' | 'danger' = 'primary';
+  private confirmAction: (() => void) | null = null;
 
   form: {
     websiteTabName: string;
@@ -177,6 +191,8 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
     private readonly rbacService: RbacService,
     private readonly userManagementService: UserManagementService,
     private readonly backupService: BackupService,
+    private readonly inventoryService: InventoryService,
+    private readonly orgService: OrgService,
   ) {}
 
   ngOnInit(): void {
@@ -195,17 +211,24 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
     { key: 'system', label: 'System' },
     { key: 'print-settings', label: 'Print Settings' },
     { key: 'rbac-configs', label: 'RBAC Configs' },
+    { key: 'unit-types', label: 'Unit Types' },
     { key: 'database-backup', label: 'Database Backup' },
   ];
+
+  get isPosOrg(): boolean {
+    return this.orgService.isPosOrg() || this.rbacService.isPosOrg();
+  }
 
   get canAccessBackup(): boolean {
     return this.rbacService.isAdminOrSuperAdmin();
   }
 
   get visibleTabs(): Array<{ key: SettingsTab; label: string }> {
-    return this.tabs.filter(
-      (tab) => tab.key !== 'database-backup' || this.canAccessBackup,
-    );
+    return this.tabs.filter((tab) => {
+      if (tab.key === 'database-backup') return this.canAccessBackup;
+      if (tab.key === 'unit-types') return this.isPosOrg;
+      return true;
+    });
   }
 
   get canReadSettings(): boolean {
@@ -257,6 +280,130 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
     // Load backups when switching to database-backup tab
     if (tab === 'database-backup') {
       void this.loadBackups();
+    }
+    if (tab === 'unit-types') {
+      void this.loadUnitTypes();
+    }
+  }
+
+  async loadUnitTypes(): Promise<void> {
+    if (!this.isPosOrg) return;
+    this.isLoadingUnitTypes = true;
+    this.uiError = '';
+    try {
+      const r = await this.inventoryService.getUnitTypes(true);
+      if (!r.success) {
+        this.uiError = r.message ?? 'Failed to load unit types.';
+        this.unitTypes = [];
+        return;
+      }
+      this.unitTypes = r.data ?? [];
+    } catch (error: unknown) {
+      this.unitTypes = [];
+      this.uiError = this.resolveErrorMessage(error, 'Failed to load unit types.');
+    } finally {
+      this.isLoadingUnitTypes = false;
+    }
+  }
+
+  async createUnitType(): Promise<void> {
+    if (!this.canUpdateSettings) {
+      this.uiError = 'You do not have permission to add unit types.';
+      return;
+    }
+    const code = this.unitTypeForm.code.trim();
+    const label = this.unitTypeForm.label.trim();
+    if (!code || !label) {
+      this.uiError = 'Code and label are required.';
+      return;
+    }
+
+    const normalizedCode = this.normalizeUnitTypeCode(code);
+    const duplicateError = this.findDuplicateUnitTypeError(normalizedCode, label);
+    if (duplicateError) {
+      this.uiError = duplicateError;
+      return;
+    }
+
+    this.isSavingUnitType = true;
+    this.uiError = '';
+    this.uiMessage = '';
+    try {
+      const r = await this.inventoryService.createUnitType({
+        code,
+        label,
+        isManualEntry: this.unitTypeForm.isManualEntry,
+        sortOrder: this.unitTypes.filter((u) => u.isActive).length + 1,
+      });
+      if (!r.success) {
+        this.uiError = r.message ?? 'Failed to add unit type.';
+        return;
+      }
+      this.unitTypeForm = { code: '', label: '', isManualEntry: false };
+      this.uiMessage = r.message ?? (r.reactivated ? 'Unit type reactivated.' : 'Unit type added.');
+      await this.loadUnitTypes();
+    } catch (error: unknown) {
+      this.uiError = this.resolveErrorMessage(error, 'Failed to add unit type.');
+    } finally {
+      this.isSavingUnitType = false;
+    }
+  }
+
+  requestReactivateUnitType(row: OrgUnitType): void {
+    if (!this.canUpdateSettings) return;
+    this.openConfirm(
+      'Reactivate unit type?',
+      `Make "${row.label}" available again when adding product variants?`,
+      () => void this.reactivateUnitType(row),
+      'primary',
+    );
+  }
+
+  async reactivateUnitType(row: OrgUnitType): Promise<void> {
+    if (!this.canUpdateSettings) return;
+    this.isSavingUnitType = true;
+    this.uiError = '';
+    this.uiMessage = '';
+    try {
+      const r = await this.inventoryService.activateUnitType(row.id);
+      if (!r.success) {
+        this.uiError = r.message ?? 'Failed to reactivate unit type.';
+        return;
+      }
+      this.uiMessage = r.message ?? `"${row.label}" reactivated.`;
+      await this.loadUnitTypes();
+    } catch (error: unknown) {
+      this.uiError = this.resolveErrorMessage(error, 'Failed to reactivate unit type.');
+    } finally {
+      this.isSavingUnitType = false;
+    }
+  }
+
+  requestDeactivateUnitType(row: OrgUnitType): void {
+    if (!this.canUpdateSettings) return;
+    this.openConfirm(
+      'Remove unit type?',
+      `Remove "${row.label}" from the active list? It will no longer appear when adding product variants.`,
+      () => void this.deactivateUnitType(row),
+      'danger',
+    );
+  }
+
+  async deactivateUnitType(row: OrgUnitType): Promise<void> {
+    if (!this.canUpdateSettings) return;
+    this.isSavingUnitType = true;
+    try {
+      const r = await this.inventoryService.deactivateUnitType(row.id);
+      if (!r.success) {
+        this.uiError = r.message ?? 'Failed to remove unit type.';
+        return;
+      }
+      this.uiMessage = `"${row.label}" removed from active list.`;
+      await this.loadUnitTypes();
+    } catch (error: unknown) {
+      this.uiError = this.resolveErrorMessage(error, 'Failed to remove unit type.');
+    } finally {
+      this.isSavingUnitType = false;
     }
   }
 
@@ -884,6 +1031,43 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
   private toNullable(value: unknown): string | null {
     const normalized = String(value ?? '').trim();
     return normalized.length > 0 ? normalized : null;
+  }
+
+  private normalizeUnitTypeCode(raw: string): string {
+    return raw.trim().toLowerCase().replace(/\s+/g, '_');
+  }
+
+  private findDuplicateUnitTypeError(normalizedCode: string, label: string): string | null {
+    const byCode = this.unitTypes.find((u) => u.code.toLowerCase() === normalizedCode);
+    if (byCode?.isActive) {
+      return `Unit type "${byCode.label}" already exists. Use a different code or reactivate it from the list below.`;
+    }
+    const byLabel = this.unitTypes.find(
+      (u) => u.isActive && u.label.trim().toLowerCase() === label.trim().toLowerCase(),
+    );
+    if (byLabel) {
+      return `A unit type with label "${byLabel.label}" already exists (code: ${byLabel.code}).`;
+    }
+    return null;
+  }
+
+  openConfirm(title: string, message: string, action: () => void, dialogVariant: 'primary' | 'danger' = 'primary'): void {
+    this.confirmTitle = title;
+    this.confirmMessage = message;
+    this.confirmVariant = dialogVariant;
+    this.confirmAction = action;
+    this.confirmOpen = true;
+  }
+
+  onConfirmDialog(): void {
+    this.confirmOpen = false;
+    this.confirmAction?.();
+    this.confirmAction = null;
+  }
+
+  onCancelDialog(): void {
+    this.confirmOpen = false;
+    this.confirmAction = null;
   }
 
   private resolveErrorMessage(error: unknown, fallback: string): string {

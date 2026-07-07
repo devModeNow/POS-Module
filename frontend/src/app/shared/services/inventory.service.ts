@@ -219,4 +219,41 @@ export class InventoryService {
     const r = await apiClient.post<ApiOk>(`/inventory/purchase-orders/${id}/receive`, {});
     return r.data;
   }
+
+  async getUnitTypes(includeInactive = false): Promise<{ success: boolean; data?: OrgUnitType[]; message?: string }> {
+    const r = await apiClient.get<{ success: boolean; data?: OrgUnitType[]; message?: string }>(
+      '/inventory/unit-types',
+      { params: includeInactive ? { includeInactive: 'true' } : undefined },
+    );
+    return r.data;
+  }
+
+  async createUnitType(payload: { code: string; label: string; isManualEntry?: boolean; sortOrder?: number }): Promise<{ success: boolean; id?: number; reactivated?: boolean; message?: string }> {
+    const r = await apiClient.post<{ success: boolean; id?: number; reactivated?: boolean; message?: string }>('/inventory/unit-types', payload);
+    return r.data;
+  }
+
+  async updateUnitType(id: number, payload: Partial<{ label: string; isManualEntry: boolean; sortOrder: number; isActive: boolean }>): Promise<{ success: boolean; message?: string }> {
+    const r = await apiClient.patch<{ success: boolean; message?: string }>(`/inventory/unit-types/${id}`, payload);
+    return r.data;
+  }
+
+  async deactivateUnitType(id: number): Promise<{ success: boolean; message?: string }> {
+    const r = await apiClient.delete<{ success: boolean; message?: string }>(`/inventory/unit-types/${id}`);
+    return r.data;
+  }
+
+  async activateUnitType(id: number): Promise<{ success: boolean; message?: string }> {
+    const r = await apiClient.patch<{ success: boolean; message?: string }>(`/inventory/unit-types/${id}/activate`, {});
+    return r.data;
+  }
+}
+
+export interface OrgUnitType {
+  id: number;
+  code: string;
+  label: string;
+  isManualEntry: boolean;
+  sortOrder: number;
+  isActive: boolean;
 }

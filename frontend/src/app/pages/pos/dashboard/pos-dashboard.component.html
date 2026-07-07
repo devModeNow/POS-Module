@@ -1,16 +1,12 @@
-<div class="flex flex-col overflow-hidden bg-gray-50 dark:bg-gray-950 md:flex-row"
-  [class.h-[100dvh]]="isCashierMode"
-  [class.min-h-[100dvh]]="isCashierMode"
-  [class.h-[calc(100dvh-5rem)]]="!isCashierMode"
-  [class.min-h-[36rem]]="!isCashierMode"
+<div class="flex h-full min-h-0 flex-col overflow-hidden bg-gray-50 dark:bg-gray-950 md:flex-row"
   [class.rounded-none]="isCashierMode"
   [class.border-0]="isCashierMode"
   [class.rounded-md]="!isCashierMode"
   [class.border]="!isCashierMode"
   [class.border-gray-200]="!isCashierMode"
   [class.dark:border-gray-800]="!isCashierMode">
-  <section class="flex min-h-0 flex-1 flex-col">
-    <header class="border-b border-gray-200 bg-white px-4 py-4 dark:border-gray-800 dark:bg-gray-900 sm:px-6">
+  <section class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    <header class="shrink-0 border-b border-gray-200 bg-white px-4 py-4 dark:border-gray-800 dark:bg-gray-900 sm:px-6">
       <div class="flex items-center justify-between gap-3">
         <div>
           <p class="text-xs font-medium uppercase tracking-wider text-emerald-600 dark:text-emerald-400">Point of Sale</p>
@@ -119,7 +115,7 @@
       </div>
     }
     @if (state === 'loaded') {
-      <div class="flex-1 overflow-y-auto scrollbar-auto p-4 md:p-6">
+      <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-auto p-4 md:p-6">
         @if (isVariantCatalogView) {
           @if (variantCatalog.length === 0) {
             <div class="flex h-full min-h-[20rem] flex-col items-center justify-center text-center text-gray-500">No variants found.</div>
@@ -143,7 +139,7 @@
                     }
                     <div class="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/90 via-black/55 to-transparent px-3 pb-3 pt-14">
                       <p class="text-lg font-bold leading-tight text-white">{{ variant.variantName }}</p>
-                      <p class="mt-0.5 text-xs text-white/70">{{ variant.productName }} · {{ variant.stockQty }} in stock</p>
+                      <p class="mt-0.5 text-xs text-white/70">{{ variant.productName }} · {{ formatStock(variant.stockQty) }} in stock</p>
                     </div>
                   </div>
                 </button>
@@ -169,7 +165,7 @@
                     <p class="text-xs text-gray-500">{{ variant.productName }} · {{ variant.category || 'Uncategorized' }}</p>
                   </div>
                   <div class="shrink-0 text-right">
-                    <p class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ variant.stockQty }} in stock</p>
+                    <p class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ formatStock(variant.stockQty) }} in stock</p>
                   </div>
                 </button>
               }
@@ -198,7 +194,7 @@
                   }
                   <div class="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/90 via-black/55 to-transparent px-3 pb-3 pt-14">
                     <p class="text-lg font-bold leading-tight text-white">{{ product.name }}</p>
-                    <p class="mt-0.5 text-xs text-white/70">{{ product.variantCount }} variant(s) · {{ product.totalStock }} in stock</p>
+                    <p class="mt-0.5 text-xs text-white/70">{{ product.variantCount }} variant(s) · {{ formatStock(product.totalStock) }} in stock</p>
                   </div>
                 </div>
               </button>
@@ -224,7 +220,7 @@
                   <p class="text-xs text-gray-500">{{ product.category || 'Uncategorized' }} · {{ product.variantCount }} variant(s)</p>
                 </div>
                 <div class="shrink-0 text-right">
-                  <p class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ product.totalStock }} in stock</p>
+                  <p class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ formatStock(product.totalStock) }} in stock</p>
                 </div>
               </button>
             }
@@ -236,22 +232,33 @@
   </section>
 
   @if (cart.length > 0) {
-  <aside class="hidden w-full flex-col border-t border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 md:flex md:w-[22rem] md:shrink-0 md:border-l md:border-t-0" [class.flex]="cartOpen">
-    <div class="flex items-center justify-between border-b border-gray-200 px-4 py-4 dark:border-gray-800">
+    @if (cartOpen) {
+      <button type="button" (click)="toggleCart()" aria-label="Close cart"
+        class="fixed inset-0 z-40 bg-gray-900/40 md:hidden"></button>
+    }
+  <aside class="hidden h-full min-h-0 w-full shrink-0 flex-col overflow-hidden border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-50 max-md:w-full max-md:max-w-sm max-md:border-l max-md:shadow-2xl md:flex md:w-[22rem] md:border-l md:border-t-0"
+    [class.flex]="cartOpen">
+    <div class="flex shrink-0 items-center justify-between border-b border-gray-200 px-4 py-4 dark:border-gray-800">
       <div>
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Cart</h2>
         <p class="text-xs text-gray-500">{{ cart.length }} line(s)</p>
       </div>
-      @if (cart.length > 0) {
+      <div class="flex items-center gap-1">
+        <button type="button" (click)="toggleCart()" title="Close cart"
+          class="touch-manipulation rounded-md p-2 text-gray-500 hover:bg-gray-100 md:hidden dark:hover:bg-gray-800">
+          <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
         <button type="button" (click)="requestClearCart()" title="Clear cart"
           class="touch-manipulation rounded-md p-2 text-gray-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10">
           <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
           </svg>
         </button>
-      }
+      </div>
     </div>
-    <div class="min-h-0 flex-1 overflow-y-auto scrollbar-auto p-3">
+    <div class="min-h-0 flex-1 overflow-hidden p-3">
       <ul class="space-y-3">
           @for (line of cart; track line.cartKey) {
             <li class="flex gap-3 rounded-md border border-gray-100 p-3 dark:border-gray-800">
@@ -286,7 +293,7 @@
           }
         </ul>
     </div>
-    <div class="border-t border-gray-200 p-4 dark:border-gray-800">
+    <div class="shrink-0 border-t border-gray-200 p-4 dark:border-gray-800">
       <div class="mb-3 flex items-center justify-between">
         <span class="text-sm text-gray-500">Subtotal</span>
         <span class="text-lg font-bold text-gray-900 dark:text-white">₱{{ formatCurrency(cartSubtotal()) }}</span>
@@ -308,7 +315,7 @@
         <div>
           <h3 class="text-lg font-bold text-gray-900 dark:text-white">Edit item</h3>
           <p class="text-sm text-gray-500">{{ editingCartLine.variantName }}</p>
-          <p class="text-xs text-gray-400">{{ editingCartLine.stockQty }} in stock</p>
+          <p class="text-xs text-gray-400">{{ formatStock(editingCartLine.stockQty) }} in stock</p>
         </div>
         <button type="button" (click)="closeCartUnitEdit()" class="rounded-md p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">
           <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -395,7 +402,7 @@
                 </div>
                 <div class="min-w-0 flex-1">
                   <p class="font-semibold text-gray-900 dark:text-white">{{ v.variantName }}</p>
-                  <p class="text-xs text-gray-500">{{ v.stockQty }} in stock</p>
+                  <p class="text-xs text-gray-500">{{ formatStock(v.stockQty) }} in stock</p>
                   @if (selectedUnitFor(v).salePrice && selectedUnitFor(v).salePrice! < selectedUnitFor(v).sellingPrice) {
                     <p class="text-xs text-gray-400 line-through">₱{{ formatCurrency(selectedUnitFor(v).sellingPrice) }}{{ variantPriceLabel(v) }}</p>
                     <p class="text-sm font-bold text-red-600">₱{{ formatCurrency(selectedUnitFor(v).salePrice!) }}{{ variantPriceLabel(v) }}</p>
@@ -447,8 +454,9 @@
 
 <!-- Checkout -->
 @if (showCheckoutModal) {
-  <div class="fixed inset-0 z-[100000] flex items-end justify-center bg-gray-900/50 p-4 md:items-center">
-    <div class="w-full max-w-md rounded-md bg-white p-6 shadow-2xl dark:bg-gray-900">
+  <div class="fixed inset-0 z-[100000] flex items-center justify-center overflow-y-auto bg-gray-900/50 p-2">
+    <div class="my-auto flex max-h-[98vh] w-full max-w-md flex-col overflow-hidden rounded-md bg-white shadow-2xl dark:bg-gray-900">
+      <div class="overflow-y-auto p-6">
       @if (checkoutSuccess) {
         <div class="py-8 text-center">
           <h3 class="text-2xl font-bold">Sale Complete</h3>
@@ -523,6 +531,7 @@
           </button>
         </div>
       }
+      </div>
     </div>
   </div>
 }

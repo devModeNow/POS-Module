@@ -588,6 +588,12 @@
                   </div>
                   @for (u of v.units; track $index; let ui = $index) {
                     <div class="mb-2 grid grid-cols-2 gap-2 rounded-md border border-brand-100 bg-white/90 p-2 last:mb-0 dark:border-brand-500/20 dark:bg-gray-900/70">
+                      <div class="col-span-2 flex items-center justify-between gap-2">
+                        <label class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                          <input type="radio" [name]="'default-unit-' + i" [checked]="u.isDefault" (change)="setDefaultUnit(i, ui)" />
+                          Default unit for POS
+                        </label>
+                      </div>
                       <label class="block col-span-2">
                         <span class="mb-1 block text-[10px] font-medium text-gray-500">Unit</span>
                         <select [(ngModel)]="u.unitType" (ngModelChange)="onUnitTypeChange(i, ui)"

@@ -369,8 +369,29 @@ export class RbacService {
     return [...this.getDeniedPermissionKeys()].some((item) => item.startsWith(normalizedPrefix));
   }
 
+  private normalizeMenuKey(menu: string): string {
+    return String(menu ?? '')
+      .trim()
+      .toLowerCase()
+      .replace(/[_\s]+/g, '-');
+  }
+
   hasMenu(menu: MenuKey | string): boolean {
-    return this.getAllowedMenus().has(menu);
+    const target = this.normalizeMenuKey(String(menu));
+    if (!target) return false;
+
+    for (const allowed of this.getAllowedMenus()) {
+      if (this.normalizeMenuKey(allowed) === target) {
+        return true;
+      }
+    }
+
+    const mapped = this.resolveMenuKeyFromSlug(target.replace(/-/g, '_'));
+    if (mapped && this.getAllowedMenus().has(mapped)) {
+      return true;
+    }
+
+    return false;
   }
 
   hasPermission(permission: PermissionKey): boolean {
