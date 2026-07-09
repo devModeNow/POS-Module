@@ -1,7 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
 import { ConfirmDialogComponent } from '../../../shared/components/ui/confirm-dialog/confirm-dialog.component';
 import {
   CartLine,
@@ -16,15 +15,14 @@ import { PosCartService } from '../../../shared/services/pos-cart.service';
 import { OrgService } from '../../../shared/services/org.service';
 import { NotificationService } from '../../../shared/services/notification.service';
 import { RbacService } from '../../../shared/services/rbac.service';
-import { AuthService } from '../../../shared/services/auth.service';
-import { BusinessSettingsService } from '../../../shared/services/business-settings.service';
 import { ActionBusyService } from '../../../shared/services/action-busy.service';
 import { GlobalActionLoaderComponent } from '../../../shared/components/common/global-action-loader/global-action-loader.component';
+import { PosPageHeaderComponent } from '../shared/pos-page-header.component';
 
 @Component({
   selector: 'app-pos-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, ConfirmDialogComponent, RouterLink, GlobalActionLoaderComponent],
+  imports: [CommonModule, FormsModule, ConfirmDialogComponent, GlobalActionLoaderComponent, PosPageHeaderComponent],
   templateUrl: './pos-dashboard.component.html',
   styles: `:host { display: block; height: 100%; min-height: 0; }`,
 })
@@ -33,8 +31,6 @@ export class PosDashboardComponent implements OnInit {
   catalogLoading = false;
   errorMessage = '';
   orgName = 'POS';
-  companyName = '';
-  cashierName = '';
   search = '';
   searchFocused = false;
   selectedCategory = '';
@@ -92,9 +88,6 @@ export class PosDashboardComponent implements OnInit {
     private readonly orgService: OrgService,
     private readonly notify: NotificationService,
     private readonly rbac: RbacService,
-    private readonly auth: AuthService,
-    private readonly router: Router,
-    private readonly businessSettings: BusinessSettingsService,
     private readonly actionBusy: ActionBusyService,
   ) {
     this.isCashierMode = this.rbac.isCashier();
@@ -169,8 +162,6 @@ export class PosDashboardComponent implements OnInit {
 
   ngOnInit(): void {
     this.orgName = this.orgService.getContext().name ?? 'POS';
-    this.cashierName = this.rbac.getDisplayName();
-    void this.loadCompanyName();
     void this.posService.staffHeartbeat();
     setInterval(() => void this.posService.staffHeartbeat(), 5 * 60 * 1000);
     const savedView = sessionStorage.getItem('posProductViewMode');
@@ -233,15 +224,6 @@ export class PosDashboardComponent implements OnInit {
       await this.loadVariantCatalog();
     } else {
       await this.loadProducts();
-    }
-  }
-
-  async loadCompanyName(): Promise<void> {
-    try {
-      const profile = await this.businessSettings.getBusinessProfile();
-      this.companyName = String(profile?.businessName ?? this.orgName).trim() || this.orgName;
-    } catch {
-      this.companyName = this.orgName;
     }
   }
 
@@ -462,20 +444,6 @@ export class PosDashboardComponent implements OnInit {
     const minQty = unit.isManualEntry ? 0.01 : 1;
     const current = Number(this.variantQty[variant.id]) || minQty;
     this.variantQty[variant.id] = Math.max(minQty, Math.round((current - step) * 1000) / 1000);
-  }
-
-  async logout(): Promise<void> {
-    this.auth.logout();
-    await this.router.navigateByUrl('/', { replaceUrl: true });
-  }
-
-  requestLogout(): void {
-    this.openConfirm(
-      'Sign out?',
-      'Are you sure you want to log out of the POS?',
-      () => void this.logout(),
-      'danger',
-    );
   }
 
   addVariantToCart(variant: PosVariant): void {

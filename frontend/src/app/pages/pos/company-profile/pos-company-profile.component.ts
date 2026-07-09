@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { PosPageHeaderComponent } from '../shared/pos-page-header.component';
 import {
   BusinessProfileSettings,
   BusinessSettingsService,
@@ -16,8 +16,9 @@ type Tab = 'profile' | 'printer';
 @Component({
   selector: 'app-pos-company-profile',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, PosPageHeaderComponent],
   templateUrl: './pos-company-profile.component.html',
+  styles: `:host { display: block; height: 100%; min-height: 0; }`,
 })
 export class PosCompanyProfileComponent implements OnInit {
   activeTab: Tab = 'profile';

@@ -160,6 +160,16 @@ apiClient.interceptors.request.use((config) => {
     } else {
       delete (config.headers as Record<string, string>)['Content-Type'];
     }
+  } else if (config.headers instanceof AxiosHeaders) {
+    const contentType = config.headers.get('Content-Type');
+    if (typeof contentType === 'string' && contentType.startsWith('multipart/form-data')) {
+      config.headers.delete('Content-Type');
+    }
+  } else {
+    const headers = config.headers as Record<string, string>;
+    if (headers['Content-Type']?.startsWith('multipart/form-data')) {
+      delete headers['Content-Type'];
+    }
   }
 
   if (config.headers instanceof AxiosHeaders) {

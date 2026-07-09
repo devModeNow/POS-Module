@@ -1,17 +1,15 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
 import { PosService } from '../../../shared/services/pos.service';
-import { RbacService } from '../../../shared/services/rbac.service';
-import { OrgService } from '../../../shared/services/org.service';
-import { BusinessSettingsService } from '../../../shared/services/business-settings.service';
+import { PosPageHeaderComponent } from '../shared/pos-page-header.component';
 
 @Component({
   selector: 'app-pos-my-sales',
   standalone: true,
-  imports: [CommonModule, FormsModule, RouterLink],
+  imports: [CommonModule, FormsModule, PosPageHeaderComponent],
   templateUrl: './pos-my-sales.component.html',
+  styles: `:host { display: block; height: 100%; min-height: 0; }`,
 })
 export class PosMySalesComponent implements OnInit {
   from = '';
@@ -20,8 +18,6 @@ export class PosMySalesComponent implements OnInit {
   error = '';
   summary: { totalSales: number; transactionCount: number; totalDiscount: number } | null = null;
   recent: Array<{ id: number; saleDate: string; totalAmount: number; paymentStatus: string }> = [];
-  cashierName = '';
-  companyName = '';
   lastUpdatedAt: Date | null = null;
 
   get periodLabel(): string {
@@ -47,29 +43,14 @@ export class PosMySalesComponent implements OnInit {
 
   constructor(
     private readonly pos: PosService,
-    private readonly rbac: RbacService,
-    private readonly orgService: OrgService,
-    private readonly businessSettings: BusinessSettingsService,
   ) {}
 
   ngOnInit(): void {
-    this.cashierName = this.rbac.getDisplayName();
-    this.companyName = this.orgService.getContext().name ?? 'POS';
-    void this.loadCompanyName();
     const today = new Date();
     const start = new Date(today.getFullYear(), today.getMonth(), 1);
     this.from = start.toISOString().slice(0, 10);
     this.to = today.toISOString().slice(0, 10);
     void this.load();
-  }
-
-  async loadCompanyName(): Promise<void> {
-    try {
-      const profile = await this.businessSettings.getBusinessProfile();
-      this.companyName = String(profile?.businessName ?? this.companyName).trim() || this.companyName;
-    } catch {
-      /* keep org name */
-    }
   }
 
   async load(): Promise<void> {

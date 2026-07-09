@@ -1,11 +1,112 @@
-<app-page-breadcrumb pageTitle="Profile" />
-<div class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] lg:p-6">
-  <h3 class="mb-5 text-lg font-semibold text-gray-800 dark:text-white/90 lg:mb-7">
-    Profile
-  </h3>
-  <div class="space-y-6">
-    <div><app-user-meta-card/></div>
-    <div><app-user-info-card/></div>
-    <div><app-user-address-card/></div>
+@if (isCashierMode) {
+  <div class="flex h-full min-h-0 flex-col overflow-hidden bg-gray-50 dark:bg-gray-950">
+    <app-pos-page-header />
+    <div class="min-h-0 flex-1 overflow-y-auto p-4 md:p-6">
+      <ng-container *ngTemplateOutlet="profileBody" />
+    </div>
   </div>
-</div>
+} @else {
+  <div class="space-y-6">
+    <app-page-breadcrumb pageTitle="My Profile" />
+    <ng-container *ngTemplateOutlet="profileBody" />
+  </div>
+}
+
+<ng-template #profileBody>
+  @if (loading) {
+    <div class="flex items-center justify-center gap-3 rounded-2xl border border-gray-200 bg-white py-14 text-sm text-gray-500 dark:border-gray-800 dark:bg-white/[0.03]">
+      <svg class="h-5 w-5 animate-spin text-brand-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+      </svg>
+      Loading profile…
+    </div>
+  } @else {
+    <section class="mx-auto max-w-3xl rounded-2xl border border-gray-200 bg-white p-6 dark:border-gray-800 dark:bg-gray-900 xl:p-8">
+      <div class="mb-8 flex flex-col items-center gap-4 sm:flex-row sm:items-start">
+        <button type="button" class="group relative block cursor-pointer rounded-full" [disabled]="uploadingPicture" (click)="openPicturePicker()">
+          <div class="h-28 w-28 overflow-hidden rounded-full border-2 border-gray-200 bg-gray-100 dark:border-gray-700 dark:bg-gray-800">
+            @if (profilePicture) {
+              <img [src]="profilePicture" alt="Profile picture" class="h-full w-full object-cover" />
+            } @else {
+              <div class="flex h-full w-full items-center justify-center text-3xl font-semibold text-brand-600">
+                {{ initials }}
+              </div>
+            }
+          </div>
+          <span class="pointer-events-none absolute inset-0 flex items-center justify-center rounded-full bg-black/40 text-xs font-medium text-white opacity-0 transition group-hover:opacity-100 group-disabled:opacity-100">
+            {{ uploadingPicture ? 'Uploading…' : 'Change photo' }}
+          </span>
+        </button>
+        <input #fileInput type="file" accept="image/*" class="hidden" [disabled]="uploadingPicture" (change)="onPictureSelected($event)" />
+        <div class="flex-1 text-center sm:text-left">
+          <h2 class="text-xl font-semibold text-gray-900 dark:text-white">{{ form.fullname || form.username }}</h2>
+          <p class="text-sm text-gray-500 dark:text-gray-400">{{ meta.roleName || 'User' }} · {{ meta.orgName || 'Organization' }}</p>
+          @if (profilePicture) {
+            <button type="button" (click)="removePicture()" [disabled]="uploadingPicture"
+              class="mt-2 text-sm text-red-600 hover:underline disabled:opacity-50">Remove photo</button>
+          }
+        </div>
+      </div>
+
+      <form class="space-y-5" (ngSubmit)="save()">
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <label class="block md:col-span-2">
+            <span class="mb-1 block text-sm font-medium">Full name</span>
+            <input [(ngModel)]="form.fullname" name="fullname" required
+              class="w-full rounded-lg border px-3 py-2.5 dark:border-gray-700 dark:bg-gray-800" />
+          </label>
+          <label class="block">
+            <span class="mb-1 block text-sm font-medium">Username</span>
+            <input [(ngModel)]="form.username" name="username" required
+              class="w-full rounded-lg border px-3 py-2.5 dark:border-gray-700 dark:bg-gray-800" />
+          </label>
+          <label class="block">
+            <span class="mb-1 block text-sm font-medium">Email</span>
+            <input type="email" [(ngModel)]="form.email" name="email"
+              class="w-full rounded-lg border px-3 py-2.5 dark:border-gray-700 dark:bg-gray-800" />
+          </label>
+          <label class="block">
+            <span class="mb-1 block text-sm font-medium">Contact number</span>
+            <input [(ngModel)]="form.contact" name="contact"
+              class="w-full rounded-lg border px-3 py-2.5 dark:border-gray-700 dark:bg-gray-800" />
+          </label>
+          <label class="block">
+            <span class="mb-1 block text-sm font-medium">Birthdate</span>
+            <input type="date" [(ngModel)]="form.birthdate" name="birthdate"
+              class="w-full rounded-lg border px-3 py-2.5 dark:border-gray-700 dark:bg-gray-800" />
+          </label>
+          <label class="block md:col-span-2">
+            <span class="mb-1 block text-sm font-medium">Address</span>
+            <textarea rows="2" [(ngModel)]="form.address" name="address"
+              class="w-full rounded-lg border px-3 py-2.5 dark:border-gray-700 dark:bg-gray-800"></textarea>
+          </label>
+        </div>
+
+        <div class="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+          <p class="mb-3 text-sm font-semibold text-gray-800 dark:text-gray-100">Change password</p>
+          <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+            <label class="block">
+              <span class="mb-1 block text-sm font-medium">New password</span>
+              <input type="password" [(ngModel)]="form.password" name="password" autocomplete="new-password"
+                class="w-full rounded-lg border px-3 py-2.5 dark:border-gray-700 dark:bg-gray-800" />
+            </label>
+            <label class="block">
+              <span class="mb-1 block text-sm font-medium">Confirm password</span>
+              <input type="password" [(ngModel)]="form.confirmPassword" name="confirmPassword" autocomplete="new-password"
+                class="w-full rounded-lg border px-3 py-2.5 dark:border-gray-700 dark:bg-gray-800" />
+            </label>
+          </div>
+          <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">Leave blank to keep your current password.</p>
+        </div>
+
+        <div class="flex flex-col gap-3 sm:flex-row sm:justify-end">
+          <button type="submit" [disabled]="saving"
+            class="rounded-lg bg-brand-500 px-6 py-2.5 text-sm font-semibold text-white disabled:opacity-50">
+            {{ saving ? 'Saving…' : 'Save profile' }}
+          </button>
+        </div>
+      </form>
+    </section>
+  }
+</ng-template>

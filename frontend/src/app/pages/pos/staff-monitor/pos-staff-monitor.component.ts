@@ -1,14 +1,15 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
-import { RouterLink } from '@angular/router';
 import { PosService } from '../../../shared/services/pos.service';
 import { ActionBusyService } from '../../../shared/services/action-busy.service';
+import { PosPageHeaderComponent } from '../shared/pos-page-header.component';
 
 @Component({
   selector: 'app-pos-staff-monitor',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, PosPageHeaderComponent],
   templateUrl: './pos-staff-monitor.component.html',
+  styles: `:host { display: block; height: 100%; min-height: 0; }`,
 })
 export class PosStaffMonitorComponent implements OnInit {
   loading = false;

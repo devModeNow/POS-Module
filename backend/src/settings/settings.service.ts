@@ -12,6 +12,7 @@ type OrgSettingsRow = {
   businessContact: string | null;
   businessEmail: string | null;
   businessOwner: string | null;
+  businessDescription: string | null;
   businessLogo: string | null;
   businessLogoLight: string | null;
   businessLogoDark: string | null;
@@ -37,13 +38,16 @@ type OrgSettingsRow = {
   printSignaturePreparedBy: string | null;
   printSignatureCheckedBy: string | null;
   printSignatureApprovedBy: string | null;
+  posReceiptPaperWidth: string | null;
+  posReceiptShowLogo: string | null;
+  posReceiptFooterText: string | null;
 };
 
 const EMPTY_SETTINGS: OrgSettingsRow = {
   id: '0', orgId: '0',
   websiteTabName: null, routingTabName: null,
   businessName: null, businessAddress: null, businessContact: null,
-  businessEmail: null, businessOwner: null,
+  businessEmail: null, businessOwner: null, businessDescription: null,
   businessLogo: null, businessLogoLight: null, businessLogoDark: null,
   drTemplatePdf: null, printPaperSize: null, printShowLogo: null,
   printLogoVariant: null, printFooterText: null, printQuoteHeaderColor: null,
@@ -54,6 +58,7 @@ const EMPTY_SETTINGS: OrgSettingsRow = {
   printAddressShowQuotation: null, printAddressShowDr: null,
   printSignaturePreparedBy: null, printSignatureCheckedBy: null,
   printSignatureApprovedBy: null,
+  posReceiptPaperWidth: null, posReceiptShowLogo: null, posReceiptFooterText: null,
 };
 
 @Injectable()
@@ -72,7 +77,22 @@ export class SettingsService {
     return result.rows[0]?.id ?? null;
   }
 
+  private schemaReady = false;
+
+  private async ensureOrgSettingsSchema(): Promise<void> {
+    if (this.schemaReady) return;
+    await this.db.query(`
+      ALTER TABLE public.tblorg_settings
+        ADD COLUMN IF NOT EXISTS business_description TEXT,
+        ADD COLUMN IF NOT EXISTS pos_receipt_paper_width TEXT DEFAULT '80mm',
+        ADD COLUMN IF NOT EXISTS pos_receipt_show_logo BOOLEAN DEFAULT TRUE,
+        ADD COLUMN IF NOT EXISTS pos_receipt_footer_text TEXT
+    `);
+    this.schemaReady = true;
+  }
+
   private async ensureOrgSettingsRow(orgId: number): Promise<void> {
+    await this.ensureOrgSettingsSchema();
     await this.db.query(
       `INSERT INTO tblorg_settings (org_id) VALUES ($1) ON CONFLICT (org_id) DO NOTHING`,
       [orgId],
@@ -84,6 +104,7 @@ export class SettingsService {
   // ---------------------------------------------------------------------------
   async getBusinessProfile(orgId?: number | null) {
     try {
+      await this.ensureOrgSettingsSchema();
       const resolvedOrgId = await this.resolveOrgId(orgId);
       if (!resolvedOrgId) return { success: true, item: EMPTY_SETTINGS };
 
@@ -98,6 +119,7 @@ export class SettingsService {
            s.business_contact               AS "businessContact",
            s.business_email                 AS "businessEmail",
            s.business_owner                 AS "businessOwner",
+           s.business_description           AS "businessDescription",
            NULL                             AS "businessLogo",
            s.logo_light                     AS "businessLogoLight",
            s.logo_dark                      AS "businessLogoDark",
@@ -122,7 +144,10 @@ export class SettingsService {
            s.print_address_show_dr          AS "printAddressShowDr",
            s.print_signature_prepared_by    AS "printSignaturePreparedBy",
            s.print_signature_checked_by     AS "printSignatureCheckedBy",
-           s.print_signature_approved_by    AS "printSignatureApprovedBy"
+           s.print_signature_approved_by    AS "printSignatureApprovedBy",
+           s.pos_receipt_paper_width        AS "posReceiptPaperWidth",
+           s.pos_receipt_show_logo          AS "posReceiptShowLogo",
+           s.pos_receipt_footer_text        AS "posReceiptFooterText"
          FROM tblorg_settings s
          WHERE s.org_id = $1
          LIMIT 1`,
@@ -145,6 +170,14 @@ export class SettingsService {
 
       await this.ensureOrgSettingsRow(resolvedOrgId);
 
+      if (dto.posReceiptShowLogo !== undefined) {
+        const boolVal = String(dto.posReceiptShowLogo).trim().toLowerCase() === 'true';
+        await this.db.query(
+          `UPDATE tblorg_settings SET pos_receipt_show_logo = $1, updated_at = NOW() WHERE org_id = $2`,
+          [boolVal, resolvedOrgId],
+        );
+      }
+
       const fieldMap: Record<string, string> = {
         websiteTabName:           'website_tab_name',
         routingTabName:           'routing_tab_name',
@@ -153,6 +186,7 @@ export class SettingsService {
         businessContact:          'business_contact',
         businessEmail:            'business_email',
         businessOwner:            'business_owner',
+        businessDescription:      'business_description',
         businessLogoLight:        'logo_light',
         businessLogoDark:         'logo_dark',
         drTemplatePdf:            'dr_template_pdf',
@@ -176,6 +210,8 @@ export class SettingsService {
         printSignaturePreparedBy: 'print_signature_prepared_by',
         printSignatureCheckedBy:  'print_signature_checked_by',
         printSignatureApprovedBy: 'print_signature_approved_by',
+        posReceiptPaperWidth:     'pos_receipt_paper_width',
+        posReceiptFooterText:     'pos_receipt_footer_text',
       };
 
       const sets: string[] = [];

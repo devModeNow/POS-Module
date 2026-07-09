@@ -10,11 +10,15 @@ import {
   Query,
   Req,
   UseGuards,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { UsersService } from './users.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateMeDto } from './dto/update-me.dto';
 
 type AuthReq = { user?: Record<string, unknown> };
 
@@ -86,6 +90,49 @@ export class UsersController {
     const parsedOrgId =
       scopedOrgId != null && Number.isFinite(scopedOrgId) && scopedOrgId > 0 ? scopedOrgId : null;
     return this.usersService.findAll(includeDeletedFlag, parsedOrgId);
+  }
+
+  @Get('me')
+  findMe(@Req() req: AuthReq) {
+    const id = Number(req.user?.['sub'] ?? 0);
+    if (!id) return { success: false, message: 'Not authenticated' };
+    return this.usersService.findOne(id);
+  }
+
+  @Patch('me')
+  updateMe(@Body() updateUserDto: UpdateMeDto, @Req() req: AuthReq) {
+    const id = Number(req.user?.['sub'] ?? 0);
+    if (!id) return { success: false, message: 'Not authenticated' };
+    const scopedOrgId = callerOrgId(req);
+    const safeDto: UpdateUserDto = {
+      username: updateUserDto.username,
+      fullname: updateUserDto.fullname,
+      email: updateUserDto.email,
+      contact: updateUserDto.contact,
+      address: updateUserDto.address,
+      birthdate: updateUserDto.birthdate,
+      password: updateUserDto.password,
+    };
+    return this.usersService.update(+id, safeDto, scopedOrgId, true);
+  }
+
+  @Post('me/profile-picture')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: 2 * 1024 * 1024 },
+    }),
+  )
+  uploadMyProfilePicture(@UploadedFile() file: any, @Req() req: AuthReq) {
+    const id = Number(req.user?.['sub'] ?? 0);
+    if (!id) return { success: false, message: 'Not authenticated' };
+    return this.usersService.uploadProfilePicture(+id, file, callerOrgId(req), true);
+  }
+
+  @Delete('me/profile-picture')
+  removeMyProfilePicture(@Req() req: AuthReq) {
+    const id = Number(req.user?.['sub'] ?? 0);
+    if (!id) return { success: false, message: 'Not authenticated' };
+    return this.usersService.removeProfilePicture(+id, callerOrgId(req), true);
   }
 
   @Get(':id/permission-overrides')

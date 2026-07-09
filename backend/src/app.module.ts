@@ -18,6 +18,7 @@ import { BackupModule } from './backup/backup.module';
 import { CateringModule } from './catering/catering.module';
 import { SetupModule } from './setup/setup.module';
 import { PosModule } from './pos/pos.module';
+import { AuditModule } from './common/audit/audit.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { PosModule } from './pos/pos.module';
       envFilePath: [`.env.${process.env.NODE_ENV ?? 'development'}`, '.env'],
     }),
     DatabaseModule,
+    AuditModule,
     LoginModule,
     UsersModule,
     DashboardModule,

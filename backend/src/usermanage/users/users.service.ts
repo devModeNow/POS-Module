@@ -21,6 +21,17 @@ type PermissionKeyInput = {
 export class UsersService {
   constructor(private readonly databaseService: DatabaseService) {}
 
+  private profileSchemaReady = false;
+
+  private async ensureProfileSchema(): Promise<void> {
+    if (this.profileSchemaReady) return;
+    await this.databaseService.query(`
+      ALTER TABLE public.tblusers
+        ADD COLUMN IF NOT EXISTS profile_picture TEXT
+    `);
+    this.profileSchemaReady = true;
+  }
+
   private async assertUserOrgAccess(
     userId: number,
     scopedOrgId: number | null,
@@ -36,7 +47,9 @@ export class UsersService {
       return { ok: false, message: 'User not found' };
     }
 
-    if (result.rows[0].orgId !== scopedOrgId) {
+    const userOrgId = Number(result.rows[0].orgId);
+    const scopedId = Number(scopedOrgId);
+    if (!Number.isFinite(userOrgId) || !Number.isFinite(scopedId) || userOrgId !== scopedId) {
       return { ok: false, message: 'Access denied' };
     }
 
@@ -779,6 +792,7 @@ export class UsersService {
 
   async findOne(id: number) {
     try {
+      await this.ensureProfileSchema();
       const result = await this.databaseService.query<Record<string, unknown>>(
         `SELECT
           u.id,
@@ -796,6 +810,11 @@ export class UsersService {
           COALESCE(to_jsonb(u)->>'birthdate', '') AS birthdate,
           COALESCE(to_jsonb(u)->>'address', '') AS address,
           COALESCE(to_jsonb(u)->>'contact', '') AS contact,
+          COALESCE(
+            to_jsonb(u)->>'profile_picture',
+            to_jsonb(u)->>'profilePicture',
+            ''
+          ) AS "profilePicture",
           COALESCE(
             to_jsonb(u)->>'status',
             '1'
@@ -854,7 +873,12 @@ export class UsersService {
     }
   }
 
-  async update(id: number, updateUserDto: UpdateUserDto, scopedOrgId: number | null = null) {
+  async update(
+    id: number,
+    updateUserDto: UpdateUserDto,
+    scopedOrgId: number | null = null,
+    isSelfService = false,
+  ) {
     if (!Number.isFinite(id) || id <= 0) {
       return {
         success: false,
@@ -863,9 +887,11 @@ export class UsersService {
     }
 
     try {
-      const access = await this.assertUserOrgAccess(id, scopedOrgId);
-      if (!access.ok) {
-        return { success: false, message: access.message };
+      if (!isSelfService) {
+        const access = await this.assertUserOrgAccess(id, scopedOrgId);
+        if (!access.ok) {
+          return { success: false, message: access.message };
+        }
       }
 
       const existingUser = await this.databaseService.query<{ id: number }>(
@@ -899,6 +925,10 @@ export class UsersService {
       const addressColumn = this.pickColumn(columns, ['address']);
       const emailColumn = this.pickColumn(columns, ['email']);
       const contactColumn = this.pickColumn(columns, ['contact']);
+      const profilePictureColumn = this.pickColumn(columns, [
+        'profile_picture',
+        'profilePicture',
+      ]);
       const statusColumn = this.pickColumn(columns, ['status']);
       const isDeletedColumn = this.pickColumn(columns, ['is_deleted', 'isDeleted']);
       const createdByColumn = this.pickColumn(columns, ['created_by', 'createdBy']);
@@ -943,34 +973,44 @@ export class UsersService {
       }
 
       const nextEmail = updateUserDto.email?.trim();
-      if (emailColumn && nextEmail) {
-        const duplicateEmail = await this.databaseService.query<{ id: number }>(
-          `SELECT id
-           FROM tblusers
-           WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))
-             AND id <> $2
-           LIMIT 1`,
-          [nextEmail, id],
-        );
+      if (emailColumn && updateUserDto.email !== undefined) {
+        const normalizedEmail = String(updateUserDto.email ?? '').trim();
+        if (normalizedEmail) {
+          const duplicateEmail = await this.databaseService.query<{ id: number }>(
+            `SELECT id
+             FROM tblusers
+             WHERE LOWER(TRIM(email)) = LOWER(TRIM($1))
+               AND id <> $2
+             LIMIT 1`,
+            [normalizedEmail, id],
+          );
 
-        if (duplicateEmail.rowCount > 0) {
-          return {
-            success: false,
-            message: 'Email already exists',
-          };
+          if (duplicateEmail.rowCount > 0) {
+            return {
+              success: false,
+              message: 'Email already exists',
+            };
+          }
         }
 
-        updates[emailColumn] = nextEmail;
+        updates[emailColumn] = normalizedEmail || null;
       }
 
-      if (birthdateColumn && updateUserDto.birthdate != null) {
-        updates[birthdateColumn] = String(updateUserDto.birthdate).trim();
+      if (birthdateColumn && updateUserDto.birthdate !== undefined) {
+        const value = String(updateUserDto.birthdate ?? '').trim();
+        updates[birthdateColumn] = value || null;
       }
-      if (addressColumn && updateUserDto.address != null) {
-        updates[addressColumn] = String(updateUserDto.address).trim();
+      if (addressColumn && updateUserDto.address !== undefined) {
+        const value = String(updateUserDto.address ?? '').trim();
+        updates[addressColumn] = value || null;
       }
-      if (contactColumn && updateUserDto.contact != null) {
-        updates[contactColumn] = String(updateUserDto.contact).trim();
+      if (contactColumn && updateUserDto.contact !== undefined) {
+        const value = String(updateUserDto.contact ?? '').trim();
+        updates[contactColumn] = value || null;
+      }
+      if (profilePictureColumn && (updateUserDto as { profilePicture?: string | null }).profilePicture !== undefined) {
+        const value = (updateUserDto as { profilePicture?: string | null }).profilePicture;
+        updates[profilePictureColumn] = value ? String(value).trim() : null;
       }
       if (statusColumn && updateUserDto.status != null) {
         updates[statusColumn] = updateUserDto.status;
@@ -1027,6 +1067,101 @@ export class UsersService {
       return {
         success: false,
         message: error instanceof Error ? error.message : 'Unable to update user',
+      };
+    }
+  }
+
+  async uploadProfilePicture(
+    id: number,
+    file: { buffer?: Buffer; mimetype?: string; size?: number } | undefined,
+    scopedOrgId: number | null = null,
+    isSelfService = false,
+  ) {
+    if (!Number.isFinite(id) || id <= 0) {
+      return { success: false, message: 'Invalid user id' };
+    }
+    if (!file?.buffer || !file.size) {
+      return { success: false, message: 'Image file is required' };
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      return { success: false, message: 'Image must be under 2MB' };
+    }
+    if (!String(file.mimetype ?? '').toLowerCase().startsWith('image/')) {
+      return { success: false, message: 'Only image files are allowed' };
+    }
+
+    try {
+      await this.ensureProfileSchema();
+      if (!isSelfService) {
+        const access = await this.assertUserOrgAccess(id, scopedOrgId);
+        if (!access.ok) {
+          return { success: false, message: access.message };
+        }
+      }
+
+      const mimeType = String(file.mimetype ?? 'application/octet-stream').trim();
+      const dataUrl = `data:${mimeType};base64,${file.buffer.toString('base64')}`;
+
+      const columns = await this.getTableColumns('tblusers');
+      const profilePictureColumn = this.pickColumn(columns, [
+        'profile_picture',
+        'profilePicture',
+      ]);
+      if (!profilePictureColumn) {
+        return { success: false, message: 'Profile picture column is unavailable' };
+      }
+
+      await this.databaseService.query(
+        `UPDATE tblusers SET "${profilePictureColumn}" = $1 WHERE id = $2`,
+        [dataUrl, id],
+      );
+
+      return this.findOne(id);
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Unable to upload profile picture',
+      };
+    }
+  }
+
+  async removeProfilePicture(
+    id: number,
+    scopedOrgId: number | null = null,
+    isSelfService = false,
+  ) {
+    if (!Number.isFinite(id) || id <= 0) {
+      return { success: false, message: 'Invalid user id' };
+    }
+
+    try {
+      await this.ensureProfileSchema();
+      if (!isSelfService) {
+        const access = await this.assertUserOrgAccess(id, scopedOrgId);
+        if (!access.ok) {
+          return { success: false, message: access.message };
+        }
+      }
+
+      const columns = await this.getTableColumns('tblusers');
+      const profilePictureColumn = this.pickColumn(columns, [
+        'profile_picture',
+        'profilePicture',
+      ]);
+      if (!profilePictureColumn) {
+        return { success: false, message: 'Profile picture column is unavailable' };
+      }
+
+      await this.databaseService.query(
+        `UPDATE tblusers SET "${profilePictureColumn}" = NULL WHERE id = $1`,
+        [id],
+      );
+
+      return this.findOne(id);
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Unable to remove profile picture',
       };
     }
   }

@@ -1,0 +1,61 @@
+<header class="shrink-0 border-b border-gray-200 bg-white px-3 py-3 dark:border-gray-800 dark:bg-gray-900 sm:px-4">
+  <div class="flex items-center justify-between gap-2">
+    @if (showCashierNav) {
+      <a [routerLink]="posHomeRoute" title="Back to POS terminal"
+        class="-ml-1 min-w-0 rounded-md px-1 py-0.5 transition hover:bg-gray-50 dark:hover:bg-gray-800/60">
+        <h1 class="truncate text-xl font-semibold text-gray-900 dark:text-white sm:text-2xl">{{ displayTitle }}</h1>
+        <p class="truncate text-sm text-gray-500 dark:text-gray-400">{{ displaySubtitle }}</p>
+      </a>
+    } @else {
+      <div class="min-w-0">
+        <h1 class="truncate text-xl font-semibold text-gray-900 dark:text-white sm:text-2xl">{{ displayTitle }}</h1>
+        <p class="truncate text-sm text-gray-500 dark:text-gray-400">{{ displaySubtitle }}</p>
+      </div>
+    }
+
+    <div class="flex shrink-0 items-center gap-1.5">
+      @if (showCashierNav) {
+        @if (!isOnPosHome) {
+          <a [routerLink]="posHomeRoute" title="POS terminal"
+            class="touch-manipulation rounded-md border border-brand-500 bg-brand-50 p-2.5 text-brand-600 hover:bg-brand-100 dark:border-brand-400 dark:bg-brand-500/10 dark:text-brand-400 dark:hover:bg-brand-500/20">
+            <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" />
+            </svg>
+          </a>
+        }
+        <a routerLink="/users/pos-my-sales" title="My sales"
+          class="touch-manipulation rounded-md border border-gray-300 p-2.5 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+          <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+          </svg>
+        </a>
+        <a routerLink="/profile" title="My profile"
+          class="touch-manipulation rounded-md border border-gray-300 p-2.5 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+          <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+          </svg>
+        </a>
+        <button type="button" (click)="requestLogout()" title="Sign out"
+          class="touch-manipulation rounded-md border border-gray-300 p-2.5 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+          <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+          </svg>
+        </button>
+      }
+      <ng-content select="[posHeaderActions]" />
+    </div>
+  </div>
+  <ng-content select="[posHeaderToolbar]" />
+</header>
+
+@if (showCashierNav) {
+  <app-confirm-dialog
+    [isOpen]="confirmOpen"
+    title="Sign out?"
+    message="Are you sure you want to log out of the POS?"
+    variant="danger"
+    confirmLabel="Yes"
+    (confirm)="confirmLogout()"
+    (cancel)="cancelLogout()"
+  />
+}

@@ -8,6 +8,7 @@ import { CreateLoginDto } from './dto/create-login.dto';
 import { UpdateLoginDto } from './dto/update-login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { DatabaseService } from 'src/database/database.service';
+import { AuditService } from 'src/common/audit/audit.service';
 
 type UserRow = {
   id: number;
@@ -31,6 +32,7 @@ export class LoginService {
     private readonly databaseService: DatabaseService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly audit: AuditService,
   ) {}
 
   private getRefreshSecret(): string {
@@ -213,6 +215,16 @@ export class LoginService {
         this.buildRefreshPayload(user),
         { secret: this.getRefreshSecret(), expiresIn: this.getRefreshExpiry() as any },
       );
+
+      void this.audit.log({
+        orgId: user.orgId,
+        userId: user.id,
+        username: user.username,
+        action: 'auth.login',
+        entityType: 'user',
+        entityId: user.id,
+        details: { roleId: user.roleId, roleName: user.roleName },
+      });
 
       return {
         success: true,

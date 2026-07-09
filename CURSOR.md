@@ -114,3 +114,21 @@
     - In POS account dasboard, on checkout modal popup fix the sizing of it because currently its not fit on the tablet, make it dynamic in sizing make it scrollable and max 98% in height, remove autofocus on Amount Recieved textbox.
     - In POS product cards, make the format of the in stock text into right number format for example 19800 in stock to 19,800 in stock.
     - Make sure to fix all errors and bugs you encounter while working on this task.
+   //Continuation 3.0
+   - In the POS dashboard, change the text POINT OF SALE into the cashiers name, and show the companys name.
+   - In the POS dashboad, change the Card/List and Product Types/Variants selector into just icons.
+   - Make the Selectors, Category dropdown and Search bar into 1 line, so the header will not occupy to much space.
+   - In the POS dashboard, add a Sales dashboard where in for each cashier they can see how much their sales, basically its like a sales report page for each cashier.
+   - In the admin dashboard, add in the menu with a where in it can show the on duty cashier.
+   - In the admin dashboard, add a company profile page where in the admin can edit the company image, logo, company name and details like description etc...
+   - In the admin dashboard, add a printer settings where in the admin can modify the printing format and sizes.
+   - In the cashier dashboard, add a void feature where in when there is an item that already punched in can be voided, but it needs a admin code that needs to be provided by the admin, also the codes can be set in the admin dashboard.
+   - In the admin dashboard, Add a page where in it will show all actions for each user, its like a audit trail for all action that is happening in the system.
+   - Add a loader for each action so that user will know smething is clicked or something.
+   - In all dashboard, make all search function into smart search its like showing when searching a product card will show under.
+   - Add a edit profile function for all user dashboard.
+   - Disable slide to refreh in app mode.
+   - In all table with filter and selector function, don't make the whole page loads because currently when you click like the variants/ product selector the selector itself is disappearing which is not correct.
+   - in all dashboard remove the popup confirmations like the popup when adding a product in cart.
+   - Make sure to fix all errors and bugs you encounter while working on this task.
+

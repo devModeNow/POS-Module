@@ -10,9 +10,13 @@ import { PosStoreReportsService } from './services/store-reports.service';
 import { PosTerminalService } from './services/terminal.service';
 import { PosOrgBootstrapService } from './services/pos-org-bootstrap.service';
 
+import { PosOperationsController } from './controllers/pos-operations.controller';
+import { PosStaffService } from './services/pos-staff.service';
+import { PosVoidService } from './services/pos-void.service';
+
 @Module({
   imports: [DatabaseModule],
-  controllers: [PosDashboardController, PosTerminalController, PosStoreReportsController],
+  controllers: [PosDashboardController, PosTerminalController, PosStoreReportsController, PosOperationsController],
   providers: [
     PosDashboardService,
     PosTerminalService,
@@ -20,6 +24,8 @@ import { PosOrgBootstrapService } from './services/pos-org-bootstrap.service';
     PosPaymentMethodsService,
     PosStoreReportsService,
     PosOrgBootstrapService,
+    PosStaffService,
+    PosVoidService,
   ],
 })
 export class PosModule {}

@@ -28,6 +28,7 @@ export interface UserApiItem {
   orgId?: number | null;
   orgName?: string | null;
   orgCode?: string | null;
+  profilePicture?: string | null;
 }
 
 export interface RoleApiItem {
@@ -185,6 +186,18 @@ export class UserManagementService {
 
   async updateMe(payload: Partial<CreateUserPayload>): Promise<ApiCreateResponse> {
     const response = await apiClient.patch<ApiCreateResponse>('/users/me', payload);
+    return response.data;
+  }
+
+  async uploadMyProfilePicture(file: File): Promise<ApiItemResponse<UserApiItem>> {
+    const form = new FormData();
+    form.append('file', file);
+    const response = await apiClient.post<ApiItemResponse<UserApiItem>>('/users/me/profile-picture', form);
+    return response.data;
+  }
+
+  async removeMyProfilePicture(): Promise<ApiItemResponse<UserApiItem>> {
+    const response = await apiClient.delete<ApiItemResponse<UserApiItem>>('/users/me/profile-picture');
     return response.data;
   }
 

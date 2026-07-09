@@ -5,6 +5,20 @@ import { DatabaseService } from 'src/database/database.service';
 export class PosStoreReportsService {
   constructor(private readonly db: DatabaseService) {}
 
+  private salesVoidSchemaReady = false;
+
+  private async ensureSalesVoidSchema(): Promise<void> {
+    if (this.salesVoidSchemaReady) return;
+    await this.db.query(`
+      ALTER TABLE public.tblsales_transactions
+        ADD COLUMN IF NOT EXISTS is_voided BOOLEAN NOT NULL DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS voided_at TIMESTAMPTZ,
+        ADD COLUMN IF NOT EXISTS voided_by BIGINT,
+        ADD COLUMN IF NOT EXISTS void_reason TEXT
+    `);
+    this.salesVoidSchemaReady = true;
+  }
+
   private dateClause(params: unknown[], from?: string, to?: string, alias = 'st') {
     let clause = '';
     if (from) {
@@ -278,6 +292,90 @@ export class PosStoreReportsService {
       };
     } catch (e) {
       return { success: false, message: e instanceof Error ? e.message : 'Failed to load low stock report' };
+    }
+  }
+
+  async cashierSales(orgId: number, cashierId: number, from?: string, to?: string) {
+    try {
+      await this.ensureSalesVoidSchema();
+      const params: unknown[] = [orgId, cashierId];
+      let dateClause = this.dateClause(params, from, to);
+
+      const summary = await this.db.query<{
+        totalSales: string;
+        transactionCount: string;
+        totalDiscount: string;
+      }>(
+        `SELECT COALESCE(SUM(st.total_amount), 0)::text AS "totalSales",
+                COUNT(*)::text AS "transactionCount",
+                COALESCE(SUM(st.discount_amount), 0)::text AS "totalDiscount"
+         FROM tblsales_transactions st
+         WHERE st.org_id = $1 AND st.created_by = $2
+           AND COALESCE(st.is_voided, FALSE) = FALSE
+           ${dateClause}`,
+        params,
+      );
+
+      const byDay = await this.db.query<{
+        saleDate: string;
+        totalSales: string;
+        transactionCount: string;
+      }>(
+        `SELECT st.sale_date::text AS "saleDate",
+                COALESCE(SUM(st.total_amount), 0)::text AS "totalSales",
+                COUNT(*)::text AS "transactionCount"
+         FROM tblsales_transactions st
+         WHERE st.org_id = $1 AND st.created_by = $2
+           AND COALESCE(st.is_voided, FALSE) = FALSE
+           ${dateClause}
+         GROUP BY st.sale_date
+         ORDER BY st.sale_date DESC
+         LIMIT 31`,
+        params,
+      );
+
+      const recent = await this.db.query<{
+        id: number;
+        saleDate: string;
+        totalAmount: string;
+        paymentStatus: string;
+      }>(
+        `SELECT st.id,
+                st.sale_date::text AS "saleDate",
+                st.total_amount::text AS "totalAmount",
+                COALESCE(st.payment_status, 'settled') AS "paymentStatus"
+         FROM tblsales_transactions st
+         WHERE st.org_id = $1 AND st.created_by = $2
+           AND COALESCE(st.is_voided, FALSE) = FALSE
+           ${dateClause}
+         ORDER BY st.id DESC
+         LIMIT 20`,
+        params,
+      );
+
+      return {
+        success: true,
+        data: {
+          summary: {
+            totalSales: Number(summary.rows[0]?.totalSales ?? 0),
+            transactionCount: Number(summary.rows[0]?.transactionCount ?? 0),
+            totalDiscount: Number(summary.rows[0]?.totalDiscount ?? 0),
+          },
+          byDay: byDay.rows.map((r) => ({
+            saleDate: r.saleDate,
+            totalSales: Number(r.totalSales),
+            transactionCount: Number(r.transactionCount),
+          })),
+          recent: recent.rows.map((r) => ({
+            id: r.id,
+            saleDate: r.saleDate,
+            totalAmount: Number(r.totalAmount),
+            paymentStatus: r.paymentStatus,
+          })),
+        },
+      };
+    } catch (e) {
+      return { success: false, message: e instanceof Error ? e.message : 'Failed to load cashier sales' };
     }
   }
 }

@@ -6,6 +6,7 @@ export class UpdateBusinessProfileDto {
   businessContact?: string | null;
   businessEmail?: string | null;
   businessOwner?: string | null;
+  businessDescription?: string | null;
   businessLogo?: string | null;
   businessLogoLight?: string | null;
   businessLogoDark?: string | null;
@@ -38,4 +39,7 @@ export class UpdateBusinessProfileDto {
   cvNumberSuffix?: string | null;
   gjNumberPrefix?: string | null;
   gjNumberSuffix?: string | null;
+  posReceiptPaperWidth?: string | null;
+  posReceiptShowLogo?: string | null;
+  posReceiptFooterText?: string | null;
 }

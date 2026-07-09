@@ -52,6 +52,6 @@ export class AppLayoutComponent implements OnInit, OnDestroy {
   }
 
   private syncPosDashboardRoute(url: string): void {
-    this.isPosDashboardRoute = url.includes('/pos-dashboard') || url.includes('/pos-terminal');
+    this.isPosDashboardRoute = /\/users\/pos-(dashboard|terminal|my-sales|staff|audit-trail|company-profile)(\/|$|\?)/.test(url);
   }
 }

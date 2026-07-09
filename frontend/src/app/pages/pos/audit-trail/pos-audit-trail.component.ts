@@ -1,8 +1,8 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
-import { RouterLink } from '@angular/router';
 import { PosService } from '../../../shared/services/pos.service';
 import { ActionBusyService } from '../../../shared/services/action-busy.service';
+import { PosPageHeaderComponent } from '../shared/pos-page-header.component';
 
 type AuditRow = {
   id: number;
@@ -17,8 +17,9 @@ type AuditRow = {
 @Component({
   selector: 'app-pos-audit-trail',
   standalone: true,
-  imports: [CommonModule, RouterLink],
+  imports: [CommonModule, PosPageHeaderComponent],
   templateUrl: './pos-audit-trail.component.html',
+  styles: `:host { display: block; height: 100%; min-height: 0; }`,
 })
 export class PosAuditTrailComponent implements OnInit {
   loading = false;
