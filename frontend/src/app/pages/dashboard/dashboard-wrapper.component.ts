@@ -6,6 +6,7 @@ import { RbacService } from '../../shared/services/rbac.service';
 
 @Component({
   selector: 'app-dashboard-wrapper',
+  standalone: true,
   imports: [EcommerceComponent, OrgDashboardComponent, PosDashboardComponent],
   template: `
     @if (isPlatform) {

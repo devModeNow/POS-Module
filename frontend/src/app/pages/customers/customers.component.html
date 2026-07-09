@@ -12,12 +12,35 @@
       </app-button>
     </div>
 
-    <div class="mt-4">
-      <input type="text" [(ngModel)]="search" placeholder="Search name, contact, or email"
-        class="w-full max-w-sm rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" />
+    <div class="mt-4 relative max-w-sm">
+      <input type="text" [(ngModel)]="search" (focus)="searchFocused = true" (blur)="onSearchBlur()" placeholder="Search name, contact, or email"
+        class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" />
+      @if (searchFocused && search.trim() && searchSuggestions.length > 0) {
+        <ul class="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white p-2 shadow-lg dark:border-gray-700 dark:bg-gray-900">
+          @for (c of searchSuggestions; track c.id) {
+            <li>
+              <button type="button" (mousedown)="pickSearchSuggestion(c)"
+                class="flex w-full items-center gap-3 rounded-md p-2 text-left hover:bg-brand-50 dark:hover:bg-brand-500/10">
+                <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-100 text-sm font-semibold text-brand-700 dark:bg-brand-500/20 dark:text-brand-300">
+                  {{ c.name.charAt(0).toUpperCase() }}
+                </div>
+                <div class="min-w-0">
+                  <span class="block truncate text-sm font-medium">{{ c.name }}</span>
+                  <span class="block truncate text-xs text-gray-500">{{ c.contact || c.email || '—' }}</span>
+                </div>
+              </button>
+            </li>
+          }
+        </ul>
+      }
     </div>
 
-    <div class="mt-5 overflow-x-auto">
+    <div class="relative mt-5 overflow-x-auto">
+      @if (isLoading && customers.length > 0) {
+        <div class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-white/60 dark:bg-gray-950/60">
+          <span class="text-sm text-gray-500">Updating…</span>
+        </div>
+      }
       <table class="w-full min-w-[700px]">
         <thead>
           <tr class="border-b border-gray-200 dark:border-gray-800">

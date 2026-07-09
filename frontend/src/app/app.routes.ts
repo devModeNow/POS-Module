@@ -20,6 +20,11 @@ import { CateringDashboardComponent } from './pages/catering/dashboard/catering-
 import { CateringSchedulesComponent } from './pages/catering/schedules/catering-schedules.component';
 import { CateringMenusComponent } from './pages/catering/menus/catering-menus.component';
 import { PosDashboardComponent } from './pages/pos/dashboard/pos-dashboard.component';
+import { PosMySalesComponent } from './pages/pos/my-sales/pos-my-sales.component';
+import { PosStaffMonitorComponent } from './pages/pos/staff-monitor/pos-staff-monitor.component';
+import { PosAuditTrailComponent } from './pages/pos/audit-trail/pos-audit-trail.component';
+import { PosCompanyProfileComponent } from './pages/pos/company-profile/pos-company-profile.component';
+import { ProfileComponent } from './pages/profile/profile.component';
 import { SchedulingFormComponent } from './pages/catering/public/scheduling-form/scheduling-form.component';
 import { RatingPageComponent } from './pages/catering/public/rating-page/rating-page.component';
 import { SetupComponent } from './pages/setup/setup.component';
@@ -143,6 +148,34 @@ export const routes: Routes = [
         data: { menu: 'pos-dashboard', permission: 'canRead' },
         title: 'POS Dashboard',
       },
+      {
+        path: 'pos-my-sales',
+        component: PosMySalesComponent,
+        canActivate: [rbacGuard],
+        data: { menu: 'pos-my-sales', permission: 'canRead' },
+        title: 'My Sales',
+      },
+      {
+        path: 'pos-staff',
+        component: PosStaffMonitorComponent,
+        canActivate: [rbacGuard],
+        data: { menu: 'pos-staff', permission: 'canRead' },
+        title: 'On-Duty Staff',
+      },
+      {
+        path: 'pos-audit-trail',
+        component: PosAuditTrailComponent,
+        canActivate: [rbacGuard],
+        data: { menu: 'pos-audit-trail', permission: 'canRead' },
+        title: 'Audit Trail',
+      },
+      {
+        path: 'pos-company-profile',
+        component: PosCompanyProfileComponent,
+        canActivate: [rbacGuard],
+        data: { menu: 'pos-company-profile', permission: 'canRead' },
+        title: 'Company Profile',
+      },
 
       // ── Catering menus ──────────────────────────────────────────────────
       {
@@ -165,6 +198,19 @@ export const routes: Routes = [
         canActivate: [rbacGuard],
         data: { menu: 'catering-menus', permission: 'canRead' },
         title: 'Catering Menus',
+      },
+    ],
+  },
+
+  {
+    path: 'profile',
+    component: AppLayoutComponent,
+    canActivateChild: [authChildGuard],
+    children: [
+      {
+        path: '',
+        component: ProfileComponent,
+        title: 'My Profile',
       },
     ],
   },

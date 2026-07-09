@@ -17,11 +17,12 @@ import {
 import { BackupService } from '../../shared/services/backup.service';
 import { InventoryService, OrgUnitType } from '../../shared/services/inventory.service';
 import { OrgService } from '../../shared/services/org.service';
+import { PosService } from '../../shared/services/pos.service';
 import type { BackupMetadata, BackupType, BackupFormat } from '../../shared/interfaces/backup.interfaces';
 import axios from 'axios';
 import { shouldPoll, extractFilename, formatBackupDate, formatFileSize, getStatusBadgeClasses, getStatusAriaLabel } from '../../shared/utils/backup-utils';
 
-type SettingsTab = 'system' | 'print-settings' | 'rbac-configs' | 'unit-types' | 'database-backup';
+type SettingsTab = 'system' | 'print-settings' | 'void-codes' | 'rbac-configs' | 'unit-types' | 'database-backup';
 
 interface SettingsPermissionOption {
   key: string;
@@ -100,6 +101,11 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
   isSavingUnitType = false;
   unitTypeForm = { code: '', label: '', isManualEntry: false };
 
+  voidCodes: Array<{ id: number; label: string; isActive: boolean }> = [];
+  voidCodeForm = { label: '', code: '' };
+  isLoadingVoidCodes = false;
+  isSavingVoidCode = false;
+
   confirmOpen = false;
   confirmTitle = '';
   confirmMessage = '';
@@ -114,6 +120,7 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
     businessContact: string;
     businessEmail: string;
     businessOwner: string;
+    businessDescription: string;
   } = {
     websiteTabName: '',
     routingTabName: '{route}',
@@ -122,6 +129,7 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
     businessContact: '',
     businessEmail: '',
     businessOwner: '',
+    businessDescription: '',
   };
 
   preview: {
@@ -162,6 +170,9 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
     cvNumberSuffix: string;
     gjNumberPrefix: string;
     gjNumberSuffix: string;
+    posReceiptPaperWidth: string;
+    posReceiptShowLogo: boolean;
+    posReceiptFooterText: string;
   } = {
     paperSize: 'A4',
     showLogo: true,
@@ -184,6 +195,9 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
     cvNumberSuffix: '',
     gjNumberPrefix: 'GJ',
     gjNumberSuffix: '',
+    posReceiptPaperWidth: '80mm',
+    posReceiptShowLogo: true,
+    posReceiptFooterText: '',
   };
 
   constructor(
@@ -193,6 +207,7 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
     private readonly backupService: BackupService,
     private readonly inventoryService: InventoryService,
     private readonly orgService: OrgService,
+    private readonly posService: PosService,
   ) {}
 
   ngOnInit(): void {
@@ -210,6 +225,7 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
   readonly tabs: Array<{ key: SettingsTab; label: string }> = [
     { key: 'system', label: 'System' },
     { key: 'print-settings', label: 'Print Settings' },
+    { key: 'void-codes', label: 'Void Codes' },
     { key: 'rbac-configs', label: 'RBAC Configs' },
     { key: 'unit-types', label: 'Unit Types' },
     { key: 'database-backup', label: 'Database Backup' },
@@ -227,6 +243,7 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
     return this.tabs.filter((tab) => {
       if (tab.key === 'database-backup') return this.canAccessBackup;
       if (tab.key === 'unit-types') return this.isPosOrg;
+      if (tab.key === 'void-codes') return this.isPosOrg;
       return true;
     });
   }
@@ -283,6 +300,59 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
     }
     if (tab === 'unit-types') {
       void this.loadUnitTypes();
+    }
+    if (tab === 'void-codes') {
+      void this.loadVoidCodes();
+    }
+  }
+
+  async loadVoidCodes(): Promise<void> {
+    if (!this.isPosOrg) return;
+    this.isLoadingVoidCodes = true;
+    this.uiError = '';
+    try {
+      const r = await this.posService.getVoidCodes();
+      if (!r.success) {
+        this.uiError = 'Failed to load void codes.';
+        this.voidCodes = [];
+        return;
+      }
+      this.voidCodes = (r.data ?? []).filter((row) => row.isActive);
+    } catch (error: unknown) {
+      this.voidCodes = [];
+      this.uiError = this.resolveErrorMessage(error, 'Failed to load void codes.');
+    } finally {
+      this.isLoadingVoidCodes = false;
+    }
+  }
+
+  async saveVoidCode(): Promise<void> {
+    if (!this.canUpdateSettings) {
+      this.uiError = 'You do not have permission to manage void codes.';
+      return;
+    }
+    const label = this.voidCodeForm.label.trim();
+    const code = this.voidCodeForm.code.trim();
+    if (!label || !code) {
+      this.uiError = 'Label and code are required.';
+      return;
+    }
+    this.isSavingVoidCode = true;
+    this.uiError = '';
+    this.uiMessage = '';
+    try {
+      const r = await this.posService.saveVoidCode({ label, code });
+      if (!r.success) {
+        this.uiError = r.message ?? 'Failed to save void code.';
+        return;
+      }
+      this.voidCodeForm = { label: '', code: '' };
+      this.uiMessage = 'Void code saved.';
+      await this.loadVoidCodes();
+    } catch (error: unknown) {
+      this.uiError = this.resolveErrorMessage(error, 'Failed to save void code.');
+    } finally {
+      this.isSavingVoidCode = false;
     }
   }
 
@@ -798,6 +868,7 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
         businessContact: this.toNullable(this.form.businessContact),
         businessEmail: this.toNullable(this.form.businessEmail),
         businessOwner: this.toNullable(this.form.businessOwner),
+        businessDescription: this.toNullable(this.form.businessDescription),
       });
       if (!response.success) {
         this.uiError = response.message ?? 'Failed to save business settings.';
@@ -932,6 +1003,9 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
         cvNumberSuffix: this.printForm.cvNumberSuffix.trim(),
         gjNumberPrefix: this.printForm.gjNumberPrefix.trim() || 'GJ',
         gjNumberSuffix: this.printForm.gjNumberSuffix.trim(),
+        posReceiptPaperWidth: this.printForm.posReceiptPaperWidth.trim() || '80mm',
+        posReceiptShowLogo: String(this.printForm.posReceiptShowLogo),
+        posReceiptFooterText: this.toNullable(this.printForm.posReceiptFooterText),
       });
       if (!response.success) { this.uiError = response.message ?? 'Failed to save print settings.'; return; }
       this.applyBusinessProfile(response.item ?? null);
@@ -952,6 +1026,7 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
       businessContact: item?.businessContact ?? '',
       businessEmail: item?.businessEmail ?? '',
       businessOwner: item?.businessOwner ?? '',
+      businessDescription: item?.businessDescription ?? '',
     };
     this.preview = {
       businessLogoLight: item?.businessLogoLight ?? item?.businessLogo ?? this.defaultBusinessLogoLight,
@@ -983,6 +1058,9 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
       cvNumberSuffix: item?.cvNumberSuffix ?? '',
       gjNumberPrefix: item?.gjNumberPrefix ?? 'GJ',
       gjNumberSuffix: item?.gjNumberSuffix ?? '',
+      posReceiptPaperWidth: item?.posReceiptPaperWidth ?? '80mm',
+      posReceiptShowLogo: this.parsePrintBool(item?.posReceiptShowLogo, true),
+      posReceiptFooterText: item?.posReceiptFooterText ?? '',
     };
   }
 

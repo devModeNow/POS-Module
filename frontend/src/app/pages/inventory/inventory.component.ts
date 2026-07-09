@@ -12,6 +12,7 @@ import { InventoryProductRow, InventoryVariantRow, PosService } from '../../shar
 import { OrgService } from '../../shared/services/org.service';
 import { RbacService } from '../../shared/services/rbac.service';
 import { NotificationService } from '../../shared/services/notification.service';
+import { ActionBusyService } from '../../shared/services/action-busy.service';
 
 type MainTab = 'inventory' | 'purchase-orders' | 'reports';
 type DrawerMode = 'create' | 'edit';
@@ -56,6 +57,8 @@ export class InventoryComponent implements OnInit, OnDestroy {
   editingVariantOnly = false;
   editingVariantId: number | null = null;
   search = '';
+  searchFocused = false;
+  private inventorySearchTimer: ReturnType<typeof setTimeout> | null = null;
   categoryFilter = '';
   categoryOptions: { id: number; name: string }[] = [];
   isLoadingItems = false;
@@ -139,6 +142,32 @@ export class InventoryComponent implements OnInit, OnDestroy {
 
   get isDeletedView(): boolean {
     return this.isPosOrg && this.inventoryItemFilter === 'deleted';
+  }
+  get inventorySearchSuggestions(): Array<{
+    kind: 'product' | 'variant';
+    id: number;
+    label: string;
+    sub?: string;
+    imageUrl?: string | null;
+  }> {
+    const q = this.search.trim().toLowerCase();
+    if (!q || !this.isPosOrg) return [];
+    if (this.posInventoryView === 'variants') {
+      return this.filteredVariants.slice(0, 8).map((v) => ({
+        kind: 'variant' as const,
+        id: v.id,
+        label: v.variantName,
+        sub: v.productName,
+        imageUrl: v.imageUrl,
+      }));
+    }
+    return this.filteredProducts.slice(0, 8).map((p) => ({
+      kind: 'product' as const,
+      id: p.id,
+      label: p.name,
+      sub: p.category ?? undefined,
+      imageUrl: p.imageUrl,
+    }));
   }
   get paginatedListLength(): number {
     if (!this.isPosOrg) return this.filteredItems.length;
@@ -328,6 +357,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
     private readonly orgSvc: OrgService,
     private readonly rbacSvc: RbacService,
     private readonly notify: NotificationService,
+    private readonly actionBusy: ActionBusyService,
   ) {}
 
   ngOnInit(): void {
@@ -348,6 +378,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
   }
 
   ngOnDestroy(): void {
+    if (this.inventorySearchTimer) clearTimeout(this.inventorySearchTimer);
     this.orgContextSub?.unsubscribe();
   }
 
@@ -373,34 +404,35 @@ export class InventoryComponent implements OnInit, OnDestroy {
 
   async loadItems(): Promise<void> {
     this.isLoadingItems = true;
-    this.currentPage = 1;
     try {
-      if (this.isPosOrg) {
-        const deletedOnly = this.inventoryItemFilter === 'deleted';
-        const [variantsR, productsR] = await Promise.all([
-          this.posSvc.getInventoryVariants(
+      await this.actionBusy.run('inventory-load', async () => {
+        if (this.isPosOrg) {
+          const deletedOnly = this.inventoryItemFilter === 'deleted';
+          const [variantsR, productsR] = await Promise.all([
+            this.posSvc.getInventoryVariants(
+              undefined,
+              this.categoryFilter || undefined,
+              deletedOnly,
+            ),
+            this.posSvc.getInventoryProducts(
+              undefined,
+              this.categoryFilter || undefined,
+              deletedOnly,
+            ),
+          ]);
+          this.variantItems = variantsR?.success !== false && Array.isArray(variantsR?.data) ? variantsR.data : [];
+          this.productItems = productsR?.success !== false && Array.isArray(productsR?.data) ? productsR.data : [];
+          if (productsR?.success === false) {
+            this.notify.error('Load failed', productsR.message ?? 'Could not load product types.');
+          }
+        } else {
+          const r = await this.svc.getAll(
             this.search || undefined,
             this.categoryFilter || undefined,
-            deletedOnly,
-          ),
-          this.posSvc.getInventoryProducts(
-            this.search || undefined,
-            this.categoryFilter || undefined,
-            deletedOnly,
-          ),
-        ]);
-        this.variantItems = variantsR?.success !== false && Array.isArray(variantsR?.data) ? variantsR.data : [];
-        this.productItems = productsR?.success !== false && Array.isArray(productsR?.data) ? productsR.data : [];
-        if (productsR?.success === false) {
-          this.notify.error('Load failed', productsR.message ?? 'Could not load product types.');
+          );
+          this.items = r.data ?? [];
         }
-      } else {
-        const r = await this.svc.getAll(
-          this.search || undefined,
-          this.categoryFilter || undefined,
-        );
-        this.items = r.data ?? [];
-      }
+      });
     }
     catch {
       this.items = [];
@@ -436,7 +468,36 @@ export class InventoryComponent implements OnInit, OnDestroy {
   }
 
   onCategoryFilterChange(): void {
+    this.currentPage = 1;
     void this.loadItems();
+  }
+
+  onSearchInput(): void {
+    this.currentPage = 1;
+    if (!this.isPosOrg) {
+      if (this.inventorySearchTimer) clearTimeout(this.inventorySearchTimer);
+      this.inventorySearchTimer = setTimeout(() => void this.loadItems(), 300);
+    }
+  }
+
+  onSearchBlur(): void {
+    setTimeout(() => { this.searchFocused = false; }, 150);
+  }
+
+  pickInventorySearchSuggestion(item: { kind: 'product' | 'variant'; id: number; label: string }): void {
+    this.search = item.label;
+    this.searchFocused = false;
+    this.currentPage = 1;
+    if (item.kind === 'variant') {
+      this.posInventoryView = 'variants';
+      void this.openEditProductById(
+        this.variantItems.find((v) => v.id === item.id)?.productId ?? 0,
+        item.id,
+      );
+    } else {
+      this.posInventoryView = 'products';
+      void this.openEditProductById(item.id);
+    }
   }
 
   openCreateItem(): void {

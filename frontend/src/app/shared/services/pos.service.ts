@@ -381,4 +381,50 @@ export class PosService {
     }
     return 0;
   }
+
+  async staffHeartbeat(): Promise<{ success: boolean }> {
+    const r = await apiClient.post<{ success: boolean }>('/api/pos/staff/heartbeat', {});
+    return r.data;
+  }
+
+  async getMySales(from?: string, to?: string) {
+    const r = await apiClient.get<{ success: boolean; data?: unknown; message?: string }>(
+      '/api/pos/my-sales',
+      { params: { from, to } },
+    );
+    return r.data;
+  }
+
+  async getOnDutyStaff(withinMinutes = 30) {
+    const r = await apiClient.get<{ success: boolean; data?: unknown[]; message?: string }>(
+      '/api/pos/staff/on-duty',
+      { params: { withinMinutes } },
+    );
+    return r.data;
+  }
+
+  async getAuditTrail(limit = 100, offset = 0) {
+    const r = await apiClient.get<{ success: boolean; data?: unknown[]; message?: string }>(
+      '/audit-trail',
+      { params: { limit, offset } },
+    );
+    return r.data;
+  }
+
+  async voidCartLine(payload: { cartKey?: string; adminCode: string; reason?: string }) {
+    const r = await apiClient.post<{ success: boolean; message?: string }>('/api/pos/void', payload);
+    return r.data;
+  }
+
+  async getVoidCodes() {
+    const r = await apiClient.get<{ success: boolean; message?: string; data?: Array<{ id: number; label: string; isActive: boolean }> }>(
+      '/api/pos/void-codes',
+    );
+    return r.data;
+  }
+
+  async saveVoidCode(payload: { id?: number; label: string; code: string }) {
+    const r = await apiClient.post<{ success: boolean; message?: string }>('/api/pos/void-codes', payload);
+    return r.data;
+  }
 }

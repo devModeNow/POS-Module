@@ -104,6 +104,17 @@
             placeholder="Enter business address"
           ></textarea>
         </div>
+
+        <div class="md:col-span-2">
+          <label class="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Company Description</label>
+          <textarea
+            class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-brand-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+            [(ngModel)]="form.businessDescription"
+            [disabled]="isLoading || isSaving"
+            rows="4"
+            placeholder="Brief description of your company"
+          ></textarea>
+        </div>
       </div>
 
       <div class="flex items-center justify-end">
@@ -198,6 +209,124 @@
           />
           <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ isUploadingDrTemplate ? 'Uploading...' : 'PDF only' }}</p>
         </div>
+      </div>
+    </div>
+
+    <!-- Print Settings Tab -->
+    <div *ngIf="activeTab === 'print-settings'" class="space-y-6">
+      <p class="text-sm text-gray-600 dark:text-gray-300">Configure document and POS receipt printing options.</p>
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div>
+          <label class="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Paper size</label>
+          <select [(ngModel)]="printForm.paperSize" class="w-full rounded-lg border px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white">
+            <option value="A4">A4</option>
+            <option value="Letter">Letter</option>
+            <option value="Legal">Legal</option>
+          </select>
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Logo variant</label>
+          <select [(ngModel)]="printForm.logoVariant" class="w-full rounded-lg border px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white">
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </div>
+        <div class="md:col-span-2">
+          <label class="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Footer text</label>
+          <input [(ngModel)]="printForm.footerText" class="w-full rounded-lg border px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
+        </div>
+        <label class="flex items-center gap-2 text-sm"><input type="checkbox" [(ngModel)]="printForm.showLogo" /> Show logo on prints</label>
+      </div>
+
+      <div *ngIf="isPosOrg" class="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
+        <h4 class="mb-3 text-sm font-semibold text-gray-800 dark:text-gray-100">POS receipt</h4>
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <label class="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Receipt width</label>
+            <select [(ngModel)]="printForm.posReceiptPaperWidth" class="w-full rounded-lg border px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white">
+              <option value="58mm">58mm</option>
+              <option value="80mm">80mm</option>
+            </select>
+          </div>
+          <label class="flex items-end gap-2 pb-2 text-sm"><input type="checkbox" [(ngModel)]="printForm.posReceiptShowLogo" /> Show logo on receipt</label>
+          <div class="md:col-span-2">
+            <label class="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Receipt footer</label>
+            <input [(ngModel)]="printForm.posReceiptFooterText" class="w-full rounded-lg border px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white" placeholder="Thank you for your purchase!" />
+          </div>
+        </div>
+      </div>
+
+      <div class="flex justify-end">
+        <button type="button" (click)="savePrintSettings()" [disabled]="!canUpdateSettings || isSavingPrint"
+          class="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50">
+          {{ isSavingPrint ? 'Saving...' : 'Save Print Settings' }}
+        </button>
+      </div>
+    </div>
+
+    <!-- Void Codes Tab (POS) -->
+    <div *ngIf="activeTab === 'void-codes'" class="space-y-6">
+      <p class="text-sm text-gray-600 dark:text-gray-300">Admin codes cashiers must enter to void punched-in cart items.</p>
+      <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div>
+          <label class="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Label</label>
+          <input [(ngModel)]="voidCodeForm.label" placeholder="e.g. Manager override"
+            class="w-full rounded-lg border px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Code</label>
+          <input type="password" [(ngModel)]="voidCodeForm.code" placeholder="Secret code"
+            class="w-full rounded-lg border px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
+        </div>
+        <div class="flex items-end">
+          <button type="button" (click)="saveVoidCode()" [disabled]="!canUpdateSettings || isSavingVoidCode"
+            class="w-full rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50">
+            {{ isSavingVoidCode ? 'Saving...' : 'Save Code' }}
+          </button>
+        </div>
+      </div>
+      <div *ngIf="isLoadingVoidCodes" class="text-sm text-gray-500">Loading void codes...</div>
+      <ul *ngIf="!isLoadingVoidCodes" class="divide-y rounded-lg border dark:border-gray-700">
+        <li *ngFor="let row of voidCodes" class="flex items-center justify-between px-4 py-3 text-sm">
+          <span>{{ row.label }}</span>
+          <span class="text-xs text-emerald-600">Active</span>
+        </li>
+        <li *ngIf="voidCodes.length === 0" class="px-4 py-8 text-center text-sm text-gray-500">No void codes configured yet.</li>
+      </ul>
+    </div>
+
+    <!-- RBAC Configs Tab -->
+    <div *ngIf="activeTab === 'rbac-configs'" class="space-y-6">
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <div>
+          <label class="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Role</label>
+          <select [(ngModel)]="selectedRoleId" (ngModelChange)="onRoleChange($event)"
+            class="w-full rounded-lg border px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white">
+            <option *ngFor="let role of roles" [ngValue]="role.id">{{ role.name }}</option>
+          </select>
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Search permissions</label>
+          <input [(ngModel)]="rbacSearch" placeholder="Filter permissions..."
+            class="w-full rounded-lg border px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
+        </div>
+      </div>
+      <p *ngIf="rbacError" class="text-sm text-red-600">{{ rbacError }}</p>
+      <div *ngIf="isLoadingRolePermissions" class="text-sm text-gray-500">Loading permissions...</div>
+      <div *ngIf="!isLoadingRolePermissions" class="max-h-96 overflow-y-auto rounded-lg border dark:border-gray-700">
+        <label *ngFor="let item of filteredRbacPermissionOptions" class="flex items-start gap-2 border-b px-4 py-2 text-sm dark:border-gray-800">
+          <input type="checkbox" [checked]="isRolePermissionSelected(item.key)" (change)="toggleRolePermission(item.key, $any($event.target).checked)" [disabled]="!canUpdateSettings" />
+          <span>
+            <span class="font-medium">{{ item.label }}</span>
+            <span class="block text-xs text-gray-500">{{ item.key }} · {{ formatPermissionModule(item.module) }}</span>
+          </span>
+        </label>
+      </div>
+      <div class="flex justify-end">
+        <button type="button" (click)="saveRolePermissions()" [disabled]="!canUpdateSettings || isSavingRolePermissions"
+          class="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50">
+          {{ isSavingRolePermissions ? 'Saving...' : 'Save Role Permissions' }}
+        </button>
       </div>
     </div>
 

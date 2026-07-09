@@ -44,13 +44,35 @@
 
     <div class="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
       <div class="flex w-full flex-col gap-2 sm:max-w-xl sm:flex-row sm:items-center">
-        <input
-          type="text"
-          [value]="userSearch"
-          (input)="onUserSearchChange($any($event.target).value)"
-          placeholder="Search username, name, role, or status"
-          class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:border-brand-300 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
-        />
+        <div class="relative w-full">
+          <input
+            type="text"
+            [value]="userSearch"
+            (input)="onUserSearchChange($any($event.target).value)"
+            (focus)="userSearchFocused = true"
+            (blur)="onUserSearchBlur()"
+            placeholder="Search username, name, role, or status"
+            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:border-brand-300 focus:outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300"
+          />
+          @if (userSearchFocused && userSearch.trim() && userSearchSuggestions.length > 0) {
+            <ul class="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-lg border border-gray-200 bg-white p-2 shadow-lg dark:border-gray-700 dark:bg-gray-900">
+              @for (user of userSearchSuggestions; track user.id) {
+                <li>
+                  <button type="button" (mousedown)="pickUserSearchSuggestion(user)"
+                    class="flex w-full items-center gap-3 rounded-md p-2 text-left hover:bg-brand-50 dark:hover:bg-brand-500/10">
+                    <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand-100 text-sm font-semibold text-brand-700 dark:bg-brand-500/20 dark:text-brand-300">
+                      {{ (user.fullName || user.username).charAt(0).toUpperCase() }}
+                    </div>
+                    <div class="min-w-0">
+                      <span class="block truncate text-sm font-medium">{{ user.fullName || user.username }}</span>
+                      <span class="block truncate text-xs text-gray-500">{{ user.username }} · {{ user.role || 'No role' }}</span>
+                    </div>
+                  </button>
+                </li>
+              }
+            </ul>
+          }
+        </div>
 
         <label class="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
           <input

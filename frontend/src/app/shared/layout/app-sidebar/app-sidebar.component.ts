@@ -182,6 +182,10 @@ export class AppSidebarComponent {
     const priority = [
       'pos-dashboard',
       'pos-terminal',
+      'pos-my-sales',
+      'pos-staff',
+      'pos-audit-trail',
+      'pos-company-profile',
       'catering-dashboard',
       'dashboard',
       'inventory',
@@ -229,6 +233,10 @@ export class AppSidebarComponent {
       'catering-menus':     'Catering Menus',
       'pos-dashboard':      'POS Sales',
       'pos-terminal':       'POS Sales',
+      'pos-my-sales':       'My Sales',
+      'pos-staff':          'On-Duty Staff',
+      'pos-audit-trail':    'Audit Trail',
+      'pos-company-profile': 'Company Profile',
     };
     const iconMap: Record<string, string> = {
       'dashboard':       `<svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" clip-rule="evenodd" d="M5.5 3.25C4.25736 3.25 3.25 4.25736 3.25 5.5V8.99998C3.25 10.2426 4.25736 11.25 5.5 11.25H9C10.2426 11.25 11.25 10.2426 11.25 8.99998V5.5C11.25 4.25736 10.2426 3.25 9 3.25H5.5ZM15 3.25C13.7574 3.25 12.75 4.25736 12.75 5.5V8.99998C12.75 10.2426 13.7574 11.25 15 11.25H18.5C19.7426 11.25 20.75 10.2426 20.75 8.99998V5.5C20.75 4.25736 19.7426 3.25 18.5 3.25H15ZM3.25 15C3.25 13.7574 4.25736 12.75 5.5 12.75H9C10.2426 12.75 11.25 13.7574 11.25 15V18.5C11.25 19.7426 10.2426 20.75 9 20.75H5.5C4.25736 20.75 3.25 19.7426 3.25 18.5V15ZM15 12.75C13.7574 12.75 12.75 13.7574 12.75 15V18.5C12.75 19.7426 13.7574 20.75 15 20.75H18.5C19.7426 20.75 20.75 19.7426 20.75 18.5V15C20.75 13.7574 19.7426 12.75 18.5 12.75H15Z" fill="currentColor"/></svg>`,
@@ -250,6 +258,10 @@ export class AppSidebarComponent {
       'catering-menus':     `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M3 6a1 1 0 0 1 1-1h16a1 1 0 1 1 0 2H4a1 1 0 0 1-1-1zm0 6a1 1 0 0 1 1-1h16a1 1 0 1 1 0 2H4a1 1 0 0 1-1-1zm1 5a1 1 0 1 0 0 2h16a1 1 0 1 0 0-2H4z" fill="currentColor"/></svg>`,
       'pos-dashboard':      `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M4 3a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2H4zm0 10a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-4a2 2 0 0 0-2-2H4zm3 2h2v2H7v-2zm4 0h6v2h-6v-2z" fill="currentColor"/></svg>`,
       'pos-terminal':       `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5zm4 3a1 1 0 0 0 0 2h10a1 1 0 1 0 0-2H7zm0 4a1 1 0 1 0 0 2h6a1 1 0 1 0 0-2H7zM6 19h12v1a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-1z" fill="currentColor"/></svg>`,
+      'pos-my-sales':       `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" fill="currentColor"/></svg>`,
+      'pos-staff':          `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C9.92893 2 8.25 3.67893 8.25 5.75C8.25 7.82107 9.92893 9.5 12 9.5C14.0711 9.5 15.75 7.82107 15.75 5.75C15.75 3.67893 14.0711 2 12 2ZM4 18.25C4 14.7982 6.79822 12 10.25 12H13.75C17.2018 12 20 14.7982 20 18.25V21.25H4V18.25Z" fill="currentColor"/></svg>`,
+      'pos-audit-trail':    `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm1 5v1.07A4.002 4.002 0 0112 16a4.002 4.002 0 01-1-7.93V7h2z" fill="currentColor"/></svg>`,
+      'pos-company-profile': `<svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" fill="none"><path fill-rule="evenodd" clip-rule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12H4V4zm2 0v10h8V4H6zm10 2h2a2 2 0 012 2v10a2 2 0 01-2 2h-8v-2h8V8h-2V6z" fill="currentColor"/></svg>`,
     };
 
     const label = labelMap[menuKey] ?? menuKey.split('-').map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
@@ -274,6 +286,10 @@ export class AppSidebarComponent {
       'catering-menus':     '/users/catering-menus',
       'pos-dashboard':      '/users/pos-dashboard',
       'pos-terminal':       '/users/pos-terminal',
+      'pos-my-sales':       '/users/pos-my-sales',
+      'pos-staff':          '/users/pos-staff',
+      'pos-audit-trail':    '/users/pos-audit-trail',
+      'pos-company-profile': '/users/pos-company-profile',
     };
     const path = routeMap[menuKey] ?? `/users/${menuKey}`;
     return { name: label, menuKey: menuKey as MenuKey, path, icon };

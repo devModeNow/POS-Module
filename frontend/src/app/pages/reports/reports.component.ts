@@ -30,6 +30,7 @@ import {
 } from '../../shared/services/reports.service';
 import { OrgService } from '../../shared/services/org.service';
 import { NotificationService } from '../../shared/services/notification.service';
+import { ActionBusyService } from '../../shared/services/action-busy.service';
 
 type ReportType =
   | 'sales' | 'jobs' | 'inventory' | 'low-stock' | 'payables-receivables'
@@ -105,6 +106,7 @@ export class ReportsComponent implements OnInit {
     private readonly posSvc: PosService,
     private readonly orgSvc: OrgService,
     private readonly notify: NotificationService,
+    private readonly actionBusy: ActionBusyService,
   ) {}
 
   ngOnInit(): void {
@@ -145,7 +147,8 @@ export class ReportsComponent implements OnInit {
   async generate(): Promise<void> {
     this.isLoading = true;
     try {
-      if (this.reportType === 'pos-dashboard') {
+      await this.actionBusy.run('reports-generate', async () => {
+        if (this.reportType === 'pos-dashboard') {
         const r = await this.posSvc.getDashboardReport(
           this.fromDate, this.toDate, this.paymentStatusFilter || undefined,
         );
@@ -180,6 +183,7 @@ export class ReportsComponent implements OnInit {
         const r = await this.svc.getLowStockReport();
         this.lowStockRows = r.data ?? [];
       }
+      });
     } catch { this.notify.error('Error', 'Failed to generate report.'); }
     finally { this.isLoading = false; }
   }

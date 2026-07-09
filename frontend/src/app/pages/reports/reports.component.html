@@ -63,6 +63,13 @@
       </div>
     }
 
+    <div class="relative mt-5">
+      @if (isLoading && hasReportData()) {
+        <div class="pointer-events-none absolute inset-0 z-10 flex items-start justify-center bg-white/60 pt-12 dark:bg-gray-950/60">
+          <span class="text-sm text-gray-500">Refreshing report…</span>
+        </div>
+      }
+
     <!-- ── Sales Report ── -->
     @if (reportType === 'sales') {
       @if (salesSummary) {
@@ -448,5 +455,6 @@
         </table>
       </div>
     }
+    </div>
   </div>
 </div>

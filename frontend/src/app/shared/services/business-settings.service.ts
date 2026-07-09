@@ -10,6 +10,7 @@ export interface BusinessProfileSettings {
   businessContact: string | null;
   businessEmail: string | null;
   businessOwner: string | null;
+  businessDescription: string | null;
   businessLogo: string | null;
   businessLogoLight: string | null;
   businessLogoDark: string | null;
@@ -42,6 +43,9 @@ export interface BusinessProfileSettings {
   cvNumberSuffix: string | null;
   gjNumberPrefix: string | null;
   gjNumberSuffix: string | null;
+  posReceiptPaperWidth: string | null;
+  posReceiptShowLogo: string | null;
+  posReceiptFooterText: string | null;
 }
 
 interface BusinessProfileResponse {

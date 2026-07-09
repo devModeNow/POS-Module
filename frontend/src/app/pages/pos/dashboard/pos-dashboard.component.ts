@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { ConfirmDialogComponent } from '../../../shared/components/ui/confirm-dialog/confirm-dialog.component';
 import {
   CartLine,
@@ -17,19 +17,26 @@ import { OrgService } from '../../../shared/services/org.service';
 import { NotificationService } from '../../../shared/services/notification.service';
 import { RbacService } from '../../../shared/services/rbac.service';
 import { AuthService } from '../../../shared/services/auth.service';
+import { BusinessSettingsService } from '../../../shared/services/business-settings.service';
+import { ActionBusyService } from '../../../shared/services/action-busy.service';
+import { GlobalActionLoaderComponent } from '../../../shared/components/common/global-action-loader/global-action-loader.component';
 
 @Component({
   selector: 'app-pos-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, ConfirmDialogComponent],
+  imports: [CommonModule, FormsModule, ConfirmDialogComponent, RouterLink, GlobalActionLoaderComponent],
   templateUrl: './pos-dashboard.component.html',
   styles: `:host { display: block; height: 100%; min-height: 0; }`,
 })
 export class PosDashboardComponent implements OnInit {
   state: 'loading' | 'loaded' | 'error' = 'loading';
+  catalogLoading = false;
   errorMessage = '';
   orgName = 'POS';
+  companyName = '';
+  cashierName = '';
   search = '';
+  searchFocused = false;
   selectedCategory = '';
   categories: string[] = [];
   products: PosProduct[] = [];
@@ -59,6 +66,11 @@ export class PosDashboardComponent implements OnInit {
   cartEditUnitsLoading = false;
 
   showCheckoutModal = false;
+  showVoidModal = false;
+  voidingLine: CartLine | null = null;
+  voidAdminCode = '';
+  voidReason = '';
+  isVoiding = false;
   selectedDiscountId: number | null = null;
   selectedPaymentMethodId: number | null = null;
   amountReceived = 0;
@@ -82,6 +94,8 @@ export class PosDashboardComponent implements OnInit {
     private readonly rbac: RbacService,
     private readonly auth: AuthService,
     private readonly router: Router,
+    private readonly businessSettings: BusinessSettingsService,
+    private readonly actionBusy: ActionBusyService,
   ) {
     this.isCashierMode = this.rbac.isCashier();
   }
@@ -92,6 +106,56 @@ export class PosDashboardComponent implements OnInit {
 
   get isVariantCatalogView(): boolean {
     return this.catalogMode === 'variants' || this.search.trim().length > 0;
+  }
+
+  get searchSuggestions(): Array<{
+    kind: 'product' | 'variant';
+    id: number;
+    label: string;
+    sub?: string;
+    imageUrl?: string | null;
+    stock?: number;
+    priceLabel?: string;
+  }> {
+    const q = this.search.trim();
+    if (!q || this.catalogLoading) return [];
+    if (this.isVariantCatalogView) {
+      return this.variantCatalog.slice(0, 8).map((v) => ({
+        kind: 'variant' as const,
+        id: v.id,
+        label: v.variantName,
+        sub: v.productName,
+        imageUrl: v.imageUrl ?? v.productImageUrl,
+        stock: v.stockQty,
+        priceLabel: v.salePrice && v.salePrice < v.sellingPrice
+          ? `₱${v.salePrice.toFixed(2)}`
+          : `₱${v.sellingPrice.toFixed(2)}`,
+      }));
+    }
+    return this.products.slice(0, 8).map((p) => ({
+      kind: 'product' as const,
+      id: p.id,
+      label: p.name,
+      sub: p.category ?? undefined,
+      imageUrl: p.imageUrl,
+      stock: p.totalStock,
+      priceLabel: p.hasSale && p.minSalePrice
+        ? `₱${p.minSalePrice.toFixed(2)}`
+        : `₱${p.minPrice.toFixed(2)}`,
+    }));
+  }
+
+  pickSearchSuggestion(item: { kind: 'product' | 'variant'; id: number }): void {
+    if (item.kind === 'product') {
+      const product = this.products.find((p) => p.id === item.id);
+      if (product) void this.openProduct(product);
+    } else {
+      const variant = this.variantCatalog.find((v) => v.id === item.id);
+      if (variant) void this.openVariantFromCatalog(variant);
+    }
+    this.search = '';
+    this.searchFocused = false;
+    void this.loadCatalog();
   }
 
   private orgId(): number {
@@ -105,6 +169,10 @@ export class PosDashboardComponent implements OnInit {
 
   ngOnInit(): void {
     this.orgName = this.orgService.getContext().name ?? 'POS';
+    this.cashierName = this.rbac.getDisplayName();
+    void this.loadCompanyName();
+    void this.posService.staffHeartbeat();
+    setInterval(() => void this.posService.staffHeartbeat(), 5 * 60 * 1000);
     const savedView = sessionStorage.getItem('posProductViewMode');
     if (savedView === 'grid' || savedView === 'list') {
       this.productViewMode = savedView;
@@ -168,8 +236,19 @@ export class PosDashboardComponent implements OnInit {
     }
   }
 
+  async loadCompanyName(): Promise<void> {
+    try {
+      const profile = await this.businessSettings.getBusinessProfile();
+      this.companyName = String(profile?.businessName ?? this.orgName).trim() || this.orgName;
+    } catch {
+      this.companyName = this.orgName;
+    }
+  }
+
   async loadProducts(): Promise<void> {
-    this.state = 'loading';
+    const isInitial = this.state !== 'loaded';
+    if (isInitial) this.state = 'loading';
+    else this.catalogLoading = true;
     this.errorMessage = '';
     try {
       const r = await this.posService.getProducts(this.search, this.selectedCategory || undefined);
@@ -185,11 +264,15 @@ export class PosDashboardComponent implements OnInit {
     } catch {
       this.state = 'error';
       this.errorMessage = 'Failed to load products. Please try again.';
+    } finally {
+      this.catalogLoading = false;
     }
   }
 
   async loadVariantCatalog(): Promise<void> {
-    this.state = 'loading';
+    const isInitial = this.state !== 'loaded';
+    if (isInitial) this.state = 'loading';
+    else this.catalogLoading = true;
     this.errorMessage = '';
     try {
       const r = await this.posService.getVariantsCatalog(this.search, this.selectedCategory || undefined);
@@ -205,12 +288,18 @@ export class PosDashboardComponent implements OnInit {
     } catch {
       this.state = 'error';
       this.errorMessage = 'Failed to load variants. Please try again.';
+    } finally {
+      this.catalogLoading = false;
     }
   }
 
   onSearchInput(): void {
     if (this.searchTimer) clearTimeout(this.searchTimer);
     this.searchTimer = setTimeout(() => void this.loadCatalog(), 300);
+  }
+
+  onSearchBlur(): void {
+    setTimeout(() => { this.searchFocused = false; }, 150);
   }
 
   onCategoryChange(): void {
@@ -438,7 +527,6 @@ export class PosDashboardComponent implements OnInit {
     }
     this.persistCart();
     this.cartOpen = true;
-    this.notify.success('Added', `${variant.variantName} added to cart.`);
   }
 
   incrementLine(line: CartLine): void {
@@ -733,35 +821,37 @@ export class PosDashboardComponent implements OnInit {
     if (!this.canConfirmCheckout() || this.isCheckingOut) return;
     this.isCheckingOut = true;
     try {
-      const r = await this.posService.checkout({
-        items: this.cart.map((line) => ({
-          variantId: line.variantId,
-          quantity: line.quantity,
-          unitType: line.unitType,
-        })),
-        discountId: this.selectedDiscountId,
-        amountPaid: Number(this.amountReceived) || 0,
-        paymentMethodId: this.selectedPaymentMethodId,
+      await this.actionBusy.run('pos-checkout', async () => {
+        const r = await this.posService.checkout({
+          items: this.cart.map((line) => ({
+            variantId: line.variantId,
+            quantity: line.quantity,
+            unitType: line.unitType,
+          })),
+          discountId: this.selectedDiscountId,
+          amountPaid: Number(this.amountReceived) || 0,
+          paymentMethodId: this.selectedPaymentMethodId,
+        });
+        if (!r.success || !r.data) {
+          this.notify.error('Checkout failed', r.message ?? 'Unable to complete sale.');
+          return;
+        }
+        this.checkoutSuccess = {
+          changeDue: r.data.changeDue ?? this.changeDue(),
+          totalAmount: r.data.totalAmount,
+        };
+        this.notify.success('Sale complete', `Change: ₱${this.formatCurrency(this.checkoutSuccess.changeDue)}`);
+        this.cart = [];
+        this.cartService.clear(this.orgId());
+        this.cartOpen = false;
+        this.selectedDiscountId = null;
+        this.amountReceived = 0;
+        await this.loadCatalog();
+        setTimeout(() => {
+          this.showCheckoutModal = false;
+          this.checkoutSuccess = null;
+        }, 2500);
       });
-      if (!r.success || !r.data) {
-        this.notify.error('Checkout failed', r.message ?? 'Unable to complete sale.');
-        return;
-      }
-      this.checkoutSuccess = {
-        changeDue: r.data.changeDue ?? this.changeDue(),
-        totalAmount: r.data.totalAmount,
-      };
-      this.notify.success('Sale complete', `Change: ₱${this.formatCurrency(this.checkoutSuccess.changeDue)}`);
-      this.cart = [];
-      this.cartService.clear(this.orgId());
-      this.cartOpen = false;
-      this.selectedDiscountId = null;
-      this.amountReceived = 0;
-      await this.loadCatalog();
-      setTimeout(() => {
-        this.showCheckoutModal = false;
-        this.checkoutSuccess = null;
-      }, 2500);
     } catch {
       this.notify.error('Error', 'Checkout failed. Please try again.');
     } finally {
@@ -839,6 +929,46 @@ export class PosDashboardComponent implements OnInit {
 
   paymentMethodLabel(m: PosPaymentMethod): string {
     return m.name;
+  }
+
+  openVoidLine(line: CartLine): void {
+    this.voidingLine = line;
+    this.voidAdminCode = '';
+    this.voidReason = '';
+    this.showVoidModal = true;
+  }
+
+  closeVoidModal(): void {
+    this.showVoidModal = false;
+    this.voidingLine = null;
+  }
+
+  async confirmVoidLine(): Promise<void> {
+    if (!this.voidingLine || !this.voidAdminCode.trim()) {
+      this.notify.warning('Required', 'Enter the admin void code.');
+      return;
+    }
+    this.isVoiding = true;
+    try {
+      await this.actionBusy.run('pos-void', async () => {
+        const r = await this.posService.voidCartLine({
+          cartKey: this.voidingLine!.cartKey,
+          adminCode: this.voidAdminCode.trim(),
+          reason: this.voidReason.trim() || undefined,
+        });
+        if (!r.success) {
+          this.notify.error('Void failed', r.message ?? 'Invalid admin code');
+          return;
+        }
+        const key = this.voidingLine!.cartKey;
+        this.cart = this.cart.filter((l) => l.cartKey !== key);
+        this.persistCart();
+        this.notify.success('Voided', 'Item removed from cart.');
+        this.closeVoidModal();
+      });
+    } finally {
+      this.isVoiding = false;
+    }
   }
 
   openConfirm(title: string, message: string, action: () => void, dialogVariant: 'primary' | 'danger' = 'primary'): void {

@@ -62,6 +62,7 @@ export class UserManagementComponent implements OnInit {
   roleOptions: RoleOption[] = [];
   permissionOptions: PermissionOption[] = [];
   userSearch = '';
+  userSearchFocused = false;
   permissionSearch = '';
   showDeletedUsers = false;
   page = 1;
@@ -103,6 +104,12 @@ export class UserManagementComponent implements OnInit {
   // ─── Computed ────────────────────────────────────────────────────────────
 
   get isPlatformUser(): boolean { return this.rbacService.isPlatformUser(); }
+
+  get userSearchSuggestions(): UserRow[] {
+    const kw = this.userSearch.trim().toLowerCase();
+    if (!kw) return [];
+    return this.filteredUsers.slice(0, 8);
+  }
 
   get filteredUsers(): UserRow[] {
     const kw = this.userSearch.trim().toLowerCase();
@@ -252,6 +259,14 @@ export class UserManagementComponent implements OnInit {
   }
 
   onUserSearchChange(value: string): void { this.userSearch = value; this.page = 1; }
+  onUserSearchBlur(): void { setTimeout(() => { this.userSearchFocused = false; }, 150); }
+  pickUserSearchSuggestion(user: UserRow): void {
+    this.userSearch = user.username;
+    this.userSearchFocused = false;
+    this.page = 1;
+    void this.openEditDrawer(user);
+  }
+
   onUserPageChange(nextPage: number): void {
     if (nextPage < 1 || nextPage > this.totalFilteredPages || nextPage === this.page) return;
     this.page = nextPage;

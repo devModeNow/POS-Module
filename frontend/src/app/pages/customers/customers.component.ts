@@ -6,6 +6,7 @@ import { ButtonComponent } from '../../shared/components/ui/button/button.compon
 import { CanDirective } from '../../shared/directives/can.directive';
 import { Customer, CustomersService, Vehicle } from '../../shared/services/customers.service';
 import { NotificationService } from '../../shared/services/notification.service';
+import { ActionBusyService } from '../../shared/services/action-busy.service';
 
 type DrawerMode = 'create' | 'edit';
 type ProfileTab = 'vehicles' | 'job-orders' | 'payments' | 'history';
@@ -18,6 +19,7 @@ type ProfileTab = 'vehicles' | 'job-orders' | 'payments' | 'history';
 export class CustomersComponent implements OnInit {
   customers: Customer[] = [];
   search = '';
+  searchFocused = false;
   isLoading = false;
   isDrawerOpen = false;
   isSaving = false;
@@ -39,7 +41,14 @@ export class CustomersComponent implements OnInit {
   constructor(
     private readonly svc: CustomersService,
     private readonly notify: NotificationService,
+    private readonly actionBusy: ActionBusyService,
   ) {}
+
+  get searchSuggestions(): Customer[] {
+    const kw = this.search.trim().toLowerCase();
+    if (!kw) return [];
+    return this.filtered.slice(0, 8);
+  }
 
   ngOnInit(): void { void this.load(); }
 
@@ -53,10 +62,22 @@ export class CustomersComponent implements OnInit {
   async load(): Promise<void> {
     this.isLoading = true;
     try {
-      const r = await this.svc.getAll();
-      this.customers = r.data ?? [];
+      await this.actionBusy.run('customers-load', async () => {
+        const r = await this.svc.getAll();
+        this.customers = r.data ?? [];
+      });
     } catch { this.customers = []; }
     finally { this.isLoading = false; }
+  }
+
+  onSearchBlur(): void {
+    setTimeout(() => { this.searchFocused = false; }, 150);
+  }
+
+  pickSearchSuggestion(c: Customer): void {
+    this.search = c.name;
+    this.searchFocused = false;
+    void this.openProfile(c);
   }
 
   openCreate(): void {

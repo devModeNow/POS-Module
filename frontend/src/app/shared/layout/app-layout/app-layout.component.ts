@@ -5,6 +5,7 @@ import { filter, Subscription } from 'rxjs';
 import { AppHeaderComponent } from '../app-header/app-header.component';
 import { AppSidebarComponent } from '../app-sidebar/app-sidebar.component';
 import { BackdropComponent } from '../backdrop/backdrop.component';
+import { GlobalActionLoaderComponent } from '../../components/common/global-action-loader/global-action-loader.component';
 import { RbacService } from '../../services/rbac.service';
 import { SidebarService } from '../../services/sidebar.service';
 
@@ -16,6 +17,7 @@ import { SidebarService } from '../../services/sidebar.service';
     AppHeaderComponent,
     AppSidebarComponent,
     BackdropComponent,
+    GlobalActionLoaderComponent,
   ],
   templateUrl: './app-layout.component.html',
 })

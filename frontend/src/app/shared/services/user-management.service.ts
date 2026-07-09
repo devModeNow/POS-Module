@@ -178,6 +178,16 @@ export class UserManagementService {
     return response.data;
   }
 
+  async getMe(): Promise<ApiItemResponse<UserApiItem>> {
+    const response = await apiClient.get<ApiItemResponse<UserApiItem>>('/users/me');
+    return response.data;
+  }
+
+  async updateMe(payload: Partial<CreateUserPayload>): Promise<ApiCreateResponse> {
+    const response = await apiClient.patch<ApiCreateResponse>('/users/me', payload);
+    return response.data;
+  }
+
   async getUserById(userId: number): Promise<ApiItemResponse<UserApiItem>> {
     const response = await apiClient.get<ApiItemResponse<UserApiItem>>(`/users/${userId}`);
     return response.data;
