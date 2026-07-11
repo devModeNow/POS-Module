@@ -27,6 +27,9 @@ export class AppSidebarComponent {
   private readonly defaultBusinessLogoDark = '/images/fwdslogo-dark.png';
   logoLightSrc = this.defaultBusinessLogoLight;
   logoDarkSrc = this.defaultBusinessLogoDark;
+  userDisplayName = '';
+  userRoleName = '';
+  companyName = '';
 
   private readonly allNavItems: NavItem[] = [
     {
@@ -88,6 +91,9 @@ export class AppSidebarComponent {
   }
 
   ngOnInit() {
+    this.userDisplayName = this.rbacService.getDisplayName();
+    this.userRoleName = this.formatRoleLabel(this.rbacService.getRoleName());
+    this.companyName = this.orgService.getContext().name ?? '';
     void this.loadBusinessBranding();
     this.applyMenuAccess();
 
@@ -117,6 +123,7 @@ export class AppSidebarComponent {
       const settings = await this.businessSettingsService.getBusinessProfile();
       this.logoLightSrc = settings?.businessLogoLight || settings?.businessLogo || this.defaultBusinessLogoLight;
       this.logoDarkSrc = settings?.businessLogoDark || settings?.businessLogo || this.defaultBusinessLogoDark;
+      this.companyName = String(settings?.businessName ?? this.companyName).trim() || this.companyName;
     } catch {
       this.logoLightSrc = this.defaultBusinessLogoLight;
       this.logoDarkSrc = this.defaultBusinessLogoDark;
@@ -180,19 +187,17 @@ export class AppSidebarComponent {
 
   private sortOrgMenus(menus: string[]): string[] {
     const priority = [
+      'dashboard',
       'pos-dashboard',
       'pos-terminal',
       'pos-my-sales',
       'pos-staff',
-      'pos-audit-trail',
       'pos-company-profile',
       'catering-dashboard',
-      'dashboard',
       'inventory',
       'job-orders',
       'customers',
       'reports',
-      'user-management',
       'settings',
     ];
 
@@ -209,8 +214,7 @@ export class AppSidebarComponent {
   }
 
   private buildOrgNavItem(menuKey: string): NavItem | null {
-    // Temporarily hidden menu items (user-management shown for POS org via roleMenus)
-    const hiddenMenus = ['sales', 'vehicles'];
+    const hiddenMenus = ['sales', 'vehicles', 'pos-audit-trail', 'user-management'];
     if (hiddenMenus.includes(menuKey)) return null;
 
     const labelMap: Record<string, string> = {
@@ -293,6 +297,12 @@ export class AppSidebarComponent {
     };
     const path = routeMap[menuKey] ?? `/users/${menuKey}`;
     return { name: label, menuKey: menuKey as MenuKey, path, icon };
+  }
+
+  private formatRoleLabel(role: string): string {
+    const normalized = String(role ?? '').trim();
+    if (!normalized) return 'User';
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1);
   }
 
   private setActiveMenuFromRoute(currentUrl: string) {

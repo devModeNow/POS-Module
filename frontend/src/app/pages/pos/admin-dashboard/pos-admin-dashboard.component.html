@@ -1,0 +1,379 @@
+<div class="space-y-6">
+  <app-page-breadcrumb pageTitle="Dashboard" />
+
+  <div class="flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
+    <div>
+      <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Store Overview</h2>
+      <p class="mt-1 text-xs text-gray-400">Drag cards to rearrange your dashboard layout</p>
+    </div>
+    <div class="flex flex-wrap items-center gap-2">
+      <select [(ngModel)]="period" (ngModelChange)="onPeriodChange()"
+        class="rounded-md border border-gray-200 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white">
+        <option value="daily">Today</option>
+        <option value="weekly">This Week</option>
+        <option value="monthly">This Month</option>
+      </select>
+      <button type="button" (click)="refresh()" [disabled]="loading"
+        class="rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50">
+        {{ loading ? 'Loading…' : 'Refresh' }}
+      </button>
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div cdkDropList cdkDropListOrientation="mixed" class="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7" (cdkDropListDropped)="onKpiDrop($event)">
+    @for (id of kpiWidgets; track id) {
+      <div cdkDrag class="rounded-lg border p-4 transition-shadow hover:shadow-md" [ngClass]="kpiColor(id)">
+        <button type="button" class="w-full text-left" (click)="openKpiDetail(id)">
+          <div class="mb-2 flex items-center justify-between gap-1">
+            <p class="text-xs font-semibold uppercase tracking-wide opacity-80">{{ widgetMeta[id].label }}</p>
+            <span cdkDragHandle class="widget-drag-handle text-gray-400" title="Drag to reorder" (click)="$event.stopPropagation()">
+              <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 11-.001 4.001A2 2 0 017 2zm0 6a2 2 0 11-.001 4.001A2 2 0 017 8zm0 6a2 2 0 11-.001 4.001A2 2 0 017 14zm6-8a2 2 0 11-.001 4.001A2 2 0 0113 6zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 12zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 18z"/></svg>
+            </span>
+          </div>
+          <p class="text-lg font-bold">{{ kpiValue(id) }}</p>
+          <p class="mt-1 text-[10px] uppercase tracking-wide opacity-60">Tap for details</p>
+        </button>
+      </div>
+    }
+  </div>
+
+  <!-- Charts -->
+  <div cdkDropList cdkDropListOrientation="mixed" class="grid grid-cols-1 gap-6 xl:grid-cols-2" (cdkDropListDropped)="onChartDrop($event)">
+    @for (id of chartWidgets; track id) {
+      <div cdkDrag class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+        <div class="mb-3 flex items-center justify-between gap-2">
+          <h4 class="text-sm font-semibold text-gray-800 dark:text-white">{{ widgetMeta[id].label }}</h4>
+          <div class="flex items-center gap-2">
+            @if (isChartWidget(id)) {
+              <div class="inline-flex rounded-md border border-gray-300 p-0.5 dark:border-gray-700">
+                <button type="button" (click)="$event.stopPropagation(); setChartVisualType(id, 'bar')" title="Bar chart"
+                  class="rounded-sm p-1.5 transition"
+                  [ngClass]="chartVisualType(id) === 'bar' ? 'bg-brand-500 text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'">
+                  <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 19h16M6 16l4-8 4 5 4-11 2 6"/></svg>
+                </button>
+                <button type="button" (click)="$event.stopPropagation(); setChartVisualType(id, 'donut')" title="Donut chart"
+                  class="rounded-sm p-1.5 transition"
+                  [ngClass]="chartVisualType(id) === 'donut' ? 'bg-brand-500 text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'">
+                  <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-width="2"/><circle cx="12" cy="12" r="4" stroke-width="2"/></svg>
+                </button>
+              </div>
+            }
+            <span cdkDragHandle class="widget-drag-handle text-gray-400" title="Drag to reorder">
+              <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 11-.001 4.001A2 2 0 017 2zm0 6a2 2 0 11-.001 4.001A2 2 0 017 8zm0 6a2 2 0 11-.001 4.001A2 2 0 017 14zm6-8a2 2 0 11-.001 4.001A2 2 0 0113 6zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 12zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 18z"/></svg>
+            </span>
+          </div>
+        </div>
+        @if (id === 'chart-daily') {
+          @if (chartVisualType('chart-daily') === 'bar') {
+            <apx-chart [series]="salesChartSeries" [chart]="chartBase" [xaxis]="{ categories: salesChartCategories }"
+              [colors]="chartColors" [plotOptions]="chartPlot" [grid]="chartGrid" [dataLabels]="chartDataLabels"
+              [stroke]="chartStroke" [legend]="{ position: 'top' }"></apx-chart>
+          } @else {
+            <apx-chart [series]="salesDonutSeries" [chart]="donutChartBase" [labels]="salesDonutLabels"
+              [colors]="chartColors" [plotOptions]="donutPlot" [dataLabels]="donutDataLabels"
+              [legend]="{ position: 'bottom' }"></apx-chart>
+          }
+        }
+        @if (id === 'chart-category') {
+          @if (chartVisualType('chart-category') === 'bar') {
+            <apx-chart [series]="categoryChartSeries" [chart]="chartBase" [xaxis]="{ categories: categoryChartCategories }"
+              [colors]="['#465fff']" [plotOptions]="chartPlot" [grid]="chartGrid" [dataLabels]="chartDataLabels"></apx-chart>
+          } @else {
+            <apx-chart [series]="categoryDonutSeries" [chart]="donutChartBase" [labels]="categoryDonutLabels"
+              [colors]="chartColors" [plotOptions]="donutPlot" [dataLabels]="donutDataLabels"
+              [legend]="{ position: 'bottom' }"></apx-chart>
+          }
+        }
+        @if (id === 'chart-payment') {
+          @if (chartVisualType('chart-payment') === 'bar') {
+            <apx-chart [series]="paymentChartSeries" [chart]="chartBase" [xaxis]="{ categories: paymentChartCategories }"
+              [colors]="['#10b981']" [plotOptions]="chartPlot" [grid]="chartGrid" [dataLabels]="chartDataLabels"></apx-chart>
+          } @else {
+            <apx-chart [series]="paymentDonutSeries" [chart]="donutChartBase" [labels]="paymentDonutLabels"
+              [colors]="chartColors" [plotOptions]="donutPlot" [dataLabels]="donutDataLabels"
+              [legend]="{ position: 'bottom' }"></apx-chart>
+          }
+        }
+      </div>
+    }
+  </div>
+
+  <!-- Lists -->
+  <div cdkDropList cdkDropListOrientation="mixed" class="grid grid-cols-1 gap-6 xl:grid-cols-2" (cdkDropListDropped)="onListDrop($event)">
+    @for (id of listWidgets; track id) {
+      <div cdkDrag class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+        <div class="mb-3 flex items-center justify-between">
+          <h4 class="text-sm font-semibold text-gray-800 dark:text-white">{{ widgetMeta[id].label }}</h4>
+          <span cdkDragHandle class="widget-drag-handle text-gray-400" title="Drag to reorder">
+            <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 11-.001 4.001A2 2 0 017 2zm0 6a2 2 0 11-.001 4.001A2 2 0 017 8zm0 6a2 2 0 11-.001 4.001A2 2 0 017 14zm6-8a2 2 0 11-.001 4.001A2 2 0 0113 6zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 12zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 18z"/></svg>
+          </span>
+        </div>
+        @if (id === 'list-staff') {
+          <ul class="divide-y dark:divide-gray-800">
+            @for (row of onDutyStaff; track row.userId) {
+              <li class="flex items-center justify-between py-2.5 text-sm">
+                <div>
+                  <p class="font-medium text-gray-800 dark:text-gray-200">{{ row.fullname }}</p>
+                  <p class="text-xs text-gray-500">{{ row.roleName || 'Cashier' }}</p>
+                </div>
+                <span class="text-xs text-emerald-600">Active</span>
+              </li>
+            } @empty {
+              <li class="py-6 text-center text-sm text-gray-500">No cashiers on duty right now.</li>
+            }
+          </ul>
+        }
+        @if (id === 'list-low-stock') {
+          <ul class="divide-y dark:divide-gray-800">
+            @for (row of lowStock.slice(0, 8); track row.partName) {
+              <li class="flex items-center justify-between py-2.5 text-sm">
+                <span class="font-medium text-gray-800 dark:text-gray-200">{{ row.partName }}</span>
+                <span class="font-semibold text-red-600">{{ row.stockQty | number }} / {{ row.stockWarning | number }}</span>
+              </li>
+            } @empty {
+              <li class="py-6 text-center text-sm text-gray-500">All stock levels look good.</li>
+            }
+          </ul>
+        }
+      </div>
+    }
+  </div>
+</div>
+
+@if (detailModalOpen && detailKpiId) {
+  <div class="fixed inset-0 z-[100000] flex items-center justify-center bg-gray-900/50 p-4" (click)="closeKpiDetail()">
+    <div class="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl dark:bg-gray-900" (click)="$event.stopPropagation()">
+      <div class="flex shrink-0 items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-800">
+        <div>
+          <h3 class="text-lg font-bold text-gray-900 dark:text-white">{{ detailModalTitle }}</h3>
+          <p class="text-xs text-gray-500 dark:text-gray-400">Detailed breakdown for the selected period</p>
+        </div>
+        <button type="button" (click)="closeKpiDetail()" class="rounded-md p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800" title="Close">
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="min-h-0 flex-1 overflow-y-auto p-5">
+        @if (detailLoading) {
+          <div class="flex items-center justify-center gap-3 py-16 text-sm text-gray-500">
+            <svg class="h-5 w-5 animate-spin text-brand-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            Loading details…
+          </div>
+        } @else {
+          @if (detailKpiId === 'kpi-total' && report) {
+            <div class="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <div class="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                <p class="text-xs text-gray-500">Total Sales</p>
+                <p class="text-lg font-bold">{{ formatMoney(report.summary.totalSales) }}</p>
+              </div>
+              <div class="rounded-lg border border-emerald-200 bg-emerald-50 p-3 dark:border-emerald-800 dark:bg-emerald-500/10">
+                <p class="text-xs text-emerald-700">Settled</p>
+                <p class="text-lg font-bold text-emerald-700">{{ formatMoney(report.summary.settledSales) }}</p>
+              </div>
+              <div class="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-500/10">
+                <p class="text-xs text-amber-700">Floating</p>
+                <p class="text-lg font-bold text-amber-700">{{ formatMoney(report.summary.floatingSales) }}</p>
+              </div>
+              <div class="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                <p class="text-xs text-gray-500">Transactions</p>
+                <p class="text-lg font-bold">{{ report.summary.transactionCount }}</p>
+              </div>
+            </div>
+            @if (report.byDay.length > 0) {
+              <h4 class="mb-2 text-sm font-semibold text-gray-800 dark:text-white">Daily Breakdown</h4>
+              <div class="mb-6 overflow-x-auto rounded-lg border dark:border-gray-800">
+                <table class="w-full min-w-[480px] text-sm">
+                  <thead>
+                    <tr class="border-b bg-gray-50 dark:border-gray-800 dark:bg-gray-900/50">
+                      <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Date</th>
+                      <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">Total</th>
+                      <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">Settled</th>
+                      <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">Floating</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of report.byDay; track row.saleDate) {
+                      <tr class="border-b dark:border-gray-800/70">
+                        <td class="px-4 py-2.5">{{ row.saleDate }}</td>
+                        <td class="px-4 py-2.5 text-right font-medium">{{ formatMoney(row.totalSales) }}</td>
+                        <td class="px-4 py-2.5 text-right text-emerald-600">{{ formatMoney(row.settledSales) }}</td>
+                        <td class="px-4 py-2.5 text-right text-amber-600">{{ formatMoney(row.floatingSales) }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+            @if (report.byCategory.length > 0) {
+              <h4 class="mb-2 text-sm font-semibold text-gray-800 dark:text-white">Sales by Category</h4>
+              <div class="mb-6 overflow-x-auto rounded-lg border dark:border-gray-800">
+                <table class="w-full min-w-[360px] text-sm">
+                  <thead>
+                    <tr class="border-b bg-gray-50 dark:border-gray-800 dark:bg-gray-900/50">
+                      <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Category</th>
+                      <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">Qty Sold</th>
+                      <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">Revenue</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of report.byCategory; track row.category) {
+                      <tr class="border-b dark:border-gray-800/70">
+                        <td class="px-4 py-2.5">{{ row.category }}</td>
+                        <td class="px-4 py-2.5 text-right">{{ row.quantitySold | number }}</td>
+                        <td class="px-4 py-2.5 text-right font-medium">{{ formatMoney(row.totalAmount) }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+          }
+
+          @if (detailKpiId === 'kpi-discounts' && report) {
+            <div class="mb-6 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-500/10">
+              <p class="text-sm text-amber-800 dark:text-amber-200">Total discounts applied in this period</p>
+              <p class="mt-1 text-2xl font-bold text-amber-700">{{ formatMoney(report.summary.totalDiscount) }}</p>
+            </div>
+          }
+
+          @if (detailKpiId === 'kpi-staff') {
+            <div class="overflow-x-auto rounded-lg border dark:border-gray-800">
+              <table class="w-full min-w-[480px] text-sm">
+                <thead>
+                  <tr class="border-b bg-gray-50 dark:border-gray-800 dark:bg-gray-900/50">
+                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Name</th>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Role</th>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Last Active</th>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of onDutyStaff; track row.userId) {
+                    <tr class="border-b dark:border-gray-800/70">
+                      <td class="px-4 py-2.5 font-medium text-gray-800 dark:text-gray-200">{{ row.fullname }}</td>
+                      <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">{{ row.roleName || 'Cashier' }}</td>
+                      <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">{{ formatDateTime(row.lastSeen) }}</td>
+                      <td class="px-4 py-2.5"><span class="text-xs font-medium text-emerald-600">On duty</span></td>
+                    </tr>
+                  } @empty {
+                    <tr><td colspan="4" class="px-4 py-10 text-center text-gray-500">No cashiers currently on duty.</td></tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+
+          @if (detailKpiId === 'kpi-low-stock') {
+            <div class="overflow-x-auto rounded-lg border dark:border-gray-800">
+              <table class="w-full min-w-[560px] text-sm">
+                <thead>
+                  <tr class="border-b bg-gray-50 dark:border-gray-800 dark:bg-gray-900/50">
+                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Product</th>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Category</th>
+                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">Stock</th>
+                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">Warning Level</th>
+                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">Price</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of lowStock; track row.partName) {
+                    <tr class="border-b dark:border-gray-800/70">
+                      <td class="px-4 py-2.5 font-medium text-gray-800 dark:text-gray-200">{{ row.partName }}</td>
+                      <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">{{ row.category || '—' }}</td>
+                      <td class="px-4 py-2.5 text-right font-semibold text-red-600">{{ row.stockQty | number }}</td>
+                      <td class="px-4 py-2.5 text-right text-gray-600">{{ row.stockWarning | number }}</td>
+                      <td class="px-4 py-2.5 text-right">{{ formatMoney(row.sellingPrice) }}</td>
+                    </tr>
+                  } @empty {
+                    <tr><td colspan="5" class="px-4 py-10 text-center text-gray-500">All stock levels are healthy.</td></tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+
+          @if (isTransactionKpi) {
+            @if (detailKpiId === 'kpi-settled' || detailKpiId === 'kpi-floating') {
+              <div class="mb-4 rounded-lg border p-3" [class.border-emerald-200]="detailKpiId === 'kpi-settled'" [class.bg-emerald-50]="detailKpiId === 'kpi-settled'" [class.border-amber-200]="detailKpiId === 'kpi-floating'" [class.bg-amber-50]="detailKpiId === 'kpi-floating'">
+                <p class="text-sm" [class.text-emerald-700]="detailKpiId === 'kpi-settled'" [class.text-amber-700]="detailKpiId === 'kpi-floating'">
+                  {{ detailKpiId === 'kpi-settled' ? 'Settled' : 'Floating' }} amount:
+                  <span class="font-bold">{{ formatMoney(detailKpiId === 'kpi-settled' ? settledAmount() : floatingAmount()) }}</span>
+                </p>
+              </div>
+            }
+            <h4 class="mb-2 text-sm font-semibold text-gray-800 dark:text-white">Transactions</h4>
+            <div class="overflow-x-auto rounded-lg border dark:border-gray-800">
+              <table class="w-full min-w-[720px] text-sm">
+                <thead>
+                  <tr class="border-b bg-gray-50 dark:border-gray-800 dark:bg-gray-900/50">
+                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Date</th>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Cashier</th>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Payment</th>
+                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">Items</th>
+                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">Total</th>
+                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">Paid</th>
+                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">Change</th>
+                    <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of detailTransactions; track row.id) {
+                    <tr class="border-b dark:border-gray-800/70">
+                      <td class="px-4 py-2.5">{{ row.saleDate }}</td>
+                      <td class="px-4 py-2.5">{{ row.cashier }}</td>
+                      <td class="px-4 py-2.5">{{ row.paymentMethod }}</td>
+                      <td class="px-4 py-2.5 text-right">{{ row.itemCount }}</td>
+                      <td class="px-4 py-2.5 text-right font-medium">{{ formatMoney(row.totalAmount) }}</td>
+                      <td class="px-4 py-2.5 text-right">{{ row.amountPaid != null ? formatMoney(row.amountPaid) : '—' }}</td>
+                      <td class="px-4 py-2.5 text-right">{{ row.changeAmount != null ? formatMoney(row.changeAmount) : '—' }}</td>
+                      <td class="px-4 py-2.5">
+                        <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium"
+                          [class.bg-amber-100]="row.paymentStatus === 'floating'"
+                          [class.text-amber-700]="row.paymentStatus === 'floating'"
+                          [class.bg-emerald-100]="row.paymentStatus !== 'floating'"
+                          [class.text-emerald-700]="row.paymentStatus !== 'floating'">
+                          {{ paymentStatusLabel(row.paymentStatus) }}
+                        </span>
+                      </td>
+                    </tr>
+                  } @empty {
+                    <tr><td colspan="8" class="px-4 py-10 text-center text-gray-500">No transactions found for this period.</td></tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            @if (detailKpiId === 'kpi-total' && report?.byPayment?.length) {
+              <h4 class="mb-2 mt-6 text-sm font-semibold text-gray-800 dark:text-white">Payment Method Breakdown</h4>
+              <div class="overflow-x-auto rounded-lg border dark:border-gray-800">
+                <table class="w-full min-w-[400px] text-sm">
+                  <thead>
+                    <tr class="border-b bg-gray-50 dark:border-gray-800 dark:bg-gray-900/50">
+                      <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Method</th>
+                      <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Status</th>
+                      <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">Count</th>
+                      <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    @for (row of report!.byPayment; track row.methodName + row.paymentStatus) {
+                      <tr class="border-b dark:border-gray-800/70">
+                        <td class="px-4 py-2.5">{{ row.methodName }}</td>
+                        <td class="px-4 py-2.5">{{ paymentStatusLabel(row.paymentStatus) }}</td>
+                        <td class="px-4 py-2.5 text-right">{{ row.transactionCount }}</td>
+                        <td class="px-4 py-2.5 text-right font-medium">{{ formatMoney(row.totalAmount) }}</td>
+                      </tr>
+                    }
+                  </tbody>
+                </table>
+              </div>
+            }
+          }
+        }
+      </div>
+    </div>
+  </div>
+}

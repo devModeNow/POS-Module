@@ -45,7 +45,7 @@
     </a>
   </div>
 
-  <div class="flex flex-col overflow-y-auto duration-300 ease-linear no-scrollbar">
+  <div class="flex flex-col overflow-y-auto duration-300 ease-linear no-scrollbar h-[calc(100vh-5rem)]">
     <nav class="mb-6">
       <div class="flex flex-col gap-4">
         <!-- Menu Section -->
@@ -455,6 +455,11 @@
     </nav>
     @if ((isExpanded$ | async) || (isHovered$ | async) || (isMobileOpen$ | async)) {
     <!-- <app-sidebar-widget /> -->
+    <div class="mt-auto border-t border-gray-200 pt-4 dark:border-gray-800">
+      <p class="truncate text-sm font-semibold text-gray-800 dark:text-gray-100">{{ userDisplayName }}</p>
+      <p class="truncate text-xs text-gray-500 dark:text-gray-400">{{ userRoleName }}</p>
+      <p class="mt-0.5 truncate text-xs text-brand-600 dark:text-brand-400">{{ companyName }}</p>
+    </div>
     }
   </div>
 </aside>

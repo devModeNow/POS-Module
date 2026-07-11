@@ -18,11 +18,13 @@ import { BackupService } from '../../shared/services/backup.service';
 import { InventoryService, OrgUnitType } from '../../shared/services/inventory.service';
 import { OrgService } from '../../shared/services/org.service';
 import { PosService } from '../../shared/services/pos.service';
+import { UserManagementComponent } from '../user-management/user-management.component';
+import { PosAuditTrailComponent } from '../pos/audit-trail/pos-audit-trail.component';
 import type { BackupMetadata, BackupType, BackupFormat } from '../../shared/interfaces/backup.interfaces';
 import axios from 'axios';
 import { shouldPoll, extractFilename, formatBackupDate, formatFileSize, getStatusBadgeClasses, getStatusAriaLabel } from '../../shared/utils/backup-utils';
 
-type SettingsTab = 'system' | 'print-settings' | 'void-codes' | 'rbac-configs' | 'unit-types' | 'database-backup';
+type SettingsTab = 'system' | 'print-settings' | 'void-codes' | 'user-management' | 'audit-trail' | 'rbac-configs' | 'unit-types' | 'database-backup';
 
 interface SettingsPermissionOption {
   key: string;
@@ -34,12 +36,14 @@ interface SettingsPermissionOption {
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule, PageBreadcrumbComponent, ConfirmDialogComponent],
+  imports: [CommonModule, FormsModule, PageBreadcrumbComponent, ConfirmDialogComponent, UserManagementComponent, PosAuditTrailComponent],
   templateUrl: './settings.component.html',
   styles: ``,
 })
 export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
   @ViewChild('cancelBtn') cancelBtn!: ElementRef<HTMLButtonElement>;
+  @ViewChild('lightLogoInput') lightLogoInput?: ElementRef<HTMLInputElement>;
+  @ViewChild('darkLogoInput') darkLogoInput?: ElementRef<HTMLInputElement>;
 
   private deleteTriggerElement: HTMLElement | null = null;
   private shouldFocusDialog = false;
@@ -103,6 +107,7 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   voidCodes: Array<{ id: number; label: string; isActive: boolean }> = [];
   voidCodeForm = { label: '', code: '' };
+  showVoidCode = false;
   isLoadingVoidCodes = false;
   isSavingVoidCode = false;
 
@@ -226,6 +231,8 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
     { key: 'system', label: 'System' },
     { key: 'print-settings', label: 'Print Settings' },
     { key: 'void-codes', label: 'Void Codes' },
+    { key: 'user-management', label: 'User Management' },
+    { key: 'audit-trail', label: 'Audit Trail' },
     { key: 'rbac-configs', label: 'RBAC Configs' },
     { key: 'unit-types', label: 'Unit Types' },
     { key: 'database-backup', label: 'Database Backup' },
@@ -244,8 +251,31 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
       if (tab.key === 'database-backup') return this.canAccessBackup;
       if (tab.key === 'unit-types') return this.isPosOrg;
       if (tab.key === 'void-codes') return this.isPosOrg;
+      if (tab.key === 'user-management') return this.rbacService.canAccess('user_management', 'canRead');
+      if (tab.key === 'audit-trail') return this.isPosOrg && this.rbacService.hasMenu('pos-audit-trail');
       return true;
     });
+  }
+
+  get receiptPreviewLogo(): string | null {
+    if (!this.printForm.posReceiptShowLogo && !this.printForm.showLogo) return null;
+    return this.printForm.logoVariant === 'dark'
+      ? (this.preview.businessLogoDark ?? null)
+      : (this.preview.businessLogoLight ?? null);
+  }
+
+  get receiptPreviewWidthClass(): string {
+    return this.printForm.posReceiptPaperWidth === '58mm' ? 'max-w-[220px]' : 'max-w-[300px]';
+  }
+
+  toggleVoidCodeVisibility(): void {
+    this.showVoidCode = !this.showVoidCode;
+  }
+
+  openLogoPicker(mode: 'light' | 'dark'): void {
+    if (!this.canUpdateSettings) return;
+    const input = mode === 'light' ? this.lightLogoInput : this.darkLogoInput;
+    input?.nativeElement.click();
   }
 
   get canReadSettings(): boolean {

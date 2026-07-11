@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { Component, Input, OnInit } from '@angular/core';
 import { PosService } from '../../../shared/services/pos.service';
 import { ActionBusyService } from '../../../shared/services/action-busy.service';
 import { PosPageHeaderComponent } from '../shared/pos-page-header.component';
@@ -22,6 +22,7 @@ type AuditRow = {
   styles: `:host { display: block; height: 100%; min-height: 0; }`,
 })
 export class PosAuditTrailComponent implements OnInit {
+  @Input() embedded = false;
   loading = false;
   error = '';
   logs: AuditRow[] = [];

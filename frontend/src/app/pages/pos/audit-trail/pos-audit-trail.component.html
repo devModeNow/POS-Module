@@ -1,7 +1,9 @@
-<div class="flex h-full min-h-0 flex-col overflow-hidden bg-gray-50 dark:bg-gray-950">
-  <app-pos-page-header />
+<div [class.flex]="!embedded" [class.h-full]="!embedded" [class.min-h-0]="!embedded" [class.flex-col]="!embedded" [class.overflow-hidden]="!embedded" [class.bg-gray-50]="!embedded" [class.dark:bg-gray-950]="!embedded">
+  @if (!embedded) {
+    <app-pos-page-header />
+  }
 
-  <div class="min-h-0 flex-1 space-y-6 overflow-y-auto p-4 md:p-6">
+  <div [class.min-h-0]="!embedded" [class.flex-1]="!embedded" [class.space-y-6]="!embedded" [class.overflow-y-auto]="!embedded" [class.p-4]="!embedded" [class.md:p-6]="!embedded">
     <section class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900 xl:p-6">
       <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div class="min-w-0">

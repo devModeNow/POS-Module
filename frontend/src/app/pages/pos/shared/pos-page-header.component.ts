@@ -40,7 +40,15 @@ export class PosPageHeaderComponent implements OnInit {
   }
 
   get displaySubtitle(): string {
-    return this.subtitle.trim() || this.companyName || 'POS';
+    const company = this.subtitle.trim() || this.companyName || 'POS';
+    const role = this.formatRoleLabel(this.rbac.getRoleName());
+    return `${role} · ${company}`;
+  }
+
+  private formatRoleLabel(role: string): string {
+    const normalized = String(role ?? '').trim();
+    if (!normalized) return 'Cashier';
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1);
   }
 
   get posHomeRoute(): string {

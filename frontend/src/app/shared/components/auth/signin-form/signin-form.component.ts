@@ -86,6 +86,10 @@ export class SigninFormComponent {
 
     const menus = this.rbacService.getAllowedMenus();
 
+    if (this.rbacService.isPosOrg() && menus.has('dashboard')) {
+      return '/users/dashboard';
+    }
+
     if (menus.has('pos-dashboard') || menus.has('pos-terminal')) {
       return '/users/pos-dashboard';
     }
@@ -94,7 +98,6 @@ export class SigninFormComponent {
       return '/users/catering-dashboard';
     }
 
-    // If user has 'dashboard' menu, go there (default behavior)
     if (menus.has('dashboard')) {
       return '/users/dashboard';
     }

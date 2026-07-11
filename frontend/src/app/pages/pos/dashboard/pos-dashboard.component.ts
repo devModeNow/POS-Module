@@ -17,12 +17,16 @@ import { NotificationService } from '../../../shared/services/notification.servi
 import { RbacService } from '../../../shared/services/rbac.service';
 import { ActionBusyService } from '../../../shared/services/action-busy.service';
 import { GlobalActionLoaderComponent } from '../../../shared/components/common/global-action-loader/global-action-loader.component';
+import { PosOnscreenKeyboardComponent } from '../../../shared/components/pos/pos-onscreen-keyboard/pos-onscreen-keyboard.component';
 import { PosPageHeaderComponent } from '../shared/pos-page-header.component';
+
+type KeyboardInputTarget = 'search' | 'amount' | 'variantSearch' | null;
+type KeyboardMode = 'device' | 'onscreen';
 
 @Component({
   selector: 'app-pos-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, ConfirmDialogComponent, GlobalActionLoaderComponent, PosPageHeaderComponent],
+  imports: [CommonModule, FormsModule, ConfirmDialogComponent, GlobalActionLoaderComponent, PosOnscreenKeyboardComponent, PosPageHeaderComponent],
   templateUrl: './pos-dashboard.component.html',
   styles: `:host { display: block; height: 100%; min-height: 0; }`,
 })
@@ -71,6 +75,11 @@ export class PosDashboardComponent implements OnInit {
   selectedPaymentMethodId: number | null = null;
   amountReceived = 0;
   checkoutSuccess: { changeDue: number; totalAmount: number } | null = null;
+
+  keyboardMode: KeyboardMode = 'device';
+  keyboardVisible = false;
+  keyboardTarget: KeyboardInputTarget = null;
+  amountReceivedText = '0';
 
   confirmOpen = false;
   confirmTitle = '';
@@ -178,6 +187,10 @@ export class PosDashboardComponent implements OnInit {
       unitType: line.unitType ?? 'piece',
     }));
     this.cartOpen = this.cart.length > 0;
+    const savedKeyboard = localStorage.getItem('pos-keyboard-mode');
+    if (savedKeyboard === 'device' || savedKeyboard === 'onscreen') {
+      this.keyboardMode = savedKeyboard;
+    }
     void this.loadCategories();
     void this.loadDiscounts();
     void this.loadPaymentMethods();
@@ -187,6 +200,115 @@ export class PosDashboardComponent implements OnInit {
   get selectedDiscount(): PosDiscount | null {
     if (!this.selectedDiscountId) return null;
     return this.discounts.find((d) => d.id === this.selectedDiscountId) ?? null;
+  }
+
+  get useOnscreenKeyboard(): boolean {
+    return this.keyboardMode === 'onscreen';
+  }
+
+  get activeKeyboardType(): 'text' | 'numeric' {
+    return this.keyboardTarget === 'amount' ? 'numeric' : 'text';
+  }
+
+  setKeyboardMode(mode: KeyboardMode): void {
+    this.keyboardMode = mode;
+    localStorage.setItem('pos-keyboard-mode', mode);
+    if (mode === 'device') {
+      this.keyboardVisible = false;
+      this.keyboardTarget = null;
+    }
+  }
+
+  openKeyboard(target: KeyboardInputTarget): void {
+    if (!this.useOnscreenKeyboard || !target) return;
+    this.keyboardTarget = target;
+    this.keyboardVisible = true;
+    if (target === 'amount') {
+      this.amountReceivedText = this.amountReceived > 0 ? String(this.amountReceived) : '';
+    }
+  }
+
+  onKeyboardKey(key: string): void {
+    if (!this.keyboardTarget) return;
+    if (this.keyboardTarget === 'search') {
+      this.search += key;
+      this.onSearchInput();
+      return;
+    }
+    if (this.keyboardTarget === 'variantSearch') {
+      this.variantSearch += key;
+      return;
+    }
+    if (this.keyboardTarget === 'amount') {
+      if (key === '.' && this.amountReceivedText.includes('.')) return;
+      if (key === '00') {
+        this.amountReceivedText += '00';
+      } else {
+        this.amountReceivedText += key;
+      }
+      this.amountReceived = Number(this.amountReceivedText) || 0;
+    }
+  }
+
+  onKeyboardBackspace(): void {
+    if (!this.keyboardTarget) return;
+    if (this.keyboardTarget === 'search') {
+      this.search = this.search.slice(0, -1);
+      this.onSearchInput();
+      return;
+    }
+    if (this.keyboardTarget === 'variantSearch') {
+      this.variantSearch = this.variantSearch.slice(0, -1);
+      return;
+    }
+    if (this.keyboardTarget === 'amount') {
+      this.amountReceivedText = this.amountReceivedText.slice(0, -1);
+      this.amountReceived = Number(this.amountReceivedText) || 0;
+    }
+  }
+
+  onKeyboardClear(): void {
+    if (!this.keyboardTarget) return;
+    if (this.keyboardTarget === 'search') {
+      this.search = '';
+      this.onSearchInput();
+      return;
+    }
+    if (this.keyboardTarget === 'variantSearch') {
+      this.variantSearch = '';
+      return;
+    }
+    if (this.keyboardTarget === 'amount') {
+      this.amountReceivedText = '';
+      this.amountReceived = 0;
+    }
+  }
+
+  closeKeyboard(): void {
+    this.keyboardVisible = false;
+    this.keyboardTarget = null;
+  }
+
+  onSearchFieldFocus(): void {
+    this.searchFocused = true;
+    if (this.useOnscreenKeyboard) {
+      this.openKeyboard('search');
+    }
+  }
+
+  onAmountFieldFocus(): void {
+    if (this.useOnscreenKeyboard) {
+      this.openKeyboard('amount');
+    }
+  }
+
+  onAmountReceivedChange(value: string | number): void {
+    if (this.useOnscreenKeyboard) {
+      this.amountReceivedText = String(value ?? '');
+      this.amountReceived = Number(this.amountReceivedText) || 0;
+      return;
+    }
+    this.amountReceived = Number(value) || 0;
   }
 
   async loadCategories(): Promise<void> {
@@ -751,6 +873,7 @@ export class PosDashboardComponent implements OnInit {
     }
     this.selectedDiscountId = null;
     this.amountReceived = 0;
+    this.amountReceivedText = '0';
     this.checkoutSuccess = null;
     this.showCheckoutModal = true;
   }

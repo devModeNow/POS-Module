@@ -20,6 +20,9 @@ function toDashboard(): UrlTree {
   }
 
   const menus = rbacService.getAllowedMenus();
+  if (rbacService.isPosOrg() && menus.has('dashboard')) {
+    return router.createUrlTree(['/users/dashboard']);
+  }
   if (menus.has('pos-dashboard') || menus.has('pos-terminal')) {
     return router.createUrlTree(['/users/pos-dashboard']);
   }

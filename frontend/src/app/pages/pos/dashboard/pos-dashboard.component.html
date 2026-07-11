@@ -18,6 +18,18 @@
 
       <div posHeaderToolbar class="mt-2 flex flex-wrap items-center gap-2 lg:flex-nowrap">
         <div class="inline-flex shrink-0 rounded-md border border-gray-300 p-0.5 dark:border-gray-700">
+          <button type="button" (click)="setKeyboardMode('device')" title="Device keyboard"
+            class="rounded-sm p-2 transition"
+            [ngClass]="keyboardMode === 'device' ? 'bg-emerald-600 text-white' : 'text-gray-600 dark:text-gray-400'">
+            <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m-6 4h6m-6 4h6M5 5h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z" /></svg>
+          </button>
+          <button type="button" (click)="setKeyboardMode('onscreen')" title="POS keyboard"
+            class="rounded-sm p-2 transition"
+            [ngClass]="keyboardMode === 'onscreen' ? 'bg-emerald-600 text-white' : 'text-gray-600 dark:text-gray-400'">
+            <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h16M4 12h16M4 17h7" /></svg>
+          </button>
+        </div>
+        <div class="inline-flex shrink-0 rounded-md border border-gray-300 p-0.5 dark:border-gray-700">
           <button type="button" (click)="setProductViewMode('grid')" title="Card view"
             class="rounded-sm p-2 transition"
             [ngClass]="productViewMode === 'grid' ? 'bg-emerald-600 text-white' : 'text-gray-600 dark:text-gray-400'">
@@ -54,7 +66,7 @@
           <svg class="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z" />
           </svg>
-          <input type="search" [(ngModel)]="search" (input)="onSearchInput()" (focus)="searchFocused = true" (blur)="onSearchBlur()" placeholder="Search products or variants..."
+          <input type="search" [(ngModel)]="search" (input)="onSearchInput()" (focus)="onSearchFieldFocus()" (blur)="onSearchBlur()" [readonly]="useOnscreenKeyboard" placeholder="Search products or variants..."
             class="w-full touch-manipulation rounded-md border border-gray-300 bg-gray-50 py-2.5 pl-10 pr-10 text-base text-gray-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
           @if (search) {
             <button type="button" (click)="clearSearch()" class="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700">
@@ -512,7 +524,11 @@
           </div>
           <label class="block">
             <span class="mb-2 block text-sm font-medium">Amount Received (₱)</span>
-            <input #amountReceivedInput type="number" min="0" step="0.01" [(ngModel)]="amountReceived" class="w-full rounded-md border px-4 py-4 text-2xl font-semibold dark:border-gray-700 dark:bg-gray-800" />
+            <input #amountReceivedInput [type]="useOnscreenKeyboard ? 'text' : 'number'" [readonly]="useOnscreenKeyboard" min="0" step="0.01"
+              [ngModel]="useOnscreenKeyboard ? amountReceivedText : amountReceived"
+              (ngModelChange)="onAmountReceivedChange($event)"
+              (focus)="onAmountFieldFocus()"
+              class="w-full rounded-md border px-4 py-4 text-2xl font-semibold dark:border-gray-700 dark:bg-gray-800" inputmode="decimal" />
           </label>
           <div class="rounded-md border-2 px-4 py-4 text-center" [class.border-emerald-300]="changeDue() >= 0" [class.border-red-300]="changeDue() < 0">
             <p class="text-sm text-gray-500">Change</p>
@@ -565,4 +581,14 @@
   [confirmLabel]="confirmVariant === 'danger' ? 'Yes' : 'Confirm'"
   (confirm)="onConfirmDialog()"
   (cancel)="onCancelDialog()"
+/>
+
+<app-pos-onscreen-keyboard
+  [visible]="keyboardVisible && useOnscreenKeyboard"
+  [mode]="activeKeyboardType"
+  (keyPress)="onKeyboardKey($event)"
+  (backspace)="onKeyboardBackspace()"
+  (clear)="onKeyboardClear()"
+  (close)="closeKeyboard()"
+  (done)="closeKeyboard()"
 />

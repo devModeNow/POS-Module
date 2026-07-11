@@ -16,7 +16,7 @@ import {
 } from 'ng-apexcharts';
 import { PageBreadcrumbComponent } from '../../shared/components/common/page-breadcrumb/page-breadcrumb.component';
 import { ButtonComponent } from '../../shared/components/ui/button/button.component';
-import { PosDashboardReport, PosService } from '../../shared/services/pos.service';
+import { PosDashboardReport, PosSaleTransaction, PosService } from '../../shared/services/pos.service';
 import {
   ReportsService,
   SalesReportRow,
@@ -60,6 +60,8 @@ export class ReportsComponent implements OnInit {
   payablesSummary: PayablesReceivablesSummary | null = null;
 
   posDashboard: PosDashboardReport | null = null;
+  posTransactions: PosSaleTransaction[] = [];
+  updatingTransactionId: number | null = null;
   posTopProducts: Array<{ partName: string; category: string | null; quantitySold: number; totalAmount: number }> = [];
   posCategorySales: Array<{ category: string; quantitySold: number; totalAmount: number }> = [];
   posInventoryValuation: Array<{ category: string; itemCount: number; totalStock: number; retailValue: number }> = [];
@@ -154,6 +156,10 @@ export class ReportsComponent implements OnInit {
         );
         if (!r.success) { this.notify.error('Error', r.message ?? 'Failed.'); return; }
         this.posDashboard = r.data ?? null;
+        const tx = await this.posSvc.getSaleTransactions(
+          this.fromDate, this.toDate, this.paymentStatusFilter || undefined,
+        );
+        this.posTransactions = tx.success ? (tx.data ?? []) : [];
         this.buildCharts();
       } else if (this.reportType === 'pos-top-products') {
         const r = await this.posSvc.getTopProductsReport(this.fromDate, this.toDate);
@@ -210,6 +216,28 @@ export class ReportsComponent implements OnInit {
       case 'cheque': return 'Cheque';
       default: return mode;
     }
+  }
+
+  async updatePaymentStatus(row: PosSaleTransaction, status: 'settled' | 'floating'): Promise<void> {
+    if (row.paymentStatus === status) return;
+    this.updatingTransactionId = row.id;
+    try {
+      const r = await this.posSvc.updateTransactionPaymentStatus(row.id, status);
+      if (!r.success) {
+        this.notify.error('Error', r.message ?? 'Failed to update payment status.');
+        return;
+      }
+      this.notify.success('Updated', r.message ?? 'Payment status updated.');
+      await this.generate();
+    } catch {
+      this.notify.error('Error', 'Failed to update payment status.');
+    } finally {
+      this.updatingTransactionId = null;
+    }
+  }
+
+  paymentStatusLabel(status: string): string {
+    return status === 'floating' ? 'Floating' : 'Settled';
   }
 
   private today(): string { return new Date().toISOString().slice(0, 10); }

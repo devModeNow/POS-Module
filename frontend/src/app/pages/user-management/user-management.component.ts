@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { Component, OnInit } from '@angular/core';
+import { Component, Input, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { PageBreadcrumbComponent } from '../../shared/components/common/page-breadcrumb/page-breadcrumb.component';
 import { ButtonComponent } from '../../shared/components/ui/button/button.component';
@@ -57,6 +57,7 @@ type OverrideEffect = 'inherit' | 'allow' | 'deny';
   styles: ``,
 })
 export class UserManagementComponent implements OnInit {
+  @Input() embedded = false;
   users: UserRow[] = [];
   orgOptions: OrgListItem[] = [];
   roleOptions: RoleOption[] = [];

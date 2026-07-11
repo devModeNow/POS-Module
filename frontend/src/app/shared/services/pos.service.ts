@@ -86,6 +86,19 @@ export interface CheckoutResult {
   paymentStatus?: string;
 }
 
+export interface PosSaleTransaction {
+  id: number;
+  saleDate: string;
+  totalAmount: number;
+  amountPaid: number | null;
+  changeAmount: number | null;
+  paymentStatus: string;
+  paymentMethod: string;
+  cashier: string;
+  createdAt: string;
+  itemCount: number;
+}
+
 export interface PosDashboardReport {
   summary: {
     totalSales: number;
@@ -223,6 +236,26 @@ export class PosService {
     const r = await apiClient.get<{ success: boolean; data?: PosDashboardReport; message?: string }>(
       '/api/pos/reports/dashboard',
       { params: Object.keys(params).length ? params : undefined },
+    );
+    return r.data;
+  }
+
+  async getSaleTransactions(from?: string, to?: string, paymentStatus?: string, limit = 50, offset = 0) {
+    const params: Record<string, string> = { limit: String(limit), offset: String(offset) };
+    if (from) params['from'] = from;
+    if (to) params['to'] = to;
+    if (paymentStatus) params['paymentStatus'] = paymentStatus;
+    const r = await apiClient.get<{ success: boolean; data?: PosSaleTransaction[]; message?: string }>(
+      '/api/pos/reports/transactions',
+      { params },
+    );
+    return r.data;
+  }
+
+  async updateTransactionPaymentStatus(transactionId: number, paymentStatus: 'settled' | 'floating') {
+    const r = await apiClient.patch<{ success: boolean; message?: string }>(
+      `/api/pos/reports/transactions/${transactionId}/payment-status`,
+      { paymentStatus },
     );
     return r.data;
   }
