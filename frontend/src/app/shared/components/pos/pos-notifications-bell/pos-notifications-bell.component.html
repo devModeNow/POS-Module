@@ -1,55 +1,52 @@
-<button #toggleBtn type="button" (click)="toggle($event)" [title]="'Notifications'"
-  class="pos-notifications-toggle relative flex items-center justify-center rounded-full border border-gray-200 bg-white text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
-  [class.h-11]="!compact" [class.w-11]="!compact" [class.h-10]="compact" [class.w-10]="compact">
-  @if (unreadCount > 0) {
-    <span class="absolute -right-0.5 -top-0.5 z-10 flex h-4 min-w-4 items-center justify-center rounded-full bg-orange-500 px-1 text-[10px] font-bold text-white">
-      {{ unreadCount > 9 ? '9+' : unreadCount }}
-    </span>
-  }
-  <svg class="fill-current" width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-    <path fill-rule="evenodd" clip-rule="evenodd" d="M10.75 2.29248C10.75 1.87827 10.4143 1.54248 10 1.54248C9.58583 1.54248 9.25004 1.87827 9.25004 2.29248V2.83613C6.08266 3.20733 3.62504 5.9004 3.62504 9.16748V14.4591H3.33337C2.91916 14.4591 2.58337 14.7949 2.58337 15.2091C2.58337 15.6234 2.91916 15.9591 3.33337 15.9591H4.37504H15.625H16.6667C17.0809 15.9591 17.4167 15.6234 17.4167 15.2091C17.4167 14.7949 17.0809 14.4591 16.6667 14.4591H16.375V9.16748C16.375 6.47509 13.9174 3.29248 10 4.29248C7.30765 4.29248 5.12504 6.47509 5.12504 9.16748V14.4591H14.875ZM8.00004 17.7085C8.00004 18.1228 8.33583 18.4585 8.75004 18.4585H11.25C11.6643 18.4585 12 18.1228 12 17.7085C12 17.2943 11.6643 16.9585 11.25 16.9585H8.75004C8.33583 16.9585 8.00004 17.2943 8.00004 17.7085Z" fill="currentColor"/>
-  </svg>
-</button>
-
-<ng-template #panelTpl>
-  <div
-    class="fixed z-[75] flex max-h-[min(420px,calc(100vh-5rem))] flex-col rounded-2xl border border-gray-200 bg-white p-3 shadow-xl dark:border-gray-800 dark:bg-gray-900"
-    [ngStyle]="panelStyle"
-    (click)="$event.stopPropagation()">
-    <div class="mb-3 flex shrink-0 items-center justify-between border-b border-gray-100 pb-3 dark:border-gray-800">
-      <h5 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Notifications</h5>
-      <button type="button" (click)="close()" class="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-300">✕</button>
-    </div>
-    <ul class="min-h-0 flex-1 space-y-2 overflow-y-auto">
-      @if (loading) {
-        <li class="py-6 text-center text-sm text-gray-500">Loading…</li>
-      } @else {
-        @for (item of items; track item.id) {
-          <li>
-            <button type="button" (click)="onItemClick(item)"
-              class="w-full rounded-lg border border-gray-100 p-3 text-left transition hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/60"
-              [class.cursor-pointer]="isClickable(item)"
-              [class.opacity-70]="item.isRead">
-              <div class="flex gap-2">
-                <span class="text-lg">{{ typeIcon(item.type) }}</span>
-                <div class="min-w-0 flex-1">
-                  <p class="text-sm font-medium text-gray-800 dark:text-gray-100">{{ item.title }}</p>
-                  @if (item.body) {
-                    <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">{{ item.body }}</p>
-                  }
-                  <p class="mt-1 text-[10px] text-gray-400">{{ formatTime(item.createdAt) }}</p>
-                  @if (isClickable(item)) {
-                    <p class="mt-1 text-[10px] font-medium text-brand-600">Tap to open</p>
-                  }
-                </div>
-              </div>
-            </button>
-          </li>
-        } @empty {
-          <li class="py-8 text-center text-sm text-gray-500">No notifications yet.</li>
-        }
-      }
-    </ul>
-  </div>
-</ng-template>
-
+<button #toggleBtn type="button" (click)="toggle($event)" [title]="'Notifications'"
+  class="pos-notifications-toggle relative flex items-center justify-center overflow-visible rounded-full border border-gray-200 bg-white text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 dark:border-gray-800 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
+  [class.h-11]="!compact" [class.w-11]="!compact" [class.h-10]="compact" [class.w-10]="compact">
+  <svg class="fill-current" width="20" height="20" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+    <path fill-rule="evenodd" clip-rule="evenodd" d="M10.75 2.29248C10.75 1.87827 10.4143 1.54248 10 1.54248C9.58583 1.54248 9.25004 1.87827 9.25004 2.29248V2.83613C6.08266 3.20733 3.62504 5.9004 3.62504 9.16748V14.4591H3.33337C2.91916 14.4591 2.58337 14.7949 2.58337 15.2091C2.58337 15.6234 2.91916 15.9591 3.33337 15.9591H4.37504H15.625H16.6667C17.0809 15.9591 17.4167 15.6234 17.4167 15.2091C17.4167 14.7949 17.0809 14.4591 16.6667 14.4591H16.375V9.16748C16.375 6.47509 13.9174 3.20733 10.75 2.83613V2.29248ZM14.875 14.4591V9.16748C14.875 6.47509 12.6924 4.29248 10 4.29248C7.30765 4.29248 5.12504 6.47509 5.12504 9.16748V14.4591H14.875ZM8.00004 17.7085C8.00004 18.1228 8.33583 18.4585 8.75004 18.4585H11.25C11.6643 18.4585 12 18.1228 12 17.7085C12 17.2943 11.6643 16.9585 11.25 16.9585H8.75004C8.33583 16.9585 8.00004 17.2943 8.00004 17.7085Z" fill="currentColor"/>
+  </svg>
+  @if (unreadCount > 0) {
+    <span class="pointer-events-none absolute right-0 top-0 z-20 flex h-[18px] min-w-[18px] -translate-y-1/3 translate-x-1/3 items-center justify-center rounded-full bg-orange-500 px-1 text-[10px] font-bold leading-none text-white ring-2 ring-white dark:ring-gray-900">
+      {{ unreadCount > 9 ? '9+' : unreadCount }}
+    </span>
+  }
+</button>
+
+<ng-template #panelTpl>
+  <div #panelRoot class="pos-notifications-panel flex flex-col rounded-2xl border border-gray-200 bg-white p-3 shadow-xl dark:border-gray-800 dark:bg-gray-900"
+    (click)="$event.stopPropagation()">
+    <div class="mb-3 flex shrink-0 items-center justify-between border-b border-gray-100 pb-3 dark:border-gray-800">
+      <h5 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Notifications</h5>
+      <button type="button" (click)="close()" class="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-300">✕</button>
+    </div>
+    <ul class="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain">
+      @if (loading) {
+        <li class="py-6 text-center text-sm text-gray-500">Loading…</li>
+      } @else {
+        @for (item of items; track item.id) {
+          <li>
+            <button type="button" (click)="onItemClick(item)"
+              class="w-full rounded-lg border border-gray-100 p-3 text-left transition hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/60"
+              [class.cursor-pointer]="isClickable(item)"
+              [class.opacity-70]="item.isRead">
+              <div class="flex gap-2">
+                <span class="text-lg">{{ typeIcon(item.type) }}</span>
+                <div class="min-w-0 flex-1">
+                  <p class="text-sm font-medium text-gray-800 dark:text-gray-100">{{ item.title }}</p>
+                  @if (item.body) {
+                    <p class="mt-0.5 line-clamp-2 text-xs text-gray-500 dark:text-gray-400">{{ item.body }}</p>
+                  }
+                  <p class="mt-1 text-[10px] text-gray-400">{{ formatTime(item.createdAt) }}</p>
+                  @if (isClickable(item)) {
+                    <p class="mt-1 text-[10px] font-medium text-brand-600">Tap to open</p>
+                  }
+                </div>
+              </div>
+            </button>
+          </li>
+        } @empty {
+          <li class="py-8 text-center text-sm text-gray-500">No notifications yet.</li>
+        }
+      }
+    </ul>
+  </div>
+</ng-template>

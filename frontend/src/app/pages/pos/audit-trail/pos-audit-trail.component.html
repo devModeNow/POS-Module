@@ -1,6 +1,8 @@
 <div [class.flex]="!embedded" [class.h-full]="!embedded" [class.min-h-0]="!embedded" [class.flex-col]="!embedded" [class.overflow-hidden]="!embedded" [class.bg-gray-50]="!embedded" [class.dark:bg-gray-950]="!embedded">
   @if (!embedded) {
-    <app-pos-page-header />
+    <div class="shrink-0 border-b border-gray-200 bg-white px-4 py-3 dark:border-gray-800 dark:bg-gray-900">
+      <app-page-breadcrumb pageTitle="Audit Trail" />
+    </div>
   }
 
   <div [class.min-h-0]="!embedded" [class.flex-1]="!embedded" [class.space-y-6]="!embedded" [class.overflow-y-auto]="!embedded" [class.p-4]="!embedded" [class.md:p-6]="!embedded">

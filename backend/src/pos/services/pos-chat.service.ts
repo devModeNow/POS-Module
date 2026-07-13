@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from 'src/database/database.service';
 
-/** Minutes since last heartbeat to count as online */
-const ONLINE_WITHIN_MINUTES = 5;
+/** Minutes since last heartbeat / chat activity to count as online */
+const ONLINE_WITHIN_MINUTES = 15;
 
 @Injectable()
 export class PosChatService {
@@ -18,6 +18,12 @@ export class PosChatService {
     )), ''),
     u.username
   )`;
+
+  private readonly profilePictureSql = `NULLIF(TRIM(COALESCE(
+    to_jsonb(u)->>'profile_picture',
+    to_jsonb(u)->>'profilePicture',
+    ''
+  )), '')`;
 
   private readonly roleJoinSql = `LEFT JOIN tblrbac r ON r.id::text = COALESCE(
     to_jsonb(u)->>'roleId',
@@ -65,22 +71,36 @@ export class PosChatService {
     this.schemaReady = true;
   }
 
+  private async touchPresence(orgId: number, userId: number): Promise<void> {
+    if (!orgId || !userId) return;
+    await this.ensureSchema();
+    await this.db.query(
+      `INSERT INTO tblpos_staff_presence (user_id, org_id, last_seen)
+       VALUES ($1, $2, NOW())
+       ON CONFLICT (user_id, org_id) DO UPDATE SET last_seen = NOW()`,
+      [userId, orgId],
+    );
+  }
+
   async listChatUsers(orgId: number, currentUserId: number) {
     if (!orgId) {
       return { success: false, message: 'Organization context is required' };
     }
     try {
       await this.ensureSchema();
+      await this.touchPresence(orgId, currentUserId);
       const result = await this.db.query<{
         id: number;
         name: string;
         roleName: string | null;
+        profilePicture: string | null;
         isOnline: boolean;
         lastSeen: string | null;
       }>(
         `SELECT u.id,
                 ${this.userNameSql} AS name,
                 COALESCE(to_jsonb(r)->>'roleName', to_jsonb(r)->>'rolename') AS "roleName",
+                ${this.profilePictureSql} AS "profilePicture",
                 CASE
                   WHEN p.last_seen IS NOT NULL
                     AND p.last_seen >= NOW() - ($3 || ' minutes')::interval
@@ -90,8 +110,12 @@ export class PosChatService {
                 p.last_seen AS "lastSeen"
          FROM tblusers u
          ${this.roleJoinSql}
-         LEFT JOIN tblpos_staff_presence p
-           ON p.user_id = u.id AND p.org_id = $1
+         LEFT JOIN (
+           SELECT user_id, MAX(last_seen) AS last_seen
+           FROM tblpos_staff_presence
+           WHERE org_id = $1
+           GROUP BY user_id
+         ) p ON p.user_id = u.id
          WHERE ${this.orgMatchSql}
            AND u.id <> $2
            AND ${this.activeUserSql}
@@ -117,6 +141,7 @@ export class PosChatService {
     }
     try {
       await this.ensureSchema();
+      await this.touchPresence(orgId, userId);
 
       if (mode === 'private') {
         const peer = Number(recipientId ?? 0);
@@ -127,6 +152,7 @@ export class PosChatService {
           recipientId: number | null;
           senderName: string;
           roleName: string | null;
+          senderProfilePicture: string | null;
           message: string;
           createdAt: string;
         }>(
@@ -135,6 +161,7 @@ export class PosChatService {
                   m.recipient_id AS "recipientId",
                   ${this.userNameSql} AS "senderName",
                   COALESCE(to_jsonb(r)->>'roleName', to_jsonb(r)->>'rolename') AS "roleName",
+                  ${this.profilePictureSql} AS "senderProfilePicture",
                   m.message,
                   m.created_at AS "createdAt"
            FROM tblpos_chat_messages m
@@ -159,6 +186,7 @@ export class PosChatService {
         recipientId: number | null;
         senderName: string;
         roleName: string | null;
+        senderProfilePicture: string | null;
         message: string;
         createdAt: string;
       }>(
@@ -167,6 +195,7 @@ export class PosChatService {
                 m.recipient_id AS "recipientId",
                 ${this.userNameSql} AS "senderName",
                 COALESCE(to_jsonb(r)->>'roleName', to_jsonb(r)->>'rolename') AS "roleName",
+                ${this.profilePictureSql} AS "senderProfilePicture",
                 m.message,
                 m.created_at AS "createdAt"
          FROM tblpos_chat_messages m
@@ -185,6 +214,34 @@ export class PosChatService {
     }
   }
 
+  private async getMessageById(orgId: number, messageId: number) {
+    const result = await this.db.query<{
+      id: number;
+      senderId: number;
+      recipientId: number | null;
+      senderName: string;
+      roleName: string | null;
+      senderProfilePicture: string | null;
+      message: string;
+      createdAt: string;
+    }>(
+      `SELECT m.id,
+              m.sender_id AS "senderId",
+              m.recipient_id AS "recipientId",
+              ${this.userNameSql} AS "senderName",
+              COALESCE(to_jsonb(r)->>'roleName', to_jsonb(r)->>'rolename') AS "roleName",
+              ${this.profilePictureSql} AS "senderProfilePicture",
+              m.message,
+              m.created_at AS "createdAt"
+       FROM tblpos_chat_messages m
+       INNER JOIN tblusers u ON u.id = m.sender_id
+       ${this.roleJoinSql}
+       WHERE m.org_id = $1 AND m.id = $2`,
+      [orgId, messageId],
+    );
+    return result.rows[0] ?? null;
+  }
+
   async sendMessage(orgId: number, senderId: number, message: string, recipientId?: number | null) {
     const text = String(message ?? '').trim();
     if (!text) return { success: false, message: 'Message is required' };
@@ -194,13 +251,16 @@ export class PosChatService {
     const peer = recipientId != null && recipientId > 0 ? recipientId : null;
     try {
       await this.ensureSchema();
+      await this.touchPresence(orgId, senderId);
       const result = await this.db.query<{ id: number; createdAt: string }>(
         `INSERT INTO tblpos_chat_messages (org_id, sender_id, recipient_id, message)
          VALUES ($1, $2, $3, $4)
          RETURNING id, created_at AS "createdAt"`,
         [orgId, senderId, peer, text],
       );
-      return { success: true, data: result.rows[0], recipientId: peer };
+      const inserted = result.rows[0];
+      const full = inserted ? await this.getMessageById(orgId, inserted.id) : null;
+      return { success: true, data: full ?? inserted, recipientId: peer };
     } catch (e) {
       return { success: false, message: e instanceof Error ? e.message : 'Failed to send message' };
     }

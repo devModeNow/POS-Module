@@ -48,6 +48,18 @@ export class PosStoreReportsService {
         params.push(paymentStatus);
         statusClause = ` AND st.payment_status = $${params.length}`;
       }
+
+      const countParams = [...params];
+      const countResult = await this.db.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count
+         FROM tblsales_transactions st
+         WHERE st.org_id = $1
+           AND st.amount_paid IS NOT NULL
+           AND COALESCE(st.is_voided, FALSE) = FALSE
+           ${dateClause} ${statusClause}`,
+        countParams,
+      );
+
       params.push(limit, offset);
 
       const result = await this.db.query<{
@@ -116,6 +128,7 @@ export class PosStoreReportsService {
           createdAt: row.createdAt,
           itemCount: Number(row.itemCount),
         })),
+        total: Number(countResult.rows[0]?.count ?? 0),
       };
     } catch (e) {
       return {
@@ -188,7 +201,7 @@ export class PosStoreReportsService {
   async getTransactionDetail(orgId: number, transactionId: number) {
     try {
       await this.ensureSalesVoidSchema();
-      const header = await this.db.query<{
+      const anchor = await this.db.query<{
         id: number;
         saleDate: string;
         createdAt: string;
@@ -212,8 +225,39 @@ export class PosStoreReportsService {
          WHERE id = $1 AND org_id = $2`,
         [transactionId, orgId],
       );
-      const h = header.rows[0];
-      if (!h) return { success: false, message: 'Transaction not found' };
+      const a = anchor.rows[0];
+      if (!a) return { success: false, message: 'Transaction not found' };
+
+      const paymentHeader = await this.db.query<{
+        amountPaid: string | null;
+        changeAmount: string | null;
+        paymentStatus: string;
+        discountAmount: string | null;
+        paymentMethodId: number | null;
+      }>(
+        `SELECT amount_paid::text AS "amountPaid",
+                change_amount::text AS "changeAmount",
+                COALESCE(payment_status, 'settled') AS "paymentStatus",
+                discount_amount::text AS "discountAmount",
+                payment_method_id AS "paymentMethodId"
+         FROM tblsales_transactions
+         WHERE org_id = $1
+           AND created_by IS NOT DISTINCT FROM $2
+           AND sale_date = $3::date
+           AND created_at >= $4::timestamptz - interval '5 seconds'
+           AND created_at <= $4::timestamptz + interval '5 seconds'
+           AND amount_paid IS NOT NULL
+           AND COALESCE(is_voided, FALSE) = FALSE
+         ORDER BY id ASC
+         LIMIT 1`,
+        [orgId, a.createdBy, a.saleDate, a.createdAt],
+      );
+      const pay = paymentHeader.rows[0];
+      const amountPaid = pay?.amountPaid ?? a.amountPaid;
+      const changeAmount = pay?.changeAmount ?? a.changeAmount;
+      const paymentStatus = pay?.paymentStatus ?? a.paymentStatus;
+      const discountAmount = pay?.discountAmount ?? a.discountAmount;
+      const paymentMethodId = pay?.paymentMethodId ?? a.paymentMethodId;
 
       const lines = await this.db.query<{
         id: number;
@@ -239,26 +283,23 @@ export class PosStoreReportsService {
          WHERE st.org_id = $1
            AND st.created_by IS NOT DISTINCT FROM $2
            AND st.sale_date = $3::date
-           AND st.payment_method_id IS NOT DISTINCT FROM $4
-           AND st.amount_paid IS NOT DISTINCT FROM $5
-           AND st.created_at >= $6::timestamptz - interval '10 seconds'
-           AND st.created_at <= $6::timestamptz + interval '10 seconds'
+           AND st.created_at >= $4::timestamptz - interval '5 seconds'
+           AND st.created_at <= $4::timestamptz + interval '5 seconds'
            AND COALESCE(st.is_voided, FALSE) = FALSE
          ORDER BY st.id ASC`,
-        [orgId, h.createdBy, h.saleDate, h.paymentMethodId, h.amountPaid, h.createdAt],
+        [orgId, a.createdBy, a.saleDate, a.createdAt],
       );
 
       const meta = await this.db.query<{
         cashier: string;
         paymentMethod: string;
       }>(
-        `SELECT COALESCE(u.fullname, u.username, 'Unknown') AS cashier,
-                COALESCE(pm.name, 'Unknown') AS "paymentMethod"
-         FROM tblsales_transactions st
-         LEFT JOIN tblusers u ON u.id = st.created_by
-         LEFT JOIN tblpayment_methods pm ON pm.id = st.payment_method_id
-         WHERE st.id = $1`,
-        [transactionId],
+        `SELECT COALESCE(to_jsonb(u)->>'fullname', u.username, 'Unknown') AS cashier,
+                COALESCE(pm.name, 'Cash') AS "paymentMethod"
+         FROM (SELECT 1) AS _one
+         LEFT JOIN tblusers u ON u.id = $1
+         LEFT JOIN tblpayment_methods pm ON pm.id = $2`,
+        [a.createdBy, paymentMethodId],
       );
 
       const totalAmount = lines.rows.reduce((sum, row) => sum + Number(row.totalAmount), 0);
@@ -266,15 +307,15 @@ export class PosStoreReportsService {
       return {
         success: true,
         data: {
-          id: h.id,
-          saleDate: h.saleDate,
-          createdAt: h.createdAt,
+          id: a.id,
+          saleDate: a.saleDate,
+          createdAt: a.createdAt,
           cashier: meta.rows[0]?.cashier ?? 'Unknown',
           paymentMethod: meta.rows[0]?.paymentMethod ?? 'Unknown',
-          paymentStatus: h.paymentStatus,
-          amountPaid: h.amountPaid != null ? Number(h.amountPaid) : null,
-          changeAmount: h.changeAmount != null ? Number(h.changeAmount) : null,
-          discountAmount: h.discountAmount != null ? Number(h.discountAmount) : 0,
+          paymentStatus,
+          amountPaid: amountPaid != null ? Number(amountPaid) : null,
+          changeAmount: changeAmount != null ? Number(changeAmount) : null,
+          discountAmount: discountAmount != null ? Number(discountAmount) : 0,
           totalAmount,
           itemCount: lines.rows.length,
           items: lines.rows.map((row) => ({
@@ -641,6 +682,138 @@ export class PosStoreReportsService {
       };
     } catch (e) {
       return { success: false, message: e instanceof Error ? e.message : 'Failed to load cashier sales' };
+    }
+  }
+
+  async listCompletedSales(
+    orgId: number,
+    from?: string,
+    to?: string,
+    limit = 100,
+    offset = 0,
+  ) {
+    try {
+      const params: unknown[] = [orgId];
+      let dateClause = '';
+      if (from) {
+        params.push(from);
+        dateClause += ` AND n.created_at::date >= $${params.length}::date`;
+      }
+      if (to) {
+        params.push(to);
+        dateClause += ` AND n.created_at::date <= $${params.length}::date`;
+      }
+      const countParams = [...params];
+      params.push(limit, offset);
+
+      const countResult = await this.db.query<{ count: string }>(
+        `WITH completed AS (
+           SELECT DISTINCT ON (n.reference_id) n.reference_id AS sale_id
+           FROM tblpos_notifications n
+           WHERE n.org_id = $1
+             AND n.type = 'sale'
+             AND COALESCE(n.reference_type, 'sale') = 'sale'
+             AND n.reference_id IS NOT NULL
+             ${dateClause}
+           ORDER BY n.reference_id, n.created_at ASC
+         )
+         SELECT COUNT(*)::text AS count FROM completed`,
+        countParams,
+      );
+
+      const result = await this.db.query<{
+        saleId: number;
+        title: string;
+        body: string;
+        completedAt: string;
+        saleDate: string | null;
+        cashier: string;
+        paymentMethod: string;
+        paymentStatus: string;
+        totalAmount: string;
+        itemCount: string;
+      }>(
+        `WITH completed AS (
+           SELECT DISTINCT ON (n.reference_id)
+                  n.reference_id AS sale_id,
+                  n.title,
+                  n.body,
+                  n.created_at
+           FROM tblpos_notifications n
+           WHERE n.org_id = $1
+             AND n.type = 'sale'
+             AND COALESCE(n.reference_type, 'sale') = 'sale'
+             AND n.reference_id IS NOT NULL
+             ${dateClause}
+           ORDER BY n.reference_id, n.created_at ASC
+         )
+         SELECT c.sale_id AS "saleId",
+                c.title,
+                c.body,
+                c.created_at AS "completedAt",
+                st.sale_date::text AS "saleDate",
+                COALESCE(
+                  NULLIF(TRIM(COALESCE(
+                    to_jsonb(u)->>'fullname',
+                    to_jsonb(u)->>'fullName',
+                    to_jsonb(u)->>'full_name'
+                  )), ''),
+                  u.username,
+                  'Cashier'
+                ) AS cashier,
+                COALESCE(pm.name, 'Unknown') AS "paymentMethod",
+                COALESCE(st.payment_status, 'settled') AS "paymentStatus",
+                COALESCE((
+                  SELECT SUM(s2.total_amount)
+                  FROM tblsales_transactions s2
+                  WHERE s2.org_id = st.org_id
+                    AND s2.created_by = st.created_by
+                    AND s2.sale_date = st.sale_date
+                    AND s2.created_at >= st.created_at - interval '10 seconds'
+                    AND s2.created_at <= st.created_at + interval '10 seconds'
+                    AND COALESCE(s2.is_voided, FALSE) = FALSE
+                ), st.total_amount, 0)::text AS "totalAmount",
+                COALESCE((
+                  SELECT COUNT(*)
+                  FROM tblsales_transactions s2
+                  WHERE s2.org_id = st.org_id
+                    AND s2.created_by = st.created_by
+                    AND s2.sale_date = st.sale_date
+                    AND s2.created_at >= st.created_at - interval '10 seconds'
+                    AND s2.created_at <= st.created_at + interval '10 seconds'
+                    AND COALESCE(s2.is_voided, FALSE) = FALSE
+                ), 1)::text AS "itemCount"
+         FROM completed c
+         LEFT JOIN tblsales_transactions st ON st.id = c.sale_id AND st.org_id = $1
+         LEFT JOIN tblusers u ON u.id = st.created_by
+         LEFT JOIN tblpayment_methods pm ON pm.id = st.payment_method_id
+         WHERE st.id IS NULL OR COALESCE(st.is_voided, FALSE) = FALSE
+         ORDER BY c.created_at DESC
+         LIMIT $${params.length - 1} OFFSET $${params.length}`,
+        params,
+      );
+
+      return {
+        success: true,
+        data: result.rows.map((row) => ({
+          saleId: row.saleId,
+          title: row.title,
+          body: row.body,
+          completedAt: row.completedAt,
+          saleDate: row.saleDate,
+          cashier: row.cashier,
+          paymentMethod: row.paymentMethod,
+          paymentStatus: row.paymentStatus,
+          totalAmount: Number(row.totalAmount),
+          itemCount: Number(row.itemCount),
+        })),
+        total: Number(countResult.rows[0]?.count ?? 0),
+      };
+    } catch (e) {
+      return {
+        success: false,
+        message: e instanceof Error ? e.message : 'Failed to load completed sales',
+      };
     }
   }
 }

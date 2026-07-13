@@ -2,7 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, Input, OnInit } from '@angular/core';
 import { PosService } from '../../../shared/services/pos.service';
 import { ActionBusyService } from '../../../shared/services/action-busy.service';
-import { PosPageHeaderComponent } from '../shared/pos-page-header.component';
+import { PageBreadcrumbComponent } from '../../../shared/components/common/page-breadcrumb/page-breadcrumb.component';
 
 type AuditRow = {
   id: number;
@@ -17,7 +17,7 @@ type AuditRow = {
 @Component({
   selector: 'app-pos-audit-trail',
   standalone: true,
-  imports: [CommonModule, PosPageHeaderComponent],
+  imports: [CommonModule, PageBreadcrumbComponent],
   templateUrl: './pos-audit-trail.component.html',
   styles: `:host { display: block; height: 100%; min-height: 0; }`,
 })

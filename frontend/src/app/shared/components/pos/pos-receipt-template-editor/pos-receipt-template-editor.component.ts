@@ -35,6 +35,7 @@ export class PosReceiptTemplateEditorComponent {
       this._elements = value.map((e) => ({ ...e }));
     } else if (!this._elements.length) {
       this._elements = this.defaultElements();
+      queueMicrotask(() => this.emitChange());
     }
   }
   @Output() elementsChange = new EventEmitter<PosReceiptTemplateElement[]>();

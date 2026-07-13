@@ -1,191 +1,232 @@
-import { CommonModule } from '@angular/common';
-import {
-  Component,
-  EmbeddedViewRef,
-  ElementRef,
-  HostListener,
-  Input,
-  OnDestroy,
-  OnInit,
-  Renderer2,
-  TemplateRef,
-  ViewChild,
-  ViewContainerRef,
-} from '@angular/core';
-import { Router } from '@angular/router';
-import { PosCommunicationsService, PosNotification } from '../../../services/pos-communications.service';
-import { PosChatUiService } from '../../../services/pos-chat-ui.service';
-import { RbacService } from '../../../services/rbac.service';
-
-@Component({
-  selector: 'app-pos-notifications-bell',
-  standalone: true,
-  imports: [CommonModule],
-  templateUrl: './pos-notifications-bell.component.html',
-  styles: `:host { display: inline-flex; position: relative; z-index: 1; }`,
-})
-export class PosNotificationsBellComponent implements OnInit, OnDestroy {
-  @Input() compact = false;
-
-  @ViewChild('toggleBtn') toggleBtnRef?: ElementRef<HTMLButtonElement>;
-  @ViewChild('panelTpl') panelTpl?: TemplateRef<unknown>;
-
-  isOpen = false;
-  loading = false;
-  unreadCount = 0;
-  items: PosNotification[] = [];
-  panelStyle: Record<string, string> = {};
-
-  private pollTimer?: ReturnType<typeof setInterval>;
-  private panelView?: EmbeddedViewRef<unknown>;
-  private backdropEl: HTMLElement | null = null;
-
-  constructor(
-    private readonly comms: PosCommunicationsService,
-    private readonly chatUi: PosChatUiService,
-    private readonly router: Router,
-    private readonly rbac: RbacService,
-    private readonly renderer: Renderer2,
-    private readonly vcr: ViewContainerRef,
-  ) {}
-
-  get forAdmin(): boolean {
-    return !this.rbac.isCashier();
-  }
-
-  ngOnInit(): void {
-    void this.refreshUnread();
-    this.pollTimer = setInterval(() => void this.refreshUnread(), 15000);
-  }
-
-  ngOnDestroy(): void {
-    if (this.pollTimer) clearInterval(this.pollTimer);
-    this.close();
-  }
-
-  @HostListener('window:resize')
-  @HostListener('window:scroll')
-  onViewportChange(): void {
-    if (this.isOpen) this.syncPanelPosition();
-  }
-
-  @HostListener('document:keydown.escape')
-  onEscape(): void {
-    if (this.isOpen) this.close();
-  }
-
-  toggle(event: Event): void {
-    event.stopPropagation();
-    if (this.isOpen) {
-      this.close();
-      return;
-    }
-    this.open();
-  }
-
-  open(): void {
-    if (!this.panelTpl || !this.toggleBtnRef) return;
-    this.syncPanelPosition();
-    this.isOpen = true;
-
-    this.backdropEl = this.renderer.createElement('div');
-    this.renderer.addClass(this.backdropEl, 'fixed');
-    this.renderer.addClass(this.backdropEl, 'inset-0');
-    this.renderer.addClass(this.backdropEl, 'z-[55]');
-    this.renderer.setAttribute(this.backdropEl, 'aria-hidden', 'true');
-    this.backdropEl!.addEventListener('click', this.onBackdropClick);
-    this.renderer.appendChild(document.body, this.backdropEl);
-
-    this.panelView = this.vcr.createEmbeddedView(this.panelTpl);
-    this.panelView.detectChanges();
-    for (const node of this.panelView.rootNodes) {
-      this.renderer.appendChild(document.body, node);
-    }
-
-    void this.loadItems();
-  }
-
-  close(): void {
-    this.isOpen = false;
-    this.panelStyle = {};
-
-    if (this.panelView) {
-      this.panelView.destroy();
-      this.panelView = undefined;
-    }
-
-    if (this.backdropEl) {
-      this.backdropEl.removeEventListener('click', this.onBackdropClick);
-      this.renderer.removeChild(document.body, this.backdropEl);
-      this.backdropEl = null;
-    }
-  }
-
-  private readonly onBackdropClick = () => this.close();
-
-  private syncPanelPosition(): void {
-    const btn = this.toggleBtnRef?.nativeElement;
-    if (!btn) return;
-    const rect = btn.getBoundingClientRect();
-    const panelWidth = Math.min(360, window.innerWidth - 16);
-    const right = Math.max(8, window.innerWidth - rect.right);
-    const top = Math.min(rect.bottom + 8, window.innerHeight - 80);
-    this.panelStyle = {
-      top: `${top}px`,
-      right: `${right}px`,
-      width: `${panelWidth}px`,
-    };
-    this.panelView?.detectChanges();
-  }
-
-  async refreshUnread(): Promise<void> {
-    const r = await this.comms.unreadNotificationCount();
-    this.unreadCount = r?.success ? (r.count ?? 0) : 0;
-  }
-
-  async loadItems(): Promise<void> {
-    this.loading = true;
-    try {
-      const r = await this.comms.listNotifications();
-      this.items = r?.success ? (r.data ?? []) : [];
-    } finally {
-      this.loading = false;
-      this.panelView?.detectChanges();
-    }
-  }
-
-  async onItemClick(item: PosNotification): Promise<void> {
-    await this.comms.markNotificationsRead(item.id);
-    this.unreadCount = Math.max(0, this.unreadCount - (item.isRead ? 0 : 1));
-    item.isRead = true;
-    this.close();
-
-    if (item.type === 'message' || item.referenceType === 'chat') {
-      if (item.referenceId) {
-        this.chatUi.openPrivateChat(item.referenceId);
-      } else {
-        this.chatUi.openTeamChat();
-      }
-      return;
-    }
-
-    if (item.type === 'sale' && item.referenceId) {
-      void this.router.navigate(['/users/pos-sales', item.referenceId]);
-    }
-  }
-
-  formatTime(iso: string): string {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return '';
-    return d.toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-  }
-
-  typeIcon(type: string): string {
-    return type === 'sale' ? '💰' : type === 'message' ? '💬' : '🔔';
-  }
-
-  isClickable(item: PosNotification): boolean {
-    return item.type === 'message' || item.type === 'sale' || item.referenceType === 'chat';
-  }
-}
-
+import { CommonModule } from '@angular/common';
+import {
+  Component,
+  ElementRef,
+  EmbeddedViewRef,
+  HostListener,
+  Input,
+  OnDestroy,
+  OnInit,
+  Renderer2,
+  TemplateRef,
+  ViewChild,
+  ViewContainerRef,
+} from '@angular/core';
+import { Router } from '@angular/router';
+import { PosCommunicationsService, PosNotification } from '../../../services/pos-communications.service';
+import { PosChatUiService } from '../../../services/pos-chat-ui.service';
+
+@Component({
+  selector: 'app-pos-notifications-bell',
+  standalone: true,
+  imports: [CommonModule],
+  templateUrl: './pos-notifications-bell.component.html',
+  styles: `
+    :host {
+      display: inline-flex;
+      position: relative;
+      z-index: 140;
+    }
+    :host ::ng-deep .pos-notifications-panel {
+      position: fixed;
+      z-index: 160;
+      max-height: min(420px, calc(100vh - 5rem));
+    }
+  `,
+})
+export class PosNotificationsBellComponent implements OnInit, OnDestroy {
+  @Input() compact = false;
+
+  @ViewChild('toggleBtn') toggleBtnRef?: ElementRef<HTMLButtonElement>;
+  @ViewChild('panelTpl') panelTpl?: TemplateRef<unknown>;
+
+  isOpen = false;
+  loading = false;
+  unreadCount = 0;
+  items: PosNotification[] = [];
+
+  private pollTimer?: ReturnType<typeof setInterval>;
+  private panelView?: EmbeddedViewRef<unknown>;
+  private panelEl: HTMLElement | null = null;
+
+  constructor(
+    private readonly comms: PosCommunicationsService,
+    private readonly chatUi: PosChatUiService,
+    private readonly router: Router,
+    private readonly renderer: Renderer2,
+    private readonly vcr: ViewContainerRef,
+  ) {}
+
+  ngOnInit(): void {
+    void this.refreshUnread();
+    this.pollTimer = setInterval(() => void this.refreshUnread(), 5000);
+    window.addEventListener('focus', this.onWindowFocus);
+  }
+
+  ngOnDestroy(): void {
+    if (this.pollTimer) clearInterval(this.pollTimer);
+    window.removeEventListener('focus', this.onWindowFocus);
+    document.removeEventListener('mousedown', this.onDocumentClick, true);
+    this.close();
+  }
+
+  private readonly onWindowFocus = () => {
+    void this.refreshUnread();
+  };
+
+  @HostListener('window:resize')
+  @HostListener('window:scroll')
+  onViewportChange(): void {
+    if (this.isOpen) this.syncPanelPosition();
+  }
+
+  @HostListener('document:keydown.escape')
+  onEscape(): void {
+    if (this.isOpen) this.close();
+  }
+
+  toggle(event: Event): void {
+    event.stopPropagation();
+    if (this.isOpen) {
+      this.close();
+      return;
+    }
+    this.open();
+  }
+
+  open(): void {
+    if (!this.panelTpl || !this.toggleBtnRef) return;
+    this.isOpen = true;
+
+    this.panelView = this.vcr.createEmbeddedView(this.panelTpl);
+    this.panelView.detectChanges();
+    for (const node of this.panelView.rootNodes) {
+      this.renderer.appendChild(document.body, node);
+    }
+    this.panelEl = this.resolvePanelElement();
+
+    requestAnimationFrame(() => {
+      this.syncPanelPosition();
+      requestAnimationFrame(() => this.syncPanelPosition());
+    });
+
+    setTimeout(() => document.addEventListener('mousedown', this.onDocumentClick, true), 0);
+
+    void this.loadItems();
+  }
+
+  close(): void {
+    this.isOpen = false;
+    this.panelEl = null;
+    document.removeEventListener('mousedown', this.onDocumentClick, true);
+
+    if (this.panelView) {
+      this.panelView.destroy();
+      this.panelView = undefined;
+    }
+  }
+
+  private readonly onDocumentClick = (event: MouseEvent): void => {
+    if (!this.isOpen) return;
+    const target = event.target as Node;
+    if (this.panelEl?.contains(target)) return;
+    if (this.toggleBtnRef?.nativeElement.contains(target)) return;
+    this.close();
+  };
+
+  private resolvePanelElement(): HTMLElement | null {
+    if (!this.panelView) return null;
+    for (const node of this.panelView.rootNodes) {
+      if (node instanceof HTMLElement) {
+        return node.classList.contains('pos-notifications-panel')
+          ? node
+          : (node.querySelector('.pos-notifications-panel') as HTMLElement | null) ?? node;
+      }
+    }
+    return null;
+  }
+
+  private syncPanelPosition(): void {
+    const btn = this.toggleBtnRef?.nativeElement;
+    const panel = this.panelEl ?? this.resolvePanelElement();
+    if (!btn || !panel) return;
+
+    this.panelEl = panel;
+    const rect = btn.getBoundingClientRect();
+    const margin = 8;
+    const panelWidth = Math.min(this.compact ? 320 : 360, window.innerWidth - margin * 2);
+
+    // Align panel's right edge with the bell's right edge.
+    let left = rect.right - panelWidth;
+    left = Math.max(margin, Math.min(left, window.innerWidth - panelWidth - margin));
+
+    let top = rect.bottom + margin;
+    const maxHeight = Math.min(420, window.innerHeight - top - margin);
+
+    // Flip above the bell if there isn't enough room below.
+    if (maxHeight < 160 && rect.top > 220) {
+      top = Math.max(margin, rect.top - Math.min(420, rect.top - margin * 2));
+    }
+
+    const heightBudget = Math.min(420, window.innerHeight - top - margin);
+
+    panel.style.position = 'fixed';
+    panel.style.top = `${top}px`;
+    panel.style.left = `${left}px`;
+    panel.style.right = 'auto';
+    panel.style.width = `${panelWidth}px`;
+    panel.style.maxHeight = `${heightBudget}px`;
+    panel.style.zIndex = '160';
+  }
+
+  async refreshUnread(): Promise<void> {
+    const r = await this.comms.unreadNotificationCount();
+    this.unreadCount = r?.success ? (r.count ?? 0) : 0;
+  }
+
+  async loadItems(): Promise<void> {
+    this.loading = true;
+    try {
+      const r = await this.comms.listNotifications();
+      this.items = r?.success ? (r.data ?? []) : [];
+    } finally {
+      this.loading = false;
+      this.panelView?.detectChanges();
+      this.syncPanelPosition();
+    }
+  }
+
+  async onItemClick(item: PosNotification): Promise<void> {
+    await this.comms.markNotificationsRead(item.id);
+    this.unreadCount = Math.max(0, this.unreadCount - (item.isRead ? 0 : 1));
+    item.isRead = true;
+    this.close();
+
+    if (item.type === 'message' || item.referenceType === 'chat') {
+      if (item.referenceId) {
+        this.chatUi.openPrivateChat(item.referenceId);
+      } else {
+        this.chatUi.openTeamChat();
+      }
+      return;
+    }
+
+    if (item.type === 'sale' && item.referenceId) {
+      void this.router.navigate(['/users/pos-sales', item.referenceId]);
+    }
+  }
+
+  formatTime(iso: string): string {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleString('en-PH', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  }
+
+  typeIcon(type: string): string {
+    return type === 'sale' ? '💰' : type === 'message' ? '💬' : '🔔';
+  }
+
+  isClickable(item: PosNotification): boolean {
+    return item.type === 'message' || item.type === 'sale' || item.referenceType === 'chat';
+  }
+}

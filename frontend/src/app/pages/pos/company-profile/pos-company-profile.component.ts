@@ -1,7 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { PosPageHeaderComponent } from '../shared/pos-page-header.component';
+import { PageBreadcrumbComponent } from '../../../shared/components/common/page-breadcrumb/page-breadcrumb.component';
 import {
   BusinessProfileSettings,
   BusinessSettingsService,
@@ -16,7 +16,7 @@ type Tab = 'profile' | 'printer';
 @Component({
   selector: 'app-pos-company-profile',
   standalone: true,
-  imports: [CommonModule, FormsModule, PosPageHeaderComponent],
+  imports: [CommonModule, FormsModule, PageBreadcrumbComponent],
   templateUrl: './pos-company-profile.component.html',
   styles: `:host { display: block; height: 100%; min-height: 0; }`,
 })

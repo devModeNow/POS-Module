@@ -14,7 +14,7 @@ import { RbacService } from '../../../shared/services/rbac.service';
   standalone: true,
   imports: [CommonModule, RouterLink, ConfirmDialogComponent, PosNotificationsBellComponent, PosPrinterSettingsPanelComponent],
   templateUrl: './pos-page-header.component.html',
-  styles: `:host { display: block; flex-shrink: 0; position: relative; z-index: 100; }`,
+  styles: `:host { display: block; flex-shrink: 0; position: relative; z-index: 120; isolation: isolate; }`,
 })
 export class PosPageHeaderComponent implements OnInit {
   /** Override the main title; defaults to the signed-in cashier name. */
@@ -22,6 +22,8 @@ export class PosPageHeaderComponent implements OnInit {
   /** Override the subtitle; defaults to the company name. */
   @Input() subtitle = '';
   @Input() showActions = true;
+  /** Show notification bell and printer icon (cashier POS). Hide on admin sub-pages that use app-header. */
+  @Input() showPosTools = true;
 
   cashierName = '';
   companyName = '';

@@ -108,6 +108,11 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   voidCodes: Array<{ id: number; label: string; isActive: boolean }> = [];
   voidCodeForm = { label: '', code: '' };
+  showInactiveVoidCodes = false;
+  voidCodeEditOpen = false;
+  voidCodeEdit = { id: 0, label: '', code: '', isActive: true };
+  showVoidCodeEditPassword = false;
+  isSavingVoidCodeEdit = false;
   showVoidCode = false;
   isLoadingVoidCodes = false;
   isSavingVoidCode = false;
@@ -348,7 +353,7 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
         this.voidCodes = [];
         return;
       }
-      this.voidCodes = (r.data ?? []).filter((row) => row.isActive);
+      this.voidCodes = (r.data ?? []).filter((row) => this.showInactiveVoidCodes || row.isActive);
     } catch (error: unknown) {
       this.voidCodes = [];
       this.uiError = this.resolveErrorMessage(error, 'Failed to load void codes.');
@@ -384,6 +389,79 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
       this.uiError = this.resolveErrorMessage(error, 'Failed to save void code.');
     } finally {
       this.isSavingVoidCode = false;
+    }
+  }
+
+  onShowInactiveVoidCodesChange(): void {
+    void this.loadVoidCodes();
+  }
+
+  openVoidCodeDetails(row: { id: number; label: string; isActive: boolean }): void {
+    this.voidCodeEdit = { id: row.id, label: row.label, code: '', isActive: row.isActive };
+    this.showVoidCodeEditPassword = false;
+    this.voidCodeEditOpen = true;
+    this.uiError = '';
+  }
+
+  closeVoidCodeEdit(): void {
+    this.voidCodeEditOpen = false;
+    this.voidCodeEdit = { id: 0, label: '', code: '', isActive: true };
+    this.showVoidCodeEditPassword = false;
+  }
+
+  toggleVoidCodeEditPassword(): void {
+    this.showVoidCodeEditPassword = !this.showVoidCodeEditPassword;
+  }
+
+  async saveVoidCodeEdit(): Promise<void> {
+    if (!this.canUpdateSettings) {
+      this.uiError = 'You do not have permission to manage void codes.';
+      return;
+    }
+    const label = this.voidCodeEdit.label.trim();
+    if (!label) {
+      this.uiError = 'Label is required.';
+      return;
+    }
+    const code = this.voidCodeEdit.code.trim();
+    this.isSavingVoidCodeEdit = true;
+    this.uiError = '';
+    this.uiMessage = '';
+    try {
+      const payload: { id: number; label: string; code?: string } = { id: this.voidCodeEdit.id, label };
+      if (code) payload.code = code;
+      const r = await this.posService.saveVoidCode(payload);
+      if (!r.success) {
+        this.uiError = r.message ?? 'Failed to update void code.';
+        return;
+      }
+      this.uiMessage = code ? 'Void code updated.' : 'Void code label updated.';
+      this.closeVoidCodeEdit();
+      await this.loadVoidCodes();
+    } catch (error: unknown) {
+      this.uiError = this.resolveErrorMessage(error, 'Failed to update void code.');
+    } finally {
+      this.isSavingVoidCodeEdit = false;
+    }
+  }
+
+  async toggleVoidCodeActive(row: { id: number; isActive: boolean }): Promise<void> {
+    if (!this.canUpdateSettings) {
+      this.uiError = 'You do not have permission to manage void codes.';
+      return;
+    }
+    this.uiError = '';
+    this.uiMessage = '';
+    try {
+      const r = await this.posService.setVoidCodeActive(row.id, !row.isActive);
+      if (!r.success) {
+        this.uiError = r.message ?? 'Failed to update void code status.';
+        return;
+      }
+      this.uiMessage = row.isActive ? 'Void code disabled.' : 'Void code enabled.';
+      await this.loadVoidCodes();
+    } catch (error: unknown) {
+      this.uiError = this.resolveErrorMessage(error, 'Failed to update void code status.');
     }
   }
 

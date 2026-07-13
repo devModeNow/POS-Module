@@ -2,23 +2,13 @@ import { Body, Controller, Get, Patch, Post, Query, Req, UseGuards } from '@nest
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { PosChatService } from '../services/pos-chat.service';
 import { PosNotificationsService } from '../services/pos-notifications.service';
+import {
+  posOrgId,
+  posUserId,
+  receivesPosAdminNotifications,
+} from '../utils/pos-auth.util';
 
 type AuthReq = { user?: Record<string, unknown> };
-
-const orgId = (req: AuthReq): number => {
-  const n = Number(req.user?.['orgId'] ?? req.user?.['org_id'] ?? 0);
-  return Number.isFinite(n) && n > 0 ? n : 0;
-};
-
-const userId = (req: AuthReq): number => {
-  const n = Number(req.user?.['sub'] ?? req.user?.['userId'] ?? 0);
-  return Number.isFinite(n) && n > 0 ? n : 0;
-};
-
-const isAdmin = (req: AuthReq) => {
-  const role = String(req.user?.['roleName'] ?? '').toLowerCase();
-  return role.includes('admin') || role.includes('super');
-};
 
 @Controller('api/pos/communications')
 @UseGuards(JwtAuthGuard)
@@ -30,7 +20,7 @@ export class PosCommunicationsController {
 
   @Get('chat/users')
   listChatUsers(@Req() req: AuthReq) {
-    return this.chatService.listChatUsers(orgId(req), userId(req));
+    return this.chatService.listChatUsers(posOrgId(req), posUserId(req));
   }
 
   @Get('chat/messages')
@@ -42,8 +32,8 @@ export class PosCommunicationsController {
   ) {
     const chatMode = mode === 'private' ? 'private' : 'team';
     return this.chatService.listMessages(
-      orgId(req),
-      userId(req),
+      posOrgId(req),
+      posUserId(req),
       Number(sinceId) || 0,
       chatMode,
       Number(recipientId) || undefined,
@@ -55,8 +45,8 @@ export class PosCommunicationsController {
     @Body() body: { message?: string; recipientId?: number | null; mode?: string },
     @Req() req: AuthReq,
   ) {
-    const oid = orgId(req);
-    const uid = userId(req);
+    const oid = posOrgId(req);
+    const uid = posUserId(req);
     const isPrivate = body?.mode === 'private';
     const peer = isPrivate && body?.recipientId ? Number(body.recipientId) : null;
 
@@ -78,7 +68,14 @@ export class PosCommunicationsController {
           uid,
         );
       } else {
-        await this.notificationsService.notifyMessage(oid, null, 'New team message', `${senderName}: ${preview}`, 'chat');
+        await this.notificationsService.notifyMessage(
+          oid,
+          null,
+          'New team message',
+          `${senderName}: ${preview}`,
+          'chat',
+          uid,
+        );
       }
     }
     return result;
@@ -86,16 +83,24 @@ export class PosCommunicationsController {
 
   @Get('notifications')
   listNotifications(@Req() req: AuthReq) {
-    return this.notificationsService.list(orgId(req), userId(req), isAdmin(req));
+    return this.notificationsService.list(
+      posOrgId(req),
+      posUserId(req),
+      receivesPosAdminNotifications(req),
+    );
   }
 
   @Get('notifications/unread-count')
   unreadCount(@Req() req: AuthReq) {
-    return this.notificationsService.unreadCount(orgId(req), userId(req), isAdmin(req));
+    return this.notificationsService.unreadCount(
+      posOrgId(req),
+      posUserId(req),
+      receivesPosAdminNotifications(req),
+    );
   }
 
   @Patch('notifications/read')
   markRead(@Body() body: { id?: number }, @Req() req: AuthReq) {
-    return this.notificationsService.markRead(orgId(req), userId(req), body?.id);
+    return this.notificationsService.markRead(posOrgId(req), posUserId(req), body?.id);
   }
 }

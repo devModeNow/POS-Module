@@ -9,50 +9,41 @@
   <section class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
     <app-pos-page-header>
       <button type="button" posHeaderActions (click)="toggleCart()"
-        class="relative inline-flex touch-manipulation items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-3 text-sm font-semibold text-white md:hidden">
+        class="relative inline-flex touch-manipulation items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-3 text-sm font-semibold text-white lg:hidden">
         Cart
         @if (cartCount() > 0) {
           <span class="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-white px-1.5 text-xs font-bold text-emerald-700">{{ cartCount() }}</span>
         }
       </button>
 
-      <div posHeaderToolbar class="mt-2 flex flex-wrap items-center gap-2 lg:flex-nowrap">
-        <div class="inline-flex shrink-0 rounded-md border border-gray-300 p-0.5 dark:border-gray-700">
-          <button type="button" (click)="setKeyboardMode('device')" title="Device keyboard"
-            class="rounded-sm p-2 transition"
-            [ngClass]="keyboardMode === 'device' ? 'bg-emerald-600 text-white' : 'text-gray-600 dark:text-gray-400'">
-            <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m-6 4h6m-6 4h6M5 5h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2z" /></svg>
-          </button>
-          <button type="button" (click)="setKeyboardMode('onscreen')" title="POS keyboard"
-            class="rounded-sm p-2 transition"
-            [ngClass]="keyboardMode === 'onscreen' ? 'bg-emerald-600 text-white' : 'text-gray-600 dark:text-gray-400'">
-            <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7h16M4 12h16M4 17h7" /></svg>
-          </button>
-        </div>
+      <div posHeaderToolbar class="space-y-2 px-3 py-2 sm:px-4">
+        <div class="flex items-center gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         <div class="inline-flex shrink-0 rounded-md border border-gray-300 p-0.5 dark:border-gray-700">
           <button type="button" (click)="setProductViewMode('grid')" title="Card view"
-            class="rounded-sm p-2 transition"
+            class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-sm p-2 transition"
             [ngClass]="productViewMode === 'grid' ? 'bg-emerald-600 text-white' : 'text-gray-600 dark:text-gray-400'">
             <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
           </button>
           <button type="button" (click)="setProductViewMode('list')" title="List view"
-            class="rounded-sm p-2 transition"
+            class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-sm p-2 transition"
             [ngClass]="productViewMode === 'list' ? 'bg-emerald-600 text-white' : 'text-gray-600 dark:text-gray-400'">
             <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" /></svg>
           </button>
         </div>
         <div class="inline-flex shrink-0 rounded-md border border-gray-300 p-0.5 dark:border-gray-700">
           <button type="button" (click)="setCatalogMode('types')" title="Product types"
-              class="rounded-sm p-2 transition"
+              class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-sm p-2 transition"
               [ngClass]="catalogMode === 'types' ? 'bg-emerald-600 text-white' : 'text-gray-600 dark:text-gray-400'">
               <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
             </button>
             <button type="button" (click)="setCatalogMode('variants')" title="Variants"
-              class="rounded-sm p-2 transition"
+              class="inline-flex min-h-11 min-w-11 items-center justify-center rounded-sm p-2 transition"
               [ngClass]="catalogMode === 'variants' ? 'bg-emerald-600 text-white' : 'text-gray-600 dark:text-gray-400'">
               <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" /></svg>
             </button>
           </div>
+        </div>
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
         @if (categories.length > 0) {
           <select [(ngModel)]="selectedCategory" (ngModelChange)="onCategoryChange()" title="Category"
             class="w-full min-w-[8rem] shrink-0 touch-manipulation rounded-md border border-gray-300 bg-white px-2 py-2.5 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white sm:w-40">
@@ -66,7 +57,7 @@
           <svg class="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-4.35-4.35M11 18a7 7 0 100-14 7 7 0 000 14z" />
           </svg>
-          <input type="search" [(ngModel)]="search" (input)="onSearchInput()" (focus)="onSearchFieldFocus()" (blur)="onSearchBlur()" [readonly]="useOnscreenKeyboard" placeholder="Search products or variants..."
+          <input type="search" [(ngModel)]="search" (input)="onSearchInput()" (focus)="onSearchFieldFocus()" (blur)="onSearchBlur()" placeholder="Search products or variants..."
             class="w-full touch-manipulation rounded-md border border-gray-300 bg-gray-50 py-2.5 pl-10 pr-10 text-base text-gray-900 outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
           @if (search) {
             <button type="button" (click)="clearSearch()" class="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1.5 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700">
@@ -103,6 +94,7 @@
         @if (catalogLoading) {
           <span class="hidden shrink-0 text-xs text-emerald-600 sm:inline">Updating...</span>
         }
+        </div>
       </div>
     </app-pos-page-header>
 
@@ -118,8 +110,7 @@
       </div>
     }
     @if (state === 'loaded') {
-      <div class="relative z-0 min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-auto p-4 md:p-6"
-        (click)="onPosSurfaceTap()">
+      <div class="relative z-0 min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-auto p-4 md:p-6">
         @if (isVariantCatalogView) {
           @if (variantCatalog.length === 0) {
             <div class="flex h-full min-h-[20rem] flex-col items-center justify-center text-center text-gray-500">No variants found.</div>
@@ -238,9 +229,9 @@
   @if (cart.length > 0) {
     @if (cartOpen) {
       <button type="button" (click)="toggleCart()" aria-label="Close cart"
-        class="fixed inset-0 z-30 bg-gray-900/40 md:hidden"></button>
+        class="fixed inset-0 z-30 bg-gray-900/40 lg:hidden"></button>
     }
-  <aside class="hidden h-full min-h-0 w-full shrink-0 flex-col overflow-hidden border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:z-50 max-md:w-full max-md:max-w-sm max-md:border-l max-md:shadow-2xl md:flex md:w-[22rem] md:border-l md:border-t-0"
+  <aside class="hidden h-full min-h-0 w-full shrink-0 flex-col overflow-hidden border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-50 max-lg:w-full max-lg:max-w-sm max-lg:border-l max-lg:shadow-2xl lg:flex lg:w-[22rem] lg:border-l lg:border-t-0"
     [class.flex]="cartOpen">
     <div class="flex shrink-0 items-center justify-between border-b border-gray-200 px-4 py-4 dark:border-gray-800">
       <div>
@@ -249,7 +240,7 @@
       </div>
       <div class="flex items-center gap-1">
         <button type="button" (click)="toggleCart()" title="Close cart"
-          class="touch-manipulation rounded-md p-2 text-gray-500 hover:bg-gray-100 md:hidden dark:hover:bg-gray-800">
+          class="touch-manipulation rounded-md p-2 text-gray-500 hover:bg-gray-100 lg:hidden dark:hover:bg-gray-800">
           <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
           </svg>
@@ -282,9 +273,9 @@
                   <p class="text-sm font-semibold text-emerald-600">₱{{ formatCurrency(lineTotal(line)) }}</p>
                 }
                 <div class="mt-2 flex items-center gap-2">
-                  <button type="button" (click)="decrementLine(line)" class="flex h-9 w-9 items-center justify-center rounded-md border text-lg font-bold dark:border-gray-700">−</button>
+                  <button type="button" (click)="decrementLine(line)" class="flex h-11 w-11 items-center justify-center rounded-md border text-lg font-bold lg:h-9 lg:w-9 dark:border-gray-700">−</button>
                   <span class="min-w-8 text-center text-sm font-semibold">{{ line.quantity }}</span>
-                  <button type="button" (click)="incrementLine(line)" class="flex h-9 w-9 items-center justify-center rounded-md border text-lg font-bold dark:border-gray-700">+</button>
+                  <button type="button" (click)="incrementLine(line)" class="flex h-11 w-11 items-center justify-center rounded-md border text-lg font-bold lg:h-9 lg:w-9 dark:border-gray-700">+</button>
                   <button type="button" (click)="openVoidLine(line)" title="Void item"
                     class="rounded-md p-1.5 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10">
                     <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -314,6 +305,14 @@
       </button>
     </div>
   </aside>
+  }
+
+  @if (cart.length > 0 && !cartOpen) {
+    <button type="button" (click)="toggleCart()" aria-label="Open cart"
+      class="fixed bottom-5 right-5 z-40 inline-flex touch-manipulation items-center gap-2 rounded-full bg-emerald-600 px-5 py-3 text-sm font-bold text-white shadow-lg ring-2 ring-white/30 lg:hidden">
+      Cart
+      <span class="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-white px-1.5 text-xs font-bold text-emerald-700">{{ cartCount() }}</span>
+    </button>
   }
 </div>
 
@@ -369,11 +368,8 @@
 
 <!-- Variant picker -->
 @if (showVariantModal && selectedProduct) {
-  <div class="fixed inset-0 z-[100000] flex items-end justify-center overflow-y-auto bg-gray-900/50 p-4 md:items-center"
-    [style.padding-bottom.px]="keyboardBottomPad + 8">
-    <div class="my-auto w-full max-w-lg rounded-md bg-white p-6 shadow-2xl dark:bg-gray-900"
-      [style.max-height]="keyboardBottomPad ? 'calc(98vh - ' + keyboardBottomPad + 'px)' : '98vh'"
-      [style.overflow-y]="'auto'">
+  <div class="fixed inset-0 z-[100000] flex items-end justify-center overflow-y-auto bg-gray-900/50 p-4 md:items-center">
+    <div class="my-auto w-full max-w-lg rounded-md bg-white p-6 shadow-2xl dark:bg-gray-900 max-h-[98vh] overflow-y-auto">
       <div class="flex items-start justify-between">
         <div>
           <h3 class="text-2xl font-bold text-gray-900 dark:text-white">{{ selectedProduct.name }}</h3>
@@ -467,10 +463,8 @@
 
 <!-- Checkout -->
 @if (showCheckoutModal) {
-  <div class="fixed inset-0 z-[100000] flex items-end justify-center overflow-y-auto bg-gray-900/50 p-2 sm:items-center"
-    [style.padding-bottom.px]="keyboardBottomPad + 8">
-    <div class="my-auto flex w-full max-w-md flex-col overflow-hidden rounded-md bg-white shadow-2xl dark:bg-gray-900"
-      [style.max-height]="keyboardBottomPad ? 'calc(98vh - ' + keyboardBottomPad + 'px)' : '98vh'">
+  <div class="fixed inset-0 z-[100000] flex items-end justify-center overflow-y-auto bg-gray-900/50 p-2 sm:items-center">
+    <div class="my-auto flex w-full max-w-md flex-col overflow-hidden rounded-md bg-white shadow-2xl dark:bg-gray-900 max-h-[98vh]">
       <div class="overflow-y-auto p-6">
       @if (checkoutSuccess) {
         <div class="py-8 text-center">
@@ -530,10 +524,9 @@
           </div>
           <label class="block">
             <span class="mb-2 block text-sm font-medium">Amount Received (₱)</span>
-            <input #amountReceivedInput [type]="useOnscreenKeyboard ? 'text' : 'number'" [readonly]="useOnscreenKeyboard" min="0" step="0.01"
-              [ngModel]="useOnscreenKeyboard ? amountReceivedText : amountReceived"
+            <input #amountReceivedInput type="number" min="0" step="0.01"
+              [(ngModel)]="amountReceived"
               (ngModelChange)="onAmountReceivedChange($event)"
-              (focus)="onAmountFieldFocus()"
               class="w-full rounded-md border px-4 py-4 text-2xl font-semibold dark:border-gray-700 dark:bg-gray-800" inputmode="decimal" />
           </label>
           <div class="rounded-md border-2 px-4 py-4 text-center" [class.border-emerald-300]="changeDue() >= 0" [class.border-red-300]="changeDue() < 0">
@@ -587,14 +580,4 @@
   [confirmLabel]="confirmVariant === 'danger' ? 'Yes' : 'Confirm'"
   (confirm)="onConfirmDialog()"
   (cancel)="onCancelDialog()"
-/>
-
-<app-pos-onscreen-keyboard
-  [visible]="keyboardVisible && useOnscreenKeyboard"
-  [mode]="activeKeyboardType"
-  (keyPress)="onKeyboardKey($event)"
-  (backspace)="onKeyboardBackspace()"
-  (clear)="onKeyboardClear()"
-  (close)="closeKeyboard()"
-  (done)="closeKeyboard()"
 />

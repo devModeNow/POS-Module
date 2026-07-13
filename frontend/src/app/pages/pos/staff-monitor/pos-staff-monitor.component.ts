@@ -1,13 +1,14 @@
 import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
+import { PageBreadcrumbComponent } from '../../../shared/components/common/page-breadcrumb/page-breadcrumb.component';
 import { PosService } from '../../../shared/services/pos.service';
 import { ActionBusyService } from '../../../shared/services/action-busy.service';
-import { PosPageHeaderComponent } from '../shared/pos-page-header.component';
+import { PosChatUiService } from '../../../shared/services/pos-chat-ui.service';
 
 @Component({
   selector: 'app-pos-staff-monitor',
   standalone: true,
-  imports: [CommonModule, PosPageHeaderComponent],
+  imports: [CommonModule, PageBreadcrumbComponent],
   templateUrl: './pos-staff-monitor.component.html',
   styles: `:host { display: block; height: 100%; min-height: 0; }`,
 })
@@ -20,6 +21,7 @@ export class PosStaffMonitorComponent implements OnInit {
   constructor(
     private readonly pos: PosService,
     private readonly actionBusy: ActionBusyService,
+    private readonly chatUi: PosChatUiService,
   ) {}
 
   ngOnInit(): void { void this.load(); }
@@ -41,5 +43,10 @@ export class PosStaffMonitorComponent implements OnInit {
     } finally {
       this.loading = false;
     }
+  }
+
+  messageUser(row: { userId: number; fullname: string | null; username: string }): void {
+    const name = row.fullname?.trim() || row.username || 'User';
+    this.chatUi.openPrivateChat(row.userId, name);
   }
 }

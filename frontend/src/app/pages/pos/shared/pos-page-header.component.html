@@ -1,8 +1,8 @@
-<header class="relative z-[100] shrink-0 border-b border-gray-200 bg-white px-3 py-3 dark:border-gray-800 dark:bg-gray-900 sm:px-4">
-  <div class="flex items-center justify-between gap-2">
+<header class="relative isolate z-[120] shrink-0 border-b border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+  <div class="relative z-[120] flex items-center justify-between gap-2 bg-white px-3 py-3 dark:bg-gray-900 sm:px-4">
     @if (showCashierNav) {
       <a [routerLink]="posHomeRoute" title="Back to POS terminal"
-        class="-ml-1 min-w-0 rounded-md px-1 py-0.5 transition hover:bg-gray-50 dark:hover:bg-gray-800/60">
+        class="-ml-1 min-w-0 max-w-[calc(100%-12rem)] flex-1 rounded-md px-1 py-0.5 transition hover:bg-gray-50 dark:hover:bg-gray-800/60">
         <h1 class="truncate text-xl font-semibold text-gray-900 dark:text-white sm:text-2xl">{{ displayTitle }}</h1>
         <p class="truncate text-sm text-gray-500 dark:text-gray-400">{{ displaySubtitle }}</p>
       </a>
@@ -13,8 +13,8 @@
       </div>
     }
 
-    <div class="relative z-[100] flex shrink-0 items-center gap-1.5">
-      @if (isPosOrg) {
+    <div class="relative z-[130] flex shrink-0 items-center gap-1.5 pointer-events-auto">
+      @if (isPosOrg && showPosTools) {
         <app-pos-notifications-bell [compact]="true" />
         <button type="button" (click)="openPrinterSettings()" title="Printer settings"
           class="touch-manipulation rounded-md border border-gray-300 p-2.5 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
@@ -52,7 +52,9 @@
       <ng-content select="[posHeaderActions]" />
     </div>
   </div>
-  <ng-content select="[posHeaderToolbar]" />
+  <div class="relative z-[50] border-t border-gray-100 bg-white dark:border-gray-800 dark:bg-gray-900">
+    <ng-content select="[posHeaderToolbar]" />
+  </div>
 </header>
 
 @if (showCashierNav) {

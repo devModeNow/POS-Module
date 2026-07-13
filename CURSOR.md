@@ -167,5 +167,20 @@
    - In POS dashboard, make sure to make it automatically full screen so that it will not show the url bar and it will look more clean.
    - Make sure to fix all errors and bugs you encounter while working on this task.
    - Make sure to check all taskss under this continuation before setting it to done because in the past there are tasks that has not been done so be sure to check if its all done properly and without errors and bugs.
-
+   //Continuation 3.4
+   - remove the auto fullscreen in cashier dashboard.
+   - In posadmin, when recieving message notifications, make sure to just notify it when message is from others, do not notify on own sent messages.
+   - In posadmin, when I recieved a message from private user, I recieved 2 same messages which the private user only sent one. Fix that one.
+   - In posadmin, the notification for new complete sale from cashier is not receiving, posadmin should be notified once there is a confirm sale.
+   - In cashier dashboard, make sure to redirect to receipt printing once comfirm sale is complete.
+   - Fix the notification bell, the number count of notif is not showing properly, its currently under the bell.
+   - In print settings, when I press print preview, its showing the print preview of whole page, make sure to just print preview the actual paper size and actual view the reciept of what saved in the settings.
+   - In print settings, the print preview is empty unless I click a element in the template editor.
+   - In Void Codes, add an action to the table data where in I can see the details of the void codes and able to change the password and also enable/disable the code.
+   - In posadmin main dashboard, fix the resizing feature, currently when I resize any of the cards its overlapping the other cards, make the cards and graph cards relative so they will reposition based on their sizes.
+   - In posadmin dashboard -> On-Duty Cashiers, add a button or a trigger to use to message the user directly using the chat feature.
+   - In posadmin dashboard -> On-Duty Cashiers, remove the duplicated notification bell and printer settings icon in the below header part, It should be a breadcrumb.
+   - Fix the UI issue on cashier dashboard, so that It can be usable weather the system is used on a touchscreen device or a desktop/laptop device.
+   - Make sure to fix all errors and bugs you encounter while working on this task.
+   - Make sure to check all taskss under this continuation before setting it to done because in the past there are tasks that has not been done so be sure to check if its all done properly and without errors and bugs.
 

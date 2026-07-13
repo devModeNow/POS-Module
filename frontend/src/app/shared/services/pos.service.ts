@@ -99,6 +99,19 @@ export interface PosSaleTransaction {
   itemCount: number;
 }
 
+export interface PosCompletedSale {
+  saleId: number;
+  title: string;
+  body: string;
+  completedAt: string;
+  saleDate: string | null;
+  cashier: string;
+  paymentMethod: string;
+  paymentStatus: string;
+  totalAmount: number;
+  itemCount: number;
+}
+
 export interface PosDashboardReport {
   summary: {
     totalSales: number;
@@ -245,7 +258,7 @@ export class PosService {
     if (from) params['from'] = from;
     if (to) params['to'] = to;
     if (paymentStatus) params['paymentStatus'] = paymentStatus;
-    const r = await apiClient.get<{ success: boolean; data?: PosSaleTransaction[]; message?: string }>(
+    const r = await apiClient.get<{ success: boolean; data?: PosSaleTransaction[]; total?: number; message?: string }>(
       '/api/pos/reports/transactions',
       { params },
     );
@@ -323,6 +336,20 @@ export class PosService {
   async getLowStockReport() {
     const r = await apiClient.get<{ success: boolean; data?: Array<{ partName: string; category: string | null; stockQty: number; stockWarning: number; sellingPrice: number }>; message?: string }>(
       '/api/pos/reports/low-stock',
+    );
+    return r.data;
+  }
+
+  async getCompletedSalesReport(from?: string, to?: string, limit = 100, offset = 0) {
+    const params: Record<string, string> = {
+      limit: String(limit),
+      offset: String(offset),
+    };
+    if (from) params['from'] = from;
+    if (to) params['to'] = to;
+    const r = await apiClient.get<{ success: boolean; data?: PosCompletedSale[]; total?: number; message?: string }>(
+      '/api/pos/reports/completed-sales',
+      { params },
     );
     return r.data;
   }
@@ -487,8 +514,13 @@ export class PosService {
     return r.data;
   }
 
-  async saveVoidCode(payload: { id?: number; label: string; code: string }) {
+  async saveVoidCode(payload: { id?: number; label: string; code?: string }) {
     const r = await apiClient.post<{ success: boolean; message?: string }>('/api/pos/void-codes', payload);
+    return r.data;
+  }
+
+  async setVoidCodeActive(id: number, isActive: boolean) {
+    const r = await apiClient.post<{ success: boolean; message?: string }>(`/api/pos/void-codes/${id}/active`, { isActive });
     return r.data;
   }
 }

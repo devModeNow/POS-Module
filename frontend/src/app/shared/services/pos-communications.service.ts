@@ -5,6 +5,7 @@ export type PosChatUser = {
   id: number;
   name: string;
   roleName: string | null;
+  profilePicture?: string | null;
   isOnline: boolean;
   lastSeen?: string | null;
 };
@@ -15,6 +16,7 @@ export type PosChatMessage = {
   recipientId?: number | null;
   senderName: string;
   roleName: string | null;
+  senderProfilePicture?: string | null;
   message: string;
   createdAt: string;
 };
@@ -99,7 +101,7 @@ export class PosCommunicationsService {
 
   async sendChatMessage(message: string, mode: 'team' | 'private' = 'team', recipientId?: number) {
     const peer = recipientId != null ? Number(recipientId) : undefined;
-    const r = await apiClient.post<{ success: boolean; data?: { id: number }; message?: string }>(
+    const r = await apiClient.post<{ success: boolean; data?: PosChatMessage; message?: string }>(
       '/api/pos/communications/chat/messages',
       {
         message,

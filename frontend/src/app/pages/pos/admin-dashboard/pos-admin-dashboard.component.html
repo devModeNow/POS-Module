@@ -4,7 +4,7 @@
   <div class="flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
     <div>
       <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Store Overview</h2>
-      <p class="mt-1 text-xs text-gray-400">Drag cards to rearrange · drag corner to resize</p>
+      <p class="mt-1 text-xs text-gray-400">Drag cards to rearrange · drag chart/list corners to resize</p>
     </div>
     <div class="flex flex-wrap items-center gap-2">
       <select [(ngModel)]="period" (ngModelChange)="onPeriodChange()"
@@ -21,121 +21,141 @@
   </div>
 
   <!-- KPI Cards -->
-  <div cdkDropList cdkDropListOrientation="mixed" class="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7" (cdkDropListDropped)="onKpiDrop($event)">
+  <div cdkDropList cdkDropListOrientation="mixed" class="dashboard-kpi-grid" (cdkDropListDropped)="onKpiDrop($event)">
     @for (id of kpiWidgets; track id) {
-      <div cdkDrag class="rounded-lg border p-4 transition-shadow hover:shadow-md widget-resizable" [ngClass]="kpiColor(id)" [ngStyle]="widgetStyle(id)" (mouseup)="onWidgetSized(id, $event)">
-        <button type="button" class="w-full text-left" (click)="openKpiDetail(id)">
-          <div class="mb-2 flex items-center justify-between gap-1">
-            <p class="text-xs font-semibold uppercase tracking-wide opacity-80">{{ widgetMeta[id].label }}</p>
-            <span cdkDragHandle class="widget-drag-handle text-gray-400" title="Drag to reorder" (click)="$event.stopPropagation()">
-              <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 11-.001 4.001A2 2 0 017 2zm0 6a2 2 0 11-.001 4.001A2 2 0 017 8zm0 6a2 2 0 11-.001 4.001A2 2 0 017 14zm6-8a2 2 0 11-.001 4.001A2 2 0 0113 6zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 12zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 18z"/></svg>
-            </span>
-          </div>
-          <p class="text-lg font-bold">{{ kpiValue(id) }}</p>
-          <p class="mt-1 text-[10px] uppercase tracking-wide opacity-60">Tap for details</p>
-        </button>
+      <div cdkDrag class="dashboard-widget rounded-lg border p-4 transition-shadow hover:shadow-md" [attr.data-widget-id]="id" [ngClass]="kpiColor(id)">
+        <div class="dashboard-widget-content flex min-h-0 flex-1 flex-col">
+          <button type="button" class="flex h-full min-h-[100px] flex-1 flex-col justify-between text-left" (click)="openKpiDetail(id)">
+            <div class="flex items-start justify-between gap-1">
+              <p class="text-xs font-semibold uppercase tracking-wide opacity-80">{{ widgetMeta[id].label }}</p>
+              <span cdkDragHandle class="widget-drag-handle shrink-0 text-gray-400" title="Drag to reorder" (click)="$event.stopPropagation()">
+                <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 11-.001 4.001A2 2 0 017 2zm0 6a2 2 0 11-.001 4.001A2 2 0 017 8zm0 6a2 2 0 11-.001 4.001A2 2 0 017 14zm6-8a2 2 0 11-.001 4.001A2 2 0 0113 6zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 12zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 18z"/></svg>
+              </span>
+            </div>
+            <div>
+              <p class="text-lg font-bold leading-tight">{{ kpiValue(id) }}</p>
+              <p class="mt-1 text-[10px] uppercase tracking-wide opacity-60">Tap for details</p>
+            </div>
+          </button>
+        </div>
       </div>
     }
   </div>
 
   <!-- Charts -->
-  <div cdkDropList cdkDropListOrientation="mixed" class="grid grid-cols-1 gap-6 xl:grid-cols-2" (cdkDropListDropped)="onChartDrop($event)">
+  <div cdkDropList cdkDropListOrientation="mixed" class="dashboard-widget-grid" (cdkDropListDropped)="onChartDrop($event)">
     @for (id of chartWidgets; track id) {
-      <div cdkDrag class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900 widget-resizable-chart" [ngStyle]="widgetStyle(id)" (mouseup)="onWidgetSized(id, $event)">
-        <div class="mb-3 flex items-center justify-between gap-2">
-          <h4 class="text-sm font-semibold text-gray-800 dark:text-white">{{ widgetMeta[id].label }}</h4>
-          <div class="flex items-center gap-2">
-            @if (isChartWidget(id)) {
-              <div class="inline-flex rounded-md border border-gray-300 p-0.5 dark:border-gray-700">
-                <button type="button" (click)="$event.stopPropagation(); setChartVisualType(id, 'bar')" title="Bar chart"
-                  class="rounded-sm p-1.5 transition"
-                  [ngClass]="chartVisualType(id) === 'bar' ? 'bg-brand-500 text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'">
-                  <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 19h16M6 16l4-8 4 5 4-11 2 6"/></svg>
-                </button>
-                <button type="button" (click)="$event.stopPropagation(); setChartVisualType(id, 'donut')" title="Donut chart"
-                  class="rounded-sm p-1.5 transition"
-                  [ngClass]="chartVisualType(id) === 'donut' ? 'bg-brand-500 text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'">
-                  <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-width="2"/><circle cx="12" cy="12" r="4" stroke-width="2"/></svg>
-                </button>
-              </div>
+      <div cdkDrag class="dashboard-widget rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900" [attr.data-widget-id]="id" [ngStyle]="widgetGridStyle(id)">
+        <div class="dashboard-widget-content flex min-h-0 flex-1 flex-col">
+          <div class="mb-3 flex shrink-0 items-center justify-between gap-2">
+            <h4 class="text-sm font-semibold text-gray-800 dark:text-white">{{ widgetMeta[id].label }}</h4>
+            <div class="flex items-center gap-2">
+              @if (isChartWidget(id)) {
+                <div class="inline-flex rounded-md border border-gray-300 p-0.5 dark:border-gray-700">
+                  <button type="button" (click)="$event.stopPropagation(); setChartVisualType(id, 'bar')" title="Bar chart"
+                    class="rounded-sm p-1.5 transition"
+                    [ngClass]="chartVisualType(id) === 'bar' ? 'bg-brand-500 text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 19h16M6 16l4-8 4 5 4-11 2 6"/></svg>
+                  </button>
+                  <button type="button" (click)="$event.stopPropagation(); setChartVisualType(id, 'donut')" title="Donut chart"
+                    class="rounded-sm p-1.5 transition"
+                    [ngClass]="chartVisualType(id) === 'donut' ? 'bg-brand-500 text-white' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'">
+                    <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke-width="2"/><circle cx="12" cy="12" r="4" stroke-width="2"/></svg>
+                  </button>
+                </div>
+              }
+              <span cdkDragHandle class="widget-drag-handle text-gray-400" title="Drag to reorder">
+                <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 11-.001 4.001A2 2 0 017 2zm0 6a2 2 0 11-.001 4.001A2 2 0 017 8zm0 6a2 2 0 11-.001 4.001A2 2 0 017 14zm6-8a2 2 0 11-.001 4.001A2 2 0 0113 6zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 12zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 18z"/></svg>
+              </span>
+            </div>
+          </div>
+          <div class="dashboard-widget-body min-h-0 flex-1">
+            @if (id === 'chart-daily') {
+              @if (chartVisualType('chart-daily') === 'bar') {
+                <apx-chart [series]="salesChartSeries" [chart]="chartBase" [xaxis]="{ categories: salesChartCategories }"
+                  [colors]="chartColors" [plotOptions]="chartPlot" [grid]="chartGrid" [dataLabels]="chartDataLabels"
+                  [stroke]="chartStroke" [legend]="{ position: 'top' }"></apx-chart>
+              } @else {
+                <apx-chart [series]="salesDonutSeries" [chart]="donutChartBase" [labels]="salesDonutLabels"
+                  [colors]="chartColors" [plotOptions]="donutPlot" [dataLabels]="donutDataLabels"
+                  [legend]="{ position: 'bottom' }"></apx-chart>
+              }
             }
-            <span cdkDragHandle class="widget-drag-handle text-gray-400" title="Drag to reorder">
-              <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 11-.001 4.001A2 2 0 017 2zm0 6a2 2 0 11-.001 4.001A2 2 0 017 8zm0 6a2 2 0 11-.001 4.001A2 2 0 017 14zm6-8a2 2 0 11-.001 4.001A2 2 0 0113 6zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 12zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 18z"/></svg>
-            </span>
+            @if (id === 'chart-category') {
+              @if (chartVisualType('chart-category') === 'bar') {
+                <apx-chart [series]="categoryChartSeries" [chart]="chartBase" [xaxis]="{ categories: categoryChartCategories }"
+                  [colors]="['#465fff']" [plotOptions]="chartPlot" [grid]="chartGrid" [dataLabels]="chartDataLabels"></apx-chart>
+              } @else {
+                <apx-chart [series]="categoryDonutSeries" [chart]="donutChartBase" [labels]="categoryDonutLabels"
+                  [colors]="chartColors" [plotOptions]="donutPlot" [dataLabels]="donutDataLabels"
+                  [legend]="{ position: 'bottom' }"></apx-chart>
+              }
+            }
+            @if (id === 'chart-payment') {
+              @if (chartVisualType('chart-payment') === 'bar') {
+                <apx-chart [series]="paymentChartSeries" [chart]="chartBase" [xaxis]="{ categories: paymentChartCategories }"
+                  [colors]="['#10b981']" [plotOptions]="chartPlot" [grid]="chartGrid" [dataLabels]="chartDataLabels"></apx-chart>
+              } @else {
+                <apx-chart [series]="paymentDonutSeries" [chart]="donutChartBase" [labels]="paymentDonutLabels"
+                  [colors]="chartColors" [plotOptions]="donutPlot" [dataLabels]="donutDataLabels"
+                  [legend]="{ position: 'bottom' }"></apx-chart>
+              }
+            }
           </div>
         </div>
-        @if (id === 'chart-daily') {
-          @if (chartVisualType('chart-daily') === 'bar') {
-            <apx-chart [series]="salesChartSeries" [chart]="chartBase" [xaxis]="{ categories: salesChartCategories }"
-              [colors]="chartColors" [plotOptions]="chartPlot" [grid]="chartGrid" [dataLabels]="chartDataLabels"
-              [stroke]="chartStroke" [legend]="{ position: 'top' }"></apx-chart>
-          } @else {
-            <apx-chart [series]="salesDonutSeries" [chart]="donutChartBase" [labels]="salesDonutLabels"
-              [colors]="chartColors" [plotOptions]="donutPlot" [dataLabels]="donutDataLabels"
-              [legend]="{ position: 'bottom' }"></apx-chart>
-          }
-        }
-        @if (id === 'chart-category') {
-          @if (chartVisualType('chart-category') === 'bar') {
-            <apx-chart [series]="categoryChartSeries" [chart]="chartBase" [xaxis]="{ categories: categoryChartCategories }"
-              [colors]="['#465fff']" [plotOptions]="chartPlot" [grid]="chartGrid" [dataLabels]="chartDataLabels"></apx-chart>
-          } @else {
-            <apx-chart [series]="categoryDonutSeries" [chart]="donutChartBase" [labels]="categoryDonutLabels"
-              [colors]="chartColors" [plotOptions]="donutPlot" [dataLabels]="donutDataLabels"
-              [legend]="{ position: 'bottom' }"></apx-chart>
-          }
-        }
-        @if (id === 'chart-payment') {
-          @if (chartVisualType('chart-payment') === 'bar') {
-            <apx-chart [series]="paymentChartSeries" [chart]="chartBase" [xaxis]="{ categories: paymentChartCategories }"
-              [colors]="['#10b981']" [plotOptions]="chartPlot" [grid]="chartGrid" [dataLabels]="chartDataLabels"></apx-chart>
-          } @else {
-            <apx-chart [series]="paymentDonutSeries" [chart]="donutChartBase" [labels]="paymentDonutLabels"
-              [colors]="chartColors" [plotOptions]="donutPlot" [dataLabels]="donutDataLabels"
-              [legend]="{ position: 'bottom' }"></apx-chart>
-          }
-        }
+        <div class="dashboard-widget-resize" title="Resize card" (pointerdown)="startWidgetResize($event, id)"></div>
       </div>
     }
   </div>
 
   <!-- Lists -->
-  <div cdkDropList cdkDropListOrientation="mixed" class="grid grid-cols-1 gap-6 xl:grid-cols-2" (cdkDropListDropped)="onListDrop($event)">
+  <div cdkDropList cdkDropListOrientation="mixed" class="dashboard-widget-grid" (cdkDropListDropped)="onListDrop($event)">
     @for (id of listWidgets; track id) {
-      <div cdkDrag class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900 widget-resizable-list" [ngStyle]="widgetStyle(id)" (mouseup)="onWidgetSized(id, $event)">
-        <div class="mb-3 flex items-center justify-between">
-          <h4 class="text-sm font-semibold text-gray-800 dark:text-white">{{ widgetMeta[id].label }}</h4>
-          <span cdkDragHandle class="widget-drag-handle text-gray-400" title="Drag to reorder">
-            <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 11-.001 4.001A2 2 0 017 2zm0 6a2 2 0 11-.001 4.001A2 2 0 017 8zm0 6a2 2 0 11-.001 4.001A2 2 0 017 14zm6-8a2 2 0 11-.001 4.001A2 2 0 0113 6zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 12zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 18z"/></svg>
-          </span>
+      <div cdkDrag class="dashboard-widget rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900" [attr.data-widget-id]="id" [ngStyle]="widgetGridStyle(id)">
+        <div class="dashboard-widget-content flex min-h-0 flex-1 flex-col">
+          <div class="mb-3 flex shrink-0 items-center justify-between">
+            <h4 class="text-sm font-semibold text-gray-800 dark:text-white">{{ widgetMeta[id].label }}</h4>
+            <span cdkDragHandle class="widget-drag-handle text-gray-400" title="Drag to reorder">
+              <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 11-.001 4.001A2 2 0 017 2zm0 6a2 2 0 11-.001 4.001A2 2 0 017 8zm0 6a2 2 0 11-.001 4.001A2 2 0 017 14zm6-8a2 2 0 11-.001 4.001A2 2 0 0113 6zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 12zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 18z"/></svg>
+            </span>
+          </div>
+          <div class="dashboard-widget-body">
+            @if (id === 'list-staff') {
+              <ul class="divide-y dark:divide-gray-800">
+                @for (row of onDutyStaff; track row.userId) {
+                  <li class="flex items-center justify-between gap-2 py-2.5 text-sm">
+                    <div class="min-w-0">
+                      <p class="font-medium text-gray-800 dark:text-gray-200">{{ row.fullname }}</p>
+                      <p class="text-xs text-gray-500">{{ row.roleName || 'Cashier' }}</p>
+                    </div>
+                    <div class="flex shrink-0 items-center gap-2">
+                      <span class="text-xs text-emerald-600">Active</span>
+                      <button type="button" (click)="messageStaff(row)" title="Message cashier"
+                        class="rounded-md border border-brand-200 bg-brand-50 p-1.5 text-brand-700 hover:bg-brand-100 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300">
+                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+                      </button>
+                    </div>
+                  </li>
+                } @empty {
+                  <li class="py-6 text-center text-sm text-gray-500">No cashiers on duty right now.</li>
+                }
+              </ul>
+            }
+            @if (id === 'list-low-stock') {
+              <ul class="divide-y dark:divide-gray-800">
+                @for (row of lowStock.slice(0, 8); track row.partName) {
+                  <li class="flex items-center justify-between py-2.5 text-sm">
+                    <span class="font-medium text-gray-800 dark:text-gray-200">{{ row.partName }}</span>
+                    <span class="font-semibold text-red-600">{{ row.stockQty | number }} / {{ row.stockWarning | number }}</span>
+                  </li>
+                } @empty {
+                  <li class="py-6 text-center text-sm text-gray-500">All stock levels look good.</li>
+                }
+              </ul>
+            }
+          </div>
         </div>
-        @if (id === 'list-staff') {
-          <ul class="divide-y dark:divide-gray-800">
-            @for (row of onDutyStaff; track row.userId) {
-              <li class="flex items-center justify-between py-2.5 text-sm">
-                <div>
-                  <p class="font-medium text-gray-800 dark:text-gray-200">{{ row.fullname }}</p>
-                  <p class="text-xs text-gray-500">{{ row.roleName || 'Cashier' }}</p>
-                </div>
-                <span class="text-xs text-emerald-600">Active</span>
-              </li>
-            } @empty {
-              <li class="py-6 text-center text-sm text-gray-500">No cashiers on duty right now.</li>
-            }
-          </ul>
-        }
-        @if (id === 'list-low-stock') {
-          <ul class="divide-y dark:divide-gray-800">
-            @for (row of lowStock.slice(0, 8); track row.partName) {
-              <li class="flex items-center justify-between py-2.5 text-sm">
-                <span class="font-medium text-gray-800 dark:text-gray-200">{{ row.partName }}</span>
-                <span class="font-semibold text-red-600">{{ row.stockQty | number }} / {{ row.stockWarning | number }}</span>
-              </li>
-            } @empty {
-              <li class="py-6 text-center text-sm text-gray-500">All stock levels look good.</li>
-            }
-          </ul>
-        }
+        <div class="dashboard-widget-resize" title="Resize card" (pointerdown)="startWidgetResize($event, id)"></div>
       </div>
     }
   </div>
@@ -249,6 +269,7 @@
                     <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Role</th>
                     <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Last Active</th>
                     <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Status</th>
+                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -258,9 +279,15 @@
                       <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">{{ row.roleName || 'Cashier' }}</td>
                       <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">{{ formatDateTime(row.lastSeen) }}</td>
                       <td class="px-4 py-2.5"><span class="text-xs font-medium text-emerald-600">On duty</span></td>
+                      <td class="px-4 py-2.5 text-right">
+                        <button type="button" (click)="messageStaff(row)" title="Message cashier"
+                          class="rounded-md border border-brand-200 bg-brand-50 px-2.5 py-1.5 text-xs font-semibold text-brand-700 hover:bg-brand-100 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300">
+                          Message
+                        </button>
+                      </td>
                     </tr>
                   } @empty {
-                    <tr><td colspan="4" class="px-4 py-10 text-center text-gray-500">No cashiers currently on duty.</td></tr>
+                    <tr><td colspan="5" class="px-4 py-10 text-center text-gray-500">No cashiers currently on duty.</td></tr>
                   }
                 </tbody>
               </table>

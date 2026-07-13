@@ -4,10 +4,9 @@ import { AuditService } from 'src/common/audit/audit.service';
 import { PosStaffService } from '../services/pos-staff.service';
 import { PosVoidService } from '../services/pos-void.service';
 import { PosStoreReportsService } from '../services/store-reports.service';
+import { posOrgId, posUserId } from '../utils/pos-auth.util';
 
 type AuthReq = { user?: Record<string, unknown> };
-const orgId = (req: AuthReq) => Number(req.user?.['orgId'] ?? 0);
-const userId = (req: AuthReq) => Number(req.user?.['sub'] ?? 0);
 const username = (req: AuthReq) =>
   String(req.user?.['username'] ?? req.user?.['fullname'] ?? 'user');
 
@@ -23,13 +22,13 @@ export class PosOperationsController {
 
   @Post('staff/heartbeat')
   heartbeat(@Req() req: AuthReq) {
-    return this.staff.heartbeat(orgId(req), userId(req));
+    return this.staff.heartbeat(posOrgId(req), posUserId(req));
   }
 
   @Get('staff/on-duty')
   onDuty(@Query('withinMinutes') withinMinutes: string, @Req() req: AuthReq) {
     const mins = Number(withinMinutes) || 30;
-    return this.staff.listOnDuty(orgId(req), mins);
+    return this.staff.listOnDuty(posOrgId(req), mins);
   }
 
   @Get('my-sales')
@@ -38,17 +37,17 @@ export class PosOperationsController {
     @Query('to') to: string,
     @Req() req: AuthReq,
   ) {
-    return this.reports.cashierSales(orgId(req), userId(req), from, to);
+    return this.reports.cashierSales(posOrgId(req), posUserId(req), from, to);
   }
 
   @Get('void-codes')
   listVoidCodes(@Req() req: AuthReq) {
-    return this.voidSvc.listCodes(orgId(req));
+    return this.voidSvc.listCodes(posOrgId(req));
   }
 
   @Post('void-codes')
   saveVoidCode(@Body() body: { id?: number; label?: string; code?: string }, @Req() req: AuthReq) {
-    return this.voidSvc.upsertCode(orgId(req), {
+    return this.voidSvc.upsertCode(posOrgId(req), {
       id: body.id,
       label: body.label ?? 'Default',
       code: body.code ?? '',
@@ -57,7 +56,16 @@ export class PosOperationsController {
 
   @Delete('void-codes/:id')
   deleteVoidCode(@Param('id') id: string, @Req() req: AuthReq) {
-    return this.voidSvc.deactivateCode(orgId(req), +id);
+    return this.voidSvc.deactivateCode(posOrgId(req), +id);
+  }
+
+  @Post('void-codes/:id/active')
+  setVoidCodeActive(
+    @Param('id') id: string,
+    @Body() body: { isActive?: boolean },
+    @Req() req: AuthReq,
+  ) {
+    return this.voidSvc.setCodeActive(posOrgId(req), +id, body?.isActive !== false);
   }
 
   @Post('void')
@@ -65,7 +73,7 @@ export class PosOperationsController {
     @Body() body: { saleId?: number; cartKey?: string; adminCode?: string; reason?: string },
     @Req() req: AuthReq,
   ) {
-    return this.voidSvc.voidCartLine(orgId(req), userId(req), username(req), {
+    return this.voidSvc.voidCartLine(posOrgId(req), posUserId(req), username(req), {
       saleId: body.saleId,
       cartKey: body.cartKey,
       adminCode: body.adminCode ?? '',
@@ -79,7 +87,7 @@ export class PosOperationsController {
     @Query('offset') offset: string,
     @Req() req: AuthReq,
   ) {
-    const oid = orgId(req);
+    const oid = posOrgId(req);
     const isPlatformUser = req.user?.['isPlatformUser'] === true;
     return this.audit.list({
       orgId: oid > 0 ? oid : null,

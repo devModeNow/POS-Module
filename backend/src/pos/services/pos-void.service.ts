@@ -49,21 +49,30 @@ export class PosVoidService {
     }
   }
 
-  async upsertCode(orgId: number, dto: { id?: number; label: string; code: string }) {
+  async upsertCode(orgId: number, dto: { id?: number; label: string; code?: string }) {
     const label = String(dto.label ?? '').trim() || 'Default';
     const code = String(dto.code ?? '').trim();
-    if (!code) return { success: false, message: 'Code is required' };
     try {
       await this.ensureSchema();
-      const hash = this.hashCode(code);
       if (dto.id) {
-        await this.db.query(
-          `UPDATE tblpos_void_codes SET label = $1, code_hash = $2, is_active = TRUE, updated_at = NOW()
-           WHERE id = $3 AND org_id = $4`,
-          [label, hash, dto.id, orgId],
-        );
+        if (code) {
+          const hash = this.hashCode(code);
+          await this.db.query(
+            `UPDATE tblpos_void_codes SET label = $1, code_hash = $2, is_active = TRUE, updated_at = NOW()
+             WHERE id = $3 AND org_id = $4`,
+            [label, hash, dto.id, orgId],
+          );
+        } else {
+          await this.db.query(
+            `UPDATE tblpos_void_codes SET label = $1, updated_at = NOW()
+             WHERE id = $2 AND org_id = $3`,
+            [label, dto.id, orgId],
+          );
+        }
         return { success: true, id: dto.id };
       }
+      if (!code) return { success: false, message: 'Code is required' };
+      const hash = this.hashCode(code);
       const r = await this.db.query<{ id: number }>(
         `INSERT INTO tblpos_void_codes (org_id, label, code_hash)
          VALUES ($1, $2, $3) RETURNING id`,
@@ -80,6 +89,15 @@ export class PosVoidService {
     await this.db.query(
       `UPDATE tblpos_void_codes SET is_active = FALSE, updated_at = NOW() WHERE id = $1 AND org_id = $2`,
       [id, orgId],
+    );
+    return { success: true };
+  }
+
+  async setCodeActive(orgId: number, id: number, isActive: boolean) {
+    await this.ensureSchema();
+    await this.db.query(
+      `UPDATE tblpos_void_codes SET is_active = $1, updated_at = NOW() WHERE id = $2 AND org_id = $3`,
+      [isActive, id, orgId],
     );
     return { success: true };
   }

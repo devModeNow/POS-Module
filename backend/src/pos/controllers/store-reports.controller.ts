@@ -78,4 +78,21 @@ export class PosStoreReportsController {
   transactionDetail(@Param('id') id: string, @Req() req: AuthReq) {
     return this.reportsService.getTransactionDetail(orgId(req), Number(id));
   }
+
+  @Get('completed-sales')
+  completedSales(
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Query('limit') limit: string,
+    @Query('offset') offset: string,
+    @Req() req: AuthReq,
+  ) {
+    return this.reportsService.listCompletedSales(
+      orgId(req),
+      from,
+      to,
+      Math.min(Math.max(Number(limit) || 100, 1), 200),
+      Math.max(Number(offset) || 0, 0),
+    );
+  }
 }

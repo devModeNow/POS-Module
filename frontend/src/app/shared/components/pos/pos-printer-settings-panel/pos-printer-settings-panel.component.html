@@ -45,7 +45,7 @@
       <h4 class="mb-3 text-sm font-semibold text-gray-800 dark:text-gray-100">Print preview</h4>
       <div class="flex justify-center bg-gray-100 p-4 dark:bg-gray-950">
         <div class="relative h-[320px] w-full overflow-hidden rounded border border-gray-300 bg-white font-mono text-xs text-gray-800 dark:border-gray-700" [ngClass]="previewWidthClass">
-          @for (el of templateElements; track el.id) {
+          @for (el of previewElements; track el.id) {
             <div [ngStyle]="elementStyle(el)">
               @if (el.type === 'image') {
                 <img [src]="el.content" alt="" class="object-contain" [style.width.%]="100" />

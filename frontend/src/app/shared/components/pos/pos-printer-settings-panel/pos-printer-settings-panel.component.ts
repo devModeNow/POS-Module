@@ -2,6 +2,7 @@ import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { PosCommunicationsService, PosReceiptTemplateElement } from '../../../services/pos-communications.service';
+import { PosReceiptPrintService, ReceiptPrintContext } from '../../../services/pos-receipt-print.service';
 import { PosReceiptTemplateEditorComponent } from '../pos-receipt-template-editor/pos-receipt-template-editor.component';
 
 @Component({
@@ -35,7 +36,10 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
     'Custom / Network Printer',
   ];
 
-  constructor(private readonly comms: PosCommunicationsService) {}
+  constructor(
+    private readonly comms: PosCommunicationsService,
+    private readonly receiptPrint: PosReceiptPrintService,
+  ) {}
 
   ngOnInit(): void {
     void this.load();
@@ -54,7 +58,7 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
       this.businessName = String(item['businessName'] ?? '');
       this.businessAddress = String(item['businessAddress'] ?? '');
       this.logoUrl = (item['businessLogoLight'] as string) || (item['businessLogoDark'] as string) || null;
-      this.templateElements = this.comms.parseTemplate(String(item['posReceiptTemplateJson'] ?? ''));
+      this.templateElements = this.receiptPrint.resolveTemplateElements(String(item['posReceiptTemplateJson'] ?? ''));
     } catch {
       this.error = 'Failed to load printer settings.';
     } finally {
@@ -86,11 +90,35 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
   }
 
   printPreview(): void {
-    window.print();
+    const ctx: ReceiptPrintContext = {
+      businessName: this.businessName,
+      businessAddress: this.businessAddress,
+      footer: this.footerText || 'Thank you!',
+      logoUrl: this.logoUrl,
+      showLogo: this.showLogo,
+      paperWidth: this.paperWidth,
+      itemsText: 'Sample Item x1 pack .... ₱100.00\nSample Item 2 x2 .... ₱200.00',
+      total: '₱300.00',
+      amountPaid: '₱500.00',
+      change: '₱200.00',
+      paymentMethod: 'Cash',
+      cashier: 'Cashier',
+      saleDate: new Date().toLocaleString('en-PH'),
+    };
+    const elements = this.templateElements.length
+      ? this.templateElements
+      : this.receiptPrint.defaultTemplateElements();
+    this.receiptPrint.printFromSettings(elements, ctx, this.paperWidth);
   }
 
   get previewWidthClass(): string {
     return this.paperWidth === '58mm' ? 'max-w-[220px]' : 'max-w-[300px]';
+  }
+
+  get previewElements(): PosReceiptTemplateElement[] {
+    return this.templateElements.length
+      ? this.templateElements
+      : this.receiptPrint.defaultTemplateElements();
   }
 
   elementStyle(el: PosReceiptTemplateElement): Record<string, string> {
@@ -98,10 +126,17 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
   }
 
   previewText(el: PosReceiptTemplateElement): string {
-    return this.comms.previewTemplateText(el.content, {
+    return this.receiptPrint.renderTemplateText(el.content, {
       businessName: this.businessName,
       businessAddress: this.businessAddress,
       footer: this.footerText,
+      itemsText: 'Sample Item x1 .... ₱100',
+      total: '₱100.00',
+      amountPaid: '₱200.00',
+      change: '₱100.00',
+      paymentMethod: 'Cash',
+      cashier: 'Cashier',
+      saleDate: new Date().toLocaleString('en-PH'),
     });
   }
 }

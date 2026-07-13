@@ -17,17 +17,13 @@ import { NotificationService } from '../../../shared/services/notification.servi
 import { RbacService } from '../../../shared/services/rbac.service';
 import { ActionBusyService } from '../../../shared/services/action-busy.service';
 import { GlobalActionLoaderComponent } from '../../../shared/components/common/global-action-loader/global-action-loader.component';
-import { PosOnscreenKeyboardComponent } from '../../../shared/components/pos/pos-onscreen-keyboard/pos-onscreen-keyboard.component';
-import { PosKeyboardService } from '../../../shared/services/pos-keyboard.service';
+import { PosReceiptPrintService } from '../../../shared/services/pos-receipt-print.service';
 import { PosPageHeaderComponent } from '../shared/pos-page-header.component';
-
-type KeyboardInputTarget = 'search' | 'amount' | 'variantSearch' | null;
-type KeyboardMode = 'device' | 'onscreen';
 
 @Component({
   selector: 'app-pos-dashboard',
   standalone: true,
-  imports: [CommonModule, FormsModule, ConfirmDialogComponent, GlobalActionLoaderComponent, PosOnscreenKeyboardComponent, PosPageHeaderComponent],
+  imports: [CommonModule, FormsModule, ConfirmDialogComponent, GlobalActionLoaderComponent, PosPageHeaderComponent],
   templateUrl: './pos-dashboard.component.html',
   styles: `:host { display: block; height: 100%; min-height: 0; }`,
 })
@@ -77,11 +73,6 @@ export class PosDashboardComponent implements OnInit {
   amountReceived = 0;
   checkoutSuccess: { changeDue: number; totalAmount: number } | null = null;
 
-  keyboardMode: KeyboardMode = 'device';
-  keyboardVisible = false;
-  keyboardTarget: KeyboardInputTarget = null;
-  amountReceivedText = '0';
-
   confirmOpen = false;
   confirmTitle = '';
   confirmMessage = '';
@@ -99,13 +90,9 @@ export class PosDashboardComponent implements OnInit {
     private readonly notify: NotificationService,
     private readonly rbac: RbacService,
     private readonly actionBusy: ActionBusyService,
-    private readonly keyboardSvc: PosKeyboardService,
+    private readonly receiptPrint: PosReceiptPrintService,
   ) {
     this.isCashierMode = this.rbac.isCashier();
-  }
-
-  get keyboardBottomPad(): number {
-    return this.keyboardVisible && this.useOnscreenKeyboard ? this.keyboardSvc.heightPx : 0;
   }
 
   get useCategoryDropdown(): boolean {
@@ -192,35 +179,12 @@ export class PosDashboardComponent implements OnInit {
       cartKey: line.cartKey ?? this.cartService.cartKey(line.variantId, line.unitType ?? 'piece'),
       unitType: line.unitType ?? 'piece',
     }));
-    // Desktop shows the cart column via md:flex; keep mobile drawer closed so header stays clickable.
+    // Desktop shows the cart column via lg:flex; keep mobile drawer closed.
     this.cartOpen = false;
-    const savedKeyboard = localStorage.getItem('pos-keyboard-mode');
-    if (savedKeyboard === 'device' || savedKeyboard === 'onscreen') {
-      this.keyboardMode = savedKeyboard;
-    }
     void this.loadCategories();
     void this.loadDiscounts();
     void this.loadPaymentMethods();
     void this.loadCatalog();
-    void this.tryPosFullscreen();
-  }
-
-  private async tryPosFullscreen(): Promise<void> {
-    try {
-      if (document.fullscreenElement) return;
-      const root = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> };
-      if (root.requestFullscreen) {
-        await root.requestFullscreen();
-      } else if (root.webkitRequestFullscreen) {
-        await root.webkitRequestFullscreen();
-      }
-    } catch {
-      /* Browsers may require a user gesture — retried on first tap */
-    }
-  }
-
-  onPosSurfaceTap(): void {
-    void this.tryPosFullscreen();
   }
 
   get selectedDiscount(): PosDiscount | null {
@@ -228,118 +192,11 @@ export class PosDashboardComponent implements OnInit {
     return this.discounts.find((d) => d.id === this.selectedDiscountId) ?? null;
   }
 
-  get useOnscreenKeyboard(): boolean {
-    return this.keyboardMode === 'onscreen';
-  }
-
-  get activeKeyboardType(): 'text' | 'numeric' {
-    return this.keyboardTarget === 'amount' ? 'numeric' : 'text';
-  }
-
-  setKeyboardMode(mode: KeyboardMode): void {
-    this.keyboardMode = mode;
-    localStorage.setItem('pos-keyboard-mode', mode);
-    if (mode === 'device') {
-      this.keyboardVisible = false;
-      this.keyboardTarget = null;
-      this.keyboardSvc.setVisible(false);
-    }
-  }
-
-  openKeyboard(target: KeyboardInputTarget): void {
-    if (!this.useOnscreenKeyboard || !target) return;
-    this.keyboardTarget = target;
-    this.keyboardVisible = true;
-    this.keyboardSvc.setVisible(true);
-    if (target === 'amount') {
-      this.amountReceivedText = this.amountReceived > 0 ? String(this.amountReceived) : '';
-      setTimeout(() => {
-        this.amountReceivedInput?.nativeElement?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      }, 80);
-    }
-  }
-
-  onKeyboardKey(key: string): void {
-    if (!this.keyboardTarget) return;
-    if (this.keyboardTarget === 'search') {
-      this.search += key;
-      this.onSearchInput();
-      return;
-    }
-    if (this.keyboardTarget === 'variantSearch') {
-      this.variantSearch += key;
-      return;
-    }
-    if (this.keyboardTarget === 'amount') {
-      if (key === '.' && this.amountReceivedText.includes('.')) return;
-      if (key === '00') {
-        this.amountReceivedText += '00';
-      } else {
-        this.amountReceivedText += key;
-      }
-      this.amountReceived = Number(this.amountReceivedText) || 0;
-    }
-  }
-
-  onKeyboardBackspace(): void {
-    if (!this.keyboardTarget) return;
-    if (this.keyboardTarget === 'search') {
-      this.search = this.search.slice(0, -1);
-      this.onSearchInput();
-      return;
-    }
-    if (this.keyboardTarget === 'variantSearch') {
-      this.variantSearch = this.variantSearch.slice(0, -1);
-      return;
-    }
-    if (this.keyboardTarget === 'amount') {
-      this.amountReceivedText = this.amountReceivedText.slice(0, -1);
-      this.amountReceived = Number(this.amountReceivedText) || 0;
-    }
-  }
-
-  onKeyboardClear(): void {
-    if (!this.keyboardTarget) return;
-    if (this.keyboardTarget === 'search') {
-      this.search = '';
-      this.onSearchInput();
-      return;
-    }
-    if (this.keyboardTarget === 'variantSearch') {
-      this.variantSearch = '';
-      return;
-    }
-    if (this.keyboardTarget === 'amount') {
-      this.amountReceivedText = '';
-      this.amountReceived = 0;
-    }
-  }
-
-  closeKeyboard(): void {
-    this.keyboardVisible = false;
-    this.keyboardTarget = null;
-    this.keyboardSvc.setVisible(false);
-  }
-
   onSearchFieldFocus(): void {
     this.searchFocused = true;
-    if (this.useOnscreenKeyboard) {
-      this.openKeyboard('search');
-    }
-  }
-
-  onAmountFieldFocus(): void {
-    if (this.useOnscreenKeyboard) {
-      this.openKeyboard('amount');
-    }
   }
 
   onAmountReceivedChange(value: string | number): void {
-    if (this.useOnscreenKeyboard) {
-      this.amountReceivedText = String(value ?? '');
-      this.amountReceived = Number(this.amountReceivedText) || 0;
-      return;
-    }
     this.amountReceived = Number(value) || 0;
   }
 
@@ -905,7 +762,6 @@ export class PosDashboardComponent implements OnInit {
     }
     this.selectedDiscountId = null;
     this.amountReceived = 0;
-    this.amountReceivedText = '0';
     this.checkoutSuccess = null;
     this.showCheckoutModal = true;
   }
@@ -964,16 +820,18 @@ export class PosDashboardComponent implements OnInit {
           totalAmount: r.data.totalAmount,
         };
         this.notify.success('Sale complete', `Change: ₱${this.formatCurrency(this.checkoutSuccess.changeDue)}`);
+        const saleId = r.data.saleIds?.[0];
         this.cart = [];
         this.cartService.clear(this.orgId());
         this.cartOpen = false;
         this.selectedDiscountId = null;
         this.amountReceived = 0;
         await this.loadCatalog();
-        setTimeout(() => {
-          this.showCheckoutModal = false;
-          this.checkoutSuccess = null;
-        }, 2500);
+        this.showCheckoutModal = false;
+        this.checkoutSuccess = null;
+        if (saleId) {
+          await this.receiptPrint.printSaleReceipt(saleId);
+        }
       });
     } catch {
       this.notify.error('Error', 'Checkout failed. Please try again.');

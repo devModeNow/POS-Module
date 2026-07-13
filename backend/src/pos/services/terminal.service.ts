@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { DatabaseService } from 'src/database/database.service';
 import { PosDiscountsService } from './discounts.service';
 import { PosNotificationsService } from './pos-notifications.service';
@@ -16,6 +16,8 @@ export type CheckoutPayload = {
 
 @Injectable()
 export class PosTerminalService {
+  private readonly logger = new Logger(PosTerminalService.name);
+
   constructor(
     private readonly db: DatabaseService,
     private readonly discountsService: PosDiscountsService,
@@ -611,12 +613,20 @@ export class PosTerminalService {
       );
       const cashierName = cashierRow.rows[0]?.name ?? 'Cashier';
       const methodLabel = paymentMethod?.name ?? 'POS';
-      void this.notificationsService.notifySale(
-        orgId,
-        'New sale completed',
-        `${cashierName} completed a ${methodLabel} sale for ₱${grandTotal.toFixed(2)} (${paymentStatus})`,
-        saleIds[0] ?? 0,
-      );
+      const primarySaleId = saleIds[0] ?? 0;
+      if (primarySaleId > 0) {
+        const notifyResult = await this.notificationsService.notifySale(
+          orgId,
+          'New sale completed',
+          `${cashierName} completed a ${methodLabel} sale for ₱${grandTotal.toFixed(2)} (${paymentStatus})`,
+          primarySaleId,
+        );
+        if (!notifyResult.success) {
+          this.logger.warn(
+            `Sale notification failed for org ${orgId}, sale ${primarySaleId}: ${notifyResult.message ?? 'unknown error'}`,
+          );
+        }
+      }
 
       return {
         success: true,
