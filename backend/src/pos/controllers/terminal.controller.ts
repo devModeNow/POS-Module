@@ -1,5 +1,7 @@
-import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
+import { UpdateBusinessProfileDto } from 'src/settings/dto/update-business-profile.dto';
+import { SettingsService } from 'src/settings/settings.service';
 import { PosDiscountsService } from '../services/discounts.service';
 import { PosPaymentMethodsService } from '../services/payment-methods.service';
 import { PosTerminalService } from '../services/terminal.service';
@@ -15,6 +17,7 @@ export class PosTerminalController {
     private readonly terminalService: PosTerminalService,
     private readonly discountsService: PosDiscountsService,
     private readonly paymentMethodsService: PosPaymentMethodsService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   @Get('products')
@@ -68,5 +71,22 @@ export class PosTerminalController {
     @Req() req: AuthReq,
   ) {
     return this.terminalService.checkout(orgId(req), userId(req), body);
+  }
+
+  @Get('printer-settings')
+  getPrinterSettings(@Req() req: AuthReq) {
+    return this.settingsService.getBusinessProfile(orgId(req));
+  }
+
+  @Put('printer-settings')
+  updatePrinterSettings(@Body() dto: UpdateBusinessProfileDto, @Req() req: AuthReq) {
+    const allowed: UpdateBusinessProfileDto = {
+      posReceiptPaperWidth: dto.posReceiptPaperWidth,
+      posReceiptShowLogo: dto.posReceiptShowLogo,
+      posReceiptFooterText: dto.posReceiptFooterText,
+      posPrinterName: dto.posPrinterName,
+      posReceiptTemplateJson: dto.posReceiptTemplateJson,
+    };
+    return this.settingsService.updateBusinessProfile(allowed, orgId(req));
   }
 }

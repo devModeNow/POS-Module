@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from 'src/database/database.service';
 import { PosDiscountsService } from './discounts.service';
+import { PosNotificationsService } from './pos-notifications.service';
 import { PosPaymentMethodsService } from './payment-methods.service';
 
 export type CheckoutItem = { variantId: number; quantity: number; unitType?: string };
@@ -19,6 +20,7 @@ export class PosTerminalService {
     private readonly db: DatabaseService,
     private readonly discountsService: PosDiscountsService,
     private readonly paymentMethodsService: PosPaymentMethodsService,
+    private readonly notificationsService: PosNotificationsService,
   ) {}
 
   async listCategories(orgId: number) {
@@ -601,6 +603,20 @@ export class PosTerminalService {
           );
         }
       });
+
+      const cashierRow = await this.db.query<{ name: string }>(
+        `SELECT COALESCE(to_jsonb(u)->>'fullname', u.username) AS name
+         FROM tblusers u WHERE u.id = $1 LIMIT 1`,
+        [userId],
+      );
+      const cashierName = cashierRow.rows[0]?.name ?? 'Cashier';
+      const methodLabel = paymentMethod?.name ?? 'POS';
+      void this.notificationsService.notifySale(
+        orgId,
+        'New sale completed',
+        `${cashierName} completed a ${methodLabel} sale for ₱${grandTotal.toFixed(2)} (${paymentStatus})`,
+        saleIds[0] ?? 0,
+      );
 
       return {
         success: true,

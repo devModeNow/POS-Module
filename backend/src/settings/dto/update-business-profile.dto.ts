@@ -42,4 +42,6 @@ export class UpdateBusinessProfileDto {
   posReceiptPaperWidth?: string | null;
   posReceiptShowLogo?: string | null;
   posReceiptFooterText?: string | null;
+  posPrinterName?: string | null;
+  posReceiptTemplateJson?: string | null;
 }

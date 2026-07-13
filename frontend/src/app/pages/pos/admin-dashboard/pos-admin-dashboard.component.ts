@@ -50,6 +50,7 @@ const DEFAULT_WIDGETS: WidgetId[] = [
 ];
 
 const LAYOUT_KEY = 'pos-admin-dashboard-layout-v1';
+const SIZES_KEY = 'pos-admin-dashboard-sizes-v1';
 
 @Component({
   selector: 'app-pos-admin-dashboard',
@@ -59,6 +60,9 @@ const LAYOUT_KEY = 'pos-admin-dashboard-layout-v1';
   styles: `
     .widget-drag-handle { cursor: grab; }
     .widget-drag-handle:active { cursor: grabbing; }
+    .widget-resizable { resize: both; overflow: auto; min-width: 140px; min-height: 96px; }
+    .widget-resizable-chart { resize: both; overflow: hidden; min-width: 280px; min-height: 280px; }
+    .widget-resizable-list { resize: both; overflow: auto; min-width: 280px; min-height: 220px; }
     .cdk-drag-preview { box-sizing: border-box; opacity: 0.9; }
     .cdk-drag-placeholder { opacity: 0.35; }
     .cdk-drag-animating { transition: transform 200ms cubic-bezier(0, 0, 0.2, 1); }
@@ -71,11 +75,13 @@ export class PosAdminDashboardComponent implements OnInit {
   onDutyStaff: Array<{ userId: number; fullname: string; roleName: string | null; lastSeen: string }> = [];
   lowStock: Array<{ partName: string; category: string | null; stockQty: number; stockWarning: number; sellingPrice: number }> = [];
   widgetOrder: WidgetId[] = [...DEFAULT_WIDGETS];
+  widgetSizes: Partial<Record<WidgetId, { w: number; h: number }>> = {};
 
   detailModalOpen = false;
   detailKpiId: KpiWidgetId | null = null;
   detailLoading = false;
   detailTransactions: PosSaleTransaction[] = [];
+  updatingTransactionId: number | null = null;
 
   salesChartSeries: ApexAxisChartSeries = [];
   salesChartCategories: string[] = [];
@@ -129,6 +135,7 @@ export class PosAdminDashboardComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadLayout();
+    this.loadWidgetSizes();
     void this.refresh();
   }
 
@@ -196,6 +203,41 @@ export class PosAdminDashboardComponent implements OnInit {
 
   paymentStatusLabel(status: string): string {
     return status === 'floating' ? 'Floating' : 'Settled';
+  }
+
+  async updatePaymentStatus(row: PosSaleTransaction, status: 'settled' | 'floating'): Promise<void> {
+    if (row.paymentStatus === status) return;
+    this.updatingTransactionId = row.id;
+    try {
+      const r = await this.pos.updateTransactionPaymentStatus(row.id, status);
+      if (r?.success) {
+        row.paymentStatus = status;
+        await this.refresh();
+        if (this.detailModalOpen && this.isTransactionKpi) {
+          const { from, to } = this.periodRange();
+          let paymentStatus: string | undefined;
+          if (this.detailKpiId === 'kpi-settled') paymentStatus = 'settled';
+          if (this.detailKpiId === 'kpi-floating') paymentStatus = 'floating';
+          const tx = await this.pos.getSaleTransactions(from, to, paymentStatus, 100, 0);
+          this.detailTransactions = tx.success ? (tx.data ?? []) : [];
+        }
+      }
+    } finally {
+      this.updatingTransactionId = null;
+    }
+  }
+
+  widgetStyle(id: WidgetId): Record<string, string> {
+    const size = this.widgetSizes[id];
+    if (!size) return {};
+    return { width: `${size.w}px`, height: `${size.h}px` };
+  }
+
+  onWidgetSized(id: WidgetId, event: Event): void {
+    const el = event.currentTarget as HTMLElement;
+    if (!el?.offsetWidth) return;
+    this.widgetSizes[id] = { w: el.offsetWidth, h: el.offsetHeight };
+    this.saveWidgetSizes();
   }
 
   settledAmount(): number {
@@ -364,5 +406,17 @@ export class PosAdminDashboardComponent implements OnInit {
 
   private saveLayout(): void {
     localStorage.setItem(LAYOUT_KEY, JSON.stringify(this.widgetOrder));
+  }
+
+  private loadWidgetSizes(): void {
+    try {
+      const raw = localStorage.getItem(SIZES_KEY);
+      if (!raw) return;
+      this.widgetSizes = JSON.parse(raw) as Partial<Record<WidgetId, { w: number; h: number }>>;
+    } catch { /* ignore */ }
+  }
+
+  private saveWidgetSizes(): void {
+    localStorage.setItem(SIZES_KEY, JSON.stringify(this.widgetSizes));
   }
 }

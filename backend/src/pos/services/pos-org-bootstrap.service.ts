@@ -12,6 +12,7 @@ export class PosOrgBootstrapService implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     await this.ensurePosUserManagement();
     await this.ensureContinuation30();
+    await this.ensureContinuation31();
   }
 
   private async ensurePosUserManagement(): Promise<void> {
@@ -97,6 +98,33 @@ export class PosOrgBootstrapService implements OnModuleInit {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.warn(`POS continuation 3.0 bootstrap skipped: ${message}`);
+    }
+  }
+
+  private async ensureContinuation31(): Promise<void> {
+    try {
+      await this.db.query(`
+        INSERT INTO public.tblorg_menus (org_id, menu_key, menu_label, menu_order)
+        SELECT o.id, 'dashboard', 'Dashboard', 0
+        FROM public.tblorganizations o
+        WHERE o.code IN ('point-of-sales', 'pos')
+        ON CONFLICT (org_id, menu_key) DO NOTHING
+      `);
+
+      await this.db.query(`
+        UPDATE public.tblrbac r
+        SET "roleMenus" = CASE
+          WHEN LOWER(COALESCE(r."roleName", '')) NOT LIKE '%cashier%'
+            AND r.org_id IN (SELECT id FROM public.tblorganizations WHERE code IN ('point-of-sales', 'pos'))
+            AND COALESCE(to_jsonb(r)->>'roleMenus', '') NOT ILIKE '%dashboard%'
+          THEN 'dashboard,' || COALESCE(to_jsonb(r)->>'roleMenus', '')
+          ELSE COALESCE(to_jsonb(r)->>'roleMenus', '')
+        END
+        WHERE r.org_id IN (SELECT id FROM public.tblorganizations WHERE code IN ('point-of-sales', 'pos'))
+      `);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`POS continuation 3.1 bootstrap skipped: ${message}`);
     }
   }
 }

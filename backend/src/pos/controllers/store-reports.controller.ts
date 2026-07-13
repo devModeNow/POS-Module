@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Query, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { PosStoreReportsService } from '../services/store-reports.service';
 
@@ -43,5 +43,39 @@ export class PosStoreReportsController {
   @Get('low-stock')
   lowStock(@Req() req: AuthReq) {
     return this.reportsService.lowStock(orgId(req));
+  }
+
+  @Get('transactions')
+  transactions(
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Query('paymentStatus') paymentStatus: string,
+    @Query('limit') limit: string,
+    @Query('offset') offset: string,
+    @Req() req: AuthReq,
+  ) {
+    return this.reportsService.listTransactions(
+      orgId(req),
+      from,
+      to,
+      paymentStatus,
+      Math.min(Math.max(Number(limit) || 50, 1), 200),
+      Math.max(Number(offset) || 0, 0),
+    );
+  }
+
+  @Patch('transactions/:id/payment-status')
+  updatePaymentStatus(
+    @Param('id') id: string,
+    @Body() body: { paymentStatus?: string },
+    @Req() req: AuthReq,
+  ) {
+    const status = body?.paymentStatus === 'floating' ? 'floating' : 'settled';
+    return this.reportsService.updatePaymentStatus(orgId(req), Number(id), status);
+  }
+
+  @Get('transactions/:id')
+  transactionDetail(@Param('id') id: string, @Req() req: AuthReq) {
+    return this.reportsService.getTransactionDetail(orgId(req), Number(id));
   }
 }

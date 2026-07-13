@@ -4,7 +4,7 @@
   <div class="flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
     <div>
       <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Store Overview</h2>
-      <p class="mt-1 text-xs text-gray-400">Drag cards to rearrange your dashboard layout</p>
+      <p class="mt-1 text-xs text-gray-400">Drag cards to rearrange · drag corner to resize</p>
     </div>
     <div class="flex flex-wrap items-center gap-2">
       <select [(ngModel)]="period" (ngModelChange)="onPeriodChange()"
@@ -23,7 +23,7 @@
   <!-- KPI Cards -->
   <div cdkDropList cdkDropListOrientation="mixed" class="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-7" (cdkDropListDropped)="onKpiDrop($event)">
     @for (id of kpiWidgets; track id) {
-      <div cdkDrag class="rounded-lg border p-4 transition-shadow hover:shadow-md" [ngClass]="kpiColor(id)">
+      <div cdkDrag class="rounded-lg border p-4 transition-shadow hover:shadow-md widget-resizable" [ngClass]="kpiColor(id)" [ngStyle]="widgetStyle(id)" (mouseup)="onWidgetSized(id, $event)">
         <button type="button" class="w-full text-left" (click)="openKpiDetail(id)">
           <div class="mb-2 flex items-center justify-between gap-1">
             <p class="text-xs font-semibold uppercase tracking-wide opacity-80">{{ widgetMeta[id].label }}</p>
@@ -41,7 +41,7 @@
   <!-- Charts -->
   <div cdkDropList cdkDropListOrientation="mixed" class="grid grid-cols-1 gap-6 xl:grid-cols-2" (cdkDropListDropped)="onChartDrop($event)">
     @for (id of chartWidgets; track id) {
-      <div cdkDrag class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+      <div cdkDrag class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900 widget-resizable-chart" [ngStyle]="widgetStyle(id)" (mouseup)="onWidgetSized(id, $event)">
         <div class="mb-3 flex items-center justify-between gap-2">
           <h4 class="text-sm font-semibold text-gray-800 dark:text-white">{{ widgetMeta[id].label }}</h4>
           <div class="flex items-center gap-2">
@@ -102,7 +102,7 @@
   <!-- Lists -->
   <div cdkDropList cdkDropListOrientation="mixed" class="grid grid-cols-1 gap-6 xl:grid-cols-2" (cdkDropListDropped)="onListDrop($event)">
     @for (id of listWidgets; track id) {
-      <div cdkDrag class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900">
+      <div cdkDrag class="rounded-xl border border-gray-200 bg-white p-4 dark:border-gray-800 dark:bg-gray-900 widget-resizable-list" [ngStyle]="widgetStyle(id)" (mouseup)="onWidgetSized(id, $event)">
         <div class="mb-3 flex items-center justify-between">
           <h4 class="text-sm font-semibold text-gray-800 dark:text-white">{{ widgetMeta[id].label }}</h4>
           <span cdkDragHandle class="widget-drag-handle text-gray-400" title="Drag to reorder">
@@ -318,6 +318,7 @@
                     <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">Paid</th>
                     <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">Change</th>
                     <th class="px-4 py-2 text-left text-xs font-medium text-gray-500">Status</th>
+                    <th class="px-4 py-2 text-right text-xs font-medium text-gray-500">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -339,9 +340,22 @@
                           {{ paymentStatusLabel(row.paymentStatus) }}
                         </span>
                       </td>
+                      <td class="px-4 py-2.5 text-right">
+                        @if (row.paymentStatus === 'floating') {
+                          <button type="button" (click)="updatePaymentStatus(row, 'settled')" [disabled]="updatingTransactionId === row.id"
+                            class="rounded-md bg-emerald-500 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-600 disabled:opacity-50">
+                            {{ updatingTransactionId === row.id ? '…' : 'Settle' }}
+                          </button>
+                        } @else {
+                          <button type="button" (click)="updatePaymentStatus(row, 'floating')" [disabled]="updatingTransactionId === row.id"
+                            class="rounded-md border border-amber-300 px-2 py-1 text-xs font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-50">
+                            {{ updatingTransactionId === row.id ? '…' : 'Float' }}
+                          </button>
+                        }
+                      </td>
                     </tr>
                   } @empty {
-                    <tr><td colspan="8" class="px-4 py-10 text-center text-gray-500">No transactions found for this period.</td></tr>
+                    <tr><td colspan="9" class="px-4 py-10 text-center text-gray-500">No transactions found for this period.</td></tr>
                   }
                 </tbody>
               </table>

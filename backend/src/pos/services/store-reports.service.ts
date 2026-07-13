@@ -32,6 +32,271 @@ export class PosStoreReportsService {
     return clause;
   }
 
+  async listTransactions(
+    orgId: number,
+    from?: string,
+    to?: string,
+    paymentStatus?: string,
+    limit = 50,
+    offset = 0,
+  ) {
+    try {
+      const params: unknown[] = [orgId];
+      let dateClause = this.dateClause(params, from, to);
+      let statusClause = '';
+      if (paymentStatus === 'settled' || paymentStatus === 'floating') {
+        params.push(paymentStatus);
+        statusClause = ` AND st.payment_status = $${params.length}`;
+      }
+      params.push(limit, offset);
+
+      const result = await this.db.query<{
+        id: number;
+        saleDate: string;
+        totalAmount: string;
+        amountPaid: string | null;
+        changeAmount: string | null;
+        paymentStatus: string;
+        paymentMethod: string;
+        cashier: string;
+        createdAt: string;
+        itemCount: string;
+      }>(
+        `SELECT st.id,
+                st.sale_date::text AS "saleDate",
+                (
+                  SELECT COALESCE(SUM(s2.total_amount), 0)
+                  FROM tblsales_transactions s2
+                  WHERE s2.org_id = st.org_id
+                    AND s2.created_by = st.created_by
+                    AND s2.sale_date = st.sale_date
+                    AND s2.created_at >= st.created_at - interval '10 seconds'
+                    AND s2.created_at <= st.created_at + interval '10 seconds'
+                    AND COALESCE(s2.is_voided, FALSE) = FALSE
+                )::text AS "totalAmount",
+                st.amount_paid::text AS "amountPaid",
+                st.change_amount::text AS "changeAmount",
+                COALESCE(st.payment_status, 'settled') AS "paymentStatus",
+                COALESCE(pm.name, 'Unknown') AS "paymentMethod",
+                COALESCE(to_jsonb(u)->>'fullname', u.username, 'Unknown') AS cashier,
+                st.created_at AS "createdAt",
+                (
+                  SELECT COUNT(*)::text
+                  FROM tblsales_transactions s2
+                  WHERE s2.org_id = st.org_id
+                    AND s2.created_by = st.created_by
+                    AND s2.sale_date = st.sale_date
+                    AND s2.created_at >= st.created_at - interval '10 seconds'
+                    AND s2.created_at <= st.created_at + interval '10 seconds'
+                    AND COALESCE(s2.is_voided, FALSE) = FALSE
+                ) AS "itemCount"
+         FROM tblsales_transactions st
+         LEFT JOIN tblpayment_methods pm ON pm.id = st.payment_method_id
+         LEFT JOIN tblusers u ON u.id = st.created_by
+         WHERE st.org_id = $1
+           AND st.amount_paid IS NOT NULL
+           AND COALESCE(st.is_voided, FALSE) = FALSE
+           ${dateClause} ${statusClause}
+         ORDER BY st.created_at DESC
+         LIMIT $${params.length - 1} OFFSET $${params.length}`,
+        params,
+      );
+
+      return {
+        success: true,
+        data: result.rows.map((row) => ({
+          id: row.id,
+          saleDate: row.saleDate,
+          totalAmount: Number(row.totalAmount),
+          amountPaid: row.amountPaid != null ? Number(row.amountPaid) : null,
+          changeAmount: row.changeAmount != null ? Number(row.changeAmount) : null,
+          paymentStatus: row.paymentStatus,
+          paymentMethod: row.paymentMethod,
+          cashier: row.cashier,
+          createdAt: row.createdAt,
+          itemCount: Number(row.itemCount),
+        })),
+      };
+    } catch (e) {
+      return {
+        success: false,
+        message: e instanceof Error ? e.message : 'Failed to load transactions',
+      };
+    }
+  }
+
+  async updatePaymentStatus(
+    orgId: number,
+    transactionId: number,
+    paymentStatus: 'settled' | 'floating',
+  ) {
+    if (paymentStatus !== 'settled' && paymentStatus !== 'floating') {
+      return { success: false, message: 'Invalid payment status' };
+    }
+    try {
+      const header = await this.db.query<{
+        createdBy: number | null;
+        saleDate: string;
+        paymentMethodId: number | null;
+        amountPaid: string | null;
+        createdAt: string;
+      }>(
+        `SELECT created_by AS "createdBy",
+                sale_date::text AS "saleDate",
+                payment_method_id AS "paymentMethodId",
+                amount_paid::text AS "amountPaid",
+                created_at AS "createdAt"
+         FROM tblsales_transactions
+         WHERE id = $1 AND org_id = $2`,
+        [transactionId, orgId],
+      );
+      const row = header.rows[0];
+      if (!row) {
+        return { success: false, message: 'Transaction not found' };
+      }
+
+      await this.db.query(
+        `UPDATE tblsales_transactions
+         SET payment_status = $1
+         WHERE org_id = $2
+           AND created_by IS NOT DISTINCT FROM $3
+           AND sale_date = $4::date
+           AND payment_method_id IS NOT DISTINCT FROM $5
+           AND amount_paid IS NOT DISTINCT FROM $6
+           AND created_at >= $7::timestamptz - interval '10 seconds'
+           AND created_at <= $7::timestamptz + interval '10 seconds'`,
+        [
+          paymentStatus,
+          orgId,
+          row.createdBy,
+          row.saleDate,
+          row.paymentMethodId,
+          row.amountPaid,
+          row.createdAt,
+        ],
+      );
+
+      return { success: true, message: `Payment status updated to ${paymentStatus}` };
+    } catch (e) {
+      return {
+        success: false,
+        message: e instanceof Error ? e.message : 'Failed to update payment status',
+      };
+    }
+  }
+
+  async getTransactionDetail(orgId: number, transactionId: number) {
+    try {
+      await this.ensureSalesVoidSchema();
+      const header = await this.db.query<{
+        id: number;
+        saleDate: string;
+        createdAt: string;
+        createdBy: number | null;
+        paymentMethodId: number | null;
+        amountPaid: string | null;
+        changeAmount: string | null;
+        paymentStatus: string;
+        discountAmount: string | null;
+      }>(
+        `SELECT id,
+                sale_date::text AS "saleDate",
+                created_at AS "createdAt",
+                created_by AS "createdBy",
+                payment_method_id AS "paymentMethodId",
+                amount_paid::text AS "amountPaid",
+                change_amount::text AS "changeAmount",
+                COALESCE(payment_status, 'settled') AS "paymentStatus",
+                discount_amount::text AS "discountAmount"
+         FROM tblsales_transactions
+         WHERE id = $1 AND org_id = $2`,
+        [transactionId, orgId],
+      );
+      const h = header.rows[0];
+      if (!h) return { success: false, message: 'Transaction not found' };
+
+      const lines = await this.db.query<{
+        id: number;
+        variantId: number;
+        productName: string;
+        variantName: string;
+        quantitySold: string;
+        unitType: string;
+        unitPrice: string;
+        totalAmount: string;
+      }>(
+        `SELECT st.id,
+                st.variant_id AS "variantId",
+                COALESCE(p.name, 'Product') AS "productName",
+                COALESCE(v.variant_name, 'Variant') AS "variantName",
+                st.quantity_sold::text AS "quantitySold",
+                COALESCE(st.unit_type, 'piece') AS "unitType",
+                st.unit_price::text AS "unitPrice",
+                st.total_amount::text AS "totalAmount"
+         FROM tblsales_transactions st
+         LEFT JOIN tblinventory_variants v ON v.id = st.variant_id
+         LEFT JOIN tblinventory_products p ON p.id = v.product_id
+         WHERE st.org_id = $1
+           AND st.created_by IS NOT DISTINCT FROM $2
+           AND st.sale_date = $3::date
+           AND st.payment_method_id IS NOT DISTINCT FROM $4
+           AND st.amount_paid IS NOT DISTINCT FROM $5
+           AND st.created_at >= $6::timestamptz - interval '10 seconds'
+           AND st.created_at <= $6::timestamptz + interval '10 seconds'
+           AND COALESCE(st.is_voided, FALSE) = FALSE
+         ORDER BY st.id ASC`,
+        [orgId, h.createdBy, h.saleDate, h.paymentMethodId, h.amountPaid, h.createdAt],
+      );
+
+      const meta = await this.db.query<{
+        cashier: string;
+        paymentMethod: string;
+      }>(
+        `SELECT COALESCE(u.fullname, u.username, 'Unknown') AS cashier,
+                COALESCE(pm.name, 'Unknown') AS "paymentMethod"
+         FROM tblsales_transactions st
+         LEFT JOIN tblusers u ON u.id = st.created_by
+         LEFT JOIN tblpayment_methods pm ON pm.id = st.payment_method_id
+         WHERE st.id = $1`,
+        [transactionId],
+      );
+
+      const totalAmount = lines.rows.reduce((sum, row) => sum + Number(row.totalAmount), 0);
+
+      return {
+        success: true,
+        data: {
+          id: h.id,
+          saleDate: h.saleDate,
+          createdAt: h.createdAt,
+          cashier: meta.rows[0]?.cashier ?? 'Unknown',
+          paymentMethod: meta.rows[0]?.paymentMethod ?? 'Unknown',
+          paymentStatus: h.paymentStatus,
+          amountPaid: h.amountPaid != null ? Number(h.amountPaid) : null,
+          changeAmount: h.changeAmount != null ? Number(h.changeAmount) : null,
+          discountAmount: h.discountAmount != null ? Number(h.discountAmount) : 0,
+          totalAmount,
+          itemCount: lines.rows.length,
+          items: lines.rows.map((row) => ({
+            id: row.id,
+            variantId: row.variantId,
+            productName: row.productName,
+            variantName: row.variantName,
+            quantitySold: Number(row.quantitySold),
+            unitType: row.unitType,
+            unitPrice: Number(row.unitPrice),
+            totalAmount: Number(row.totalAmount),
+          })),
+        },
+      };
+    } catch (e) {
+      return {
+        success: false,
+        message: e instanceof Error ? e.message : 'Failed to load transaction detail',
+      };
+    }
+  }
+
   async dashboard(orgId: number, from?: string, to?: string, paymentStatus?: string) {
     try {
       const params: unknown[] = [orgId];

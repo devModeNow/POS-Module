@@ -66,6 +66,7 @@ export class AppSidebarComponent {
 
   navItems: NavItem[] = [];
   othersItems: NavItem[] = [];
+  readonly isPosOrg: boolean;
 
   openSubmenu: string | null | number = null;
   subMenuHeights: { [key: string]: number } = {};
@@ -88,6 +89,7 @@ export class AppSidebarComponent {
     this.isExpanded$ = this.sidebarService.isExpanded$;
     this.isMobileOpen$ = this.sidebarService.isMobileOpen$;
     this.isHovered$ = this.sidebarService.isHovered$;
+    this.isPosOrg = rbacService.isPosOrg();
   }
 
   ngOnInit() {

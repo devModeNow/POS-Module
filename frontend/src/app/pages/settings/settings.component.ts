@@ -20,6 +20,7 @@ import { OrgService } from '../../shared/services/org.service';
 import { PosService } from '../../shared/services/pos.service';
 import { UserManagementComponent } from '../user-management/user-management.component';
 import { PosAuditTrailComponent } from '../pos/audit-trail/pos-audit-trail.component';
+import { PosPrinterSettingsPanelComponent } from '../../shared/components/pos/pos-printer-settings-panel/pos-printer-settings-panel.component';
 import type { BackupMetadata, BackupType, BackupFormat } from '../../shared/interfaces/backup.interfaces';
 import axios from 'axios';
 import { shouldPoll, extractFilename, formatBackupDate, formatFileSize, getStatusBadgeClasses, getStatusAriaLabel } from '../../shared/utils/backup-utils';
@@ -36,7 +37,7 @@ interface SettingsPermissionOption {
 @Component({
   selector: 'app-settings',
   standalone: true,
-  imports: [CommonModule, FormsModule, PageBreadcrumbComponent, ConfirmDialogComponent, UserManagementComponent, PosAuditTrailComponent],
+  imports: [CommonModule, FormsModule, PageBreadcrumbComponent, ConfirmDialogComponent, UserManagementComponent, PosAuditTrailComponent, PosPrinterSettingsPanelComponent],
   templateUrl: './settings.component.html',
   styles: ``,
 })

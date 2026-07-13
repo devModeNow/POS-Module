@@ -131,4 +131,41 @@
    - In all table with filter and selector function, don't make the whole page loads because currently when you click like the variants/ product selector the selector itself is disappearing which is not correct.
    - in all dashboard remove the popup confirmations like the popup when adding a product in cart.
    - Make sure to fix all errors and bugs you encounter while working on this task.
+   //Continuation 3.1
+   - In posadmin dashbaord, create a interactive dashboard where it show all data, like sales, reports, active users, daily sales, etc... all you can think of that is necessary to show on a main dashboard. Use graphs and colored cards and make it draggable position. Make this dashboard as the main after login.
+   - In posadmin dashboard, make the Audit Trail and User Management under Settings, do not show in the main side bar.
+   - In both posadmin and poscashier dashboard, replace the POS Admin and POS Cashier texts into name of logged-in user and under it show their role which is Admin or Cashier. Under it show the company name/Business name that is entered on the settings.
+   - Make the attached logo in the settings to be shown on login and in sidebar.
+   - In the Print settings, add a preview so that I can preview how it looks before saving.
+   - In Void Codes, add a show code icon like in the password so that I can see what code is entered.
+   - In the settings->system, make sure all fields, image picker are working so that all the data that will be inserting is saving.
+   - In the settings->system, make the image picker moder, remove the choose file button and make the image container as the picker itself just like the image picker in the Edit Profile page.
+   - In the main header, show the name beside the profile pic because currently its showing the position.
+   - In posadmin->reports, add actions to it like being able to change payment status from float to other status or to settled something like that so its not only for viewing reports but also to navigate and change some data.
+   - In the POS dashboard, add a button which the cashier can pick to use its own device keyboard or the POS keyboard which you will need to create. If device keyboard is picked, it will use its own keyboard, but if POS keyboard was picked it will use our POS keyboard.
+   - Make sure to fix all errors and bugs you encounter while working on this task.
+   - Make sure to check all taskss under this continuation before setting it to done because in the past there are tasks that has not been done so be sure to check if its all done properly and without errors and bugs.   
+   //Continuation 3.2
+   - Add a printer settings for both posadmin and cashier dashboard, the settings will have the feature to setup the printer, can pick a printer, can choose a size and also can be able to do a preview, also can be able to custom edit the contents and save its format, I want it modifiable like I can add an image, text and position it where I want within the printing area.
+   - Fix the pos keyboard because currently the keyboard is below the modal popups.
+   - In the posadmin main dashboard, when the cards are clicked, add actions to its popup like I can change status of sales etc...
+   - Add both posadmin and cashier dashboarda chat feature, a small window in bottom right is fine, it is for the admin and cashier can be able to communicate while using this system. Add a feature to hide it when the user doesn't want to use it.
+   - Add a notification bell for both dashboard, for admin dashboard, notify when someone is made a sale or there is a new message. For Cashier dashboard notify when there is new message.
+   - in the posadmin dasboard header, remove the textbox saying "Search or type command..."
+   - Remove "Account Settings" under "Edit profile" in the posadmin dashboard header dropdown.
+   - In posadmin main dashboard, make the cards resizable also same as the charts.
+   - In posadmin dashboard, in the sidebar in the bottom remove the text showing the "Admin (name)" also the words POS and POS.
+   - In the login page, the logo I saved from the posadmin settings is not showing, its showing a different logo. Fix it, make sure to show the logo I used/saved from the posadmin settings.
+   - Make sure to fix all errors and bugs you encounter while working on this task.
+   - Make sure to check all taskss under this continuation before setting it to done because in the past there are tasks that has not been done so be sure to check if its all done properly and without errors and bugs.
+   //Continuation 3.3
+   -Fix the print settings, when I am removing an element and adding it again it is showing below the existing elements meaning the drag positioning is not accurate or not working properly.
+   -In POS dashboard, the keboard is overlapping the textbox, fix this one make the pos keyboard more compact in size and when its activated make sure to make the popups with textbox or inputs to make it scrollable so that it can still show the input fields.
+   - In chat feature, add feature where in they can have choice to do a team chat or a private chat to user.
+   - In notifications, when the notification is new message, make it clickable, once clicked open the chat.
+   - In notifications, when its new sales or else, make sure its clickable and once clicked it will open the approriate page of dashboard like for example when there's a new sale, once clicked it will redirect to a page where in it will show the detailed information about that sale, including product, total amount, money received, amount money change if there is any, Cashiers name and etc...
+   - In POS dashboard, make sure to make it automatically full screen so that it will not show the url bar and it will look more clean.
+   - Make sure to fix all errors and bugs you encounter while working on this task.
+   - Make sure to check all taskss under this continuation before setting it to done because in the past there are tasks that has not been done so be sure to check if its all done properly and without errors and bugs.
+
 

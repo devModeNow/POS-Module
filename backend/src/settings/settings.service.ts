@@ -41,6 +41,8 @@ type OrgSettingsRow = {
   posReceiptPaperWidth: string | null;
   posReceiptShowLogo: string | null;
   posReceiptFooterText: string | null;
+  posPrinterName: string | null;
+  posReceiptTemplateJson: string | null;
 };
 
 const EMPTY_SETTINGS: OrgSettingsRow = {
@@ -59,6 +61,7 @@ const EMPTY_SETTINGS: OrgSettingsRow = {
   printSignaturePreparedBy: null, printSignatureCheckedBy: null,
   printSignatureApprovedBy: null,
   posReceiptPaperWidth: null, posReceiptShowLogo: null, posReceiptFooterText: null,
+  posPrinterName: null, posReceiptTemplateJson: null,
 };
 
 @Injectable()
@@ -71,6 +74,23 @@ export class SettingsService {
   // ---------------------------------------------------------------------------
   private async resolveOrgId(orgId?: number | null): Promise<number | null> {
     if (orgId && orgId > 0) return orgId;
+    const posOrg = await this.db.query<{ id: number }>(
+      `SELECT id FROM tblorganizations
+       WHERE is_active = true AND code IN ('point-of-sales', 'pos')
+       ORDER BY id ASC LIMIT 1`,
+    );
+    if (posOrg.rows[0]?.id) return posOrg.rows[0].id;
+
+    const withLogo = await this.db.query<{ id: number }>(
+      `SELECT o.id
+       FROM tblorganizations o
+       INNER JOIN tblorg_settings s ON s.org_id = o.id
+       WHERE o.is_active = true
+         AND (NULLIF(TRIM(s.logo_light), '') IS NOT NULL OR NULLIF(TRIM(s.logo_dark), '') IS NOT NULL)
+       ORDER BY o.id ASC LIMIT 1`,
+    );
+    if (withLogo.rows[0]?.id) return withLogo.rows[0].id;
+
     const result = await this.db.query<{ id: number }>(
       `SELECT id FROM tblorganizations WHERE is_active = true ORDER BY id ASC LIMIT 1`,
     );
@@ -86,7 +106,9 @@ export class SettingsService {
         ADD COLUMN IF NOT EXISTS business_description TEXT,
         ADD COLUMN IF NOT EXISTS pos_receipt_paper_width TEXT DEFAULT '80mm',
         ADD COLUMN IF NOT EXISTS pos_receipt_show_logo BOOLEAN DEFAULT TRUE,
-        ADD COLUMN IF NOT EXISTS pos_receipt_footer_text TEXT
+        ADD COLUMN IF NOT EXISTS pos_receipt_footer_text TEXT,
+        ADD COLUMN IF NOT EXISTS pos_printer_name TEXT,
+        ADD COLUMN IF NOT EXISTS pos_receipt_template_json TEXT
     `);
     this.schemaReady = true;
   }
@@ -147,7 +169,9 @@ export class SettingsService {
            s.print_signature_approved_by    AS "printSignatureApprovedBy",
            s.pos_receipt_paper_width        AS "posReceiptPaperWidth",
            s.pos_receipt_show_logo          AS "posReceiptShowLogo",
-           s.pos_receipt_footer_text        AS "posReceiptFooterText"
+           s.pos_receipt_footer_text        AS "posReceiptFooterText",
+           s.pos_printer_name               AS "posPrinterName",
+           s.pos_receipt_template_json      AS "posReceiptTemplateJson"
          FROM tblorg_settings s
          WHERE s.org_id = $1
          LIMIT 1`,
@@ -212,6 +236,8 @@ export class SettingsService {
         printSignatureApprovedBy: 'print_signature_approved_by',
         posReceiptPaperWidth:     'pos_receipt_paper_width',
         posReceiptFooterText:     'pos_receipt_footer_text',
+        posPrinterName:           'pos_printer_name',
+        posReceiptTemplateJson:   'pos_receipt_template_json',
       };
 
       const sets: string[] = [];

@@ -2,6 +2,8 @@ import { CommonModule } from '@angular/common';
 import { Component, Input, OnInit } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
 import { ConfirmDialogComponent } from '../../../shared/components/ui/confirm-dialog/confirm-dialog.component';
+import { PosNotificationsBellComponent } from '../../../shared/components/pos/pos-notifications-bell/pos-notifications-bell.component';
+import { PosPrinterSettingsPanelComponent } from '../../../shared/components/pos/pos-printer-settings-panel/pos-printer-settings-panel.component';
 import { AuthService } from '../../../shared/services/auth.service';
 import { BusinessSettingsService } from '../../../shared/services/business-settings.service';
 import { OrgService } from '../../../shared/services/org.service';
@@ -10,8 +12,9 @@ import { RbacService } from '../../../shared/services/rbac.service';
 @Component({
   selector: 'app-pos-page-header',
   standalone: true,
-  imports: [CommonModule, RouterLink, ConfirmDialogComponent],
+  imports: [CommonModule, RouterLink, ConfirmDialogComponent, PosNotificationsBellComponent, PosPrinterSettingsPanelComponent],
   templateUrl: './pos-page-header.component.html',
+  styles: `:host { display: block; flex-shrink: 0; position: relative; z-index: 100; }`,
 })
 export class PosPageHeaderComponent implements OnInit {
   /** Override the main title; defaults to the signed-in cashier name. */
@@ -23,7 +26,9 @@ export class PosPageHeaderComponent implements OnInit {
   cashierName = '';
   companyName = '';
   confirmOpen = false;
+  printerModalOpen = false;
   readonly isCashierMode: boolean;
+  readonly isPosOrg: boolean;
 
   constructor(
     private readonly rbac: RbacService,
@@ -33,6 +38,7 @@ export class PosPageHeaderComponent implements OnInit {
     private readonly router: Router,
   ) {
     this.isCashierMode = rbac.isCashier();
+    this.isPosOrg = rbac.isPosOrg();
   }
 
   get displayTitle(): string {
@@ -95,5 +101,13 @@ export class PosPageHeaderComponent implements OnInit {
 
   cancelLogout(): void {
     this.confirmOpen = false;
+  }
+
+  openPrinterSettings(): void {
+    this.printerModalOpen = true;
+  }
+
+  closePrinterSettings(): void {
+    this.printerModalOpen = false;
   }
 }

@@ -225,53 +225,15 @@
       </div>
 
       <div *ngIf="isPosOrg" class="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
-        <h4 class="mb-3 text-sm font-semibold text-gray-800 dark:text-gray-100">POS receipt</h4>
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <label class="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Receipt width</label>
-            <select [(ngModel)]="printForm.posReceiptPaperWidth" class="w-full rounded-lg border px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white">
-              <option value="58mm">58mm</option>
-              <option value="80mm">80mm</option>
-            </select>
-          </div>
-          <label class="flex items-end gap-2 pb-2 text-sm"><input type="checkbox" [(ngModel)]="printForm.posReceiptShowLogo" /> Show logo on receipt</label>
-          <div class="md:col-span-2">
-            <label class="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Receipt footer</label>
-            <input [(ngModel)]="printForm.posReceiptFooterText" class="w-full rounded-lg border px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white" placeholder="Thank you for your purchase!" />
-          </div>
-        </div>
+        <h4 class="mb-3 text-sm font-semibold text-gray-800 dark:text-gray-100">POS printer & receipt template</h4>
+        <app-pos-printer-settings-panel [embedded]="true" />
       </div>
 
-      <div class="flex justify-end">
+      <div *ngIf="!isPosOrg" class="flex justify-end">
         <button type="button" (click)="savePrintSettings()" [disabled]="!canUpdateSettings || isSavingPrint"
           class="rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50">
           {{ isSavingPrint ? 'Saving...' : 'Save Print Settings' }}
         </button>
-      </div>
-
-      <div *ngIf="isPosOrg" class="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
-        <h4 class="mb-3 text-sm font-semibold text-gray-800 dark:text-gray-100">Receipt Preview</h4>
-        <div class="flex justify-center bg-gray-100 p-6 dark:bg-gray-950">
-          <div class="w-full rounded border border-gray-300 bg-white p-4 font-mono text-xs text-gray-800 shadow-sm dark:border-gray-700 dark:bg-white" [ngClass]="receiptPreviewWidthClass">
-            <div class="text-center">
-              <img *ngIf="receiptPreviewLogo" [src]="receiptPreviewLogo" alt="Receipt logo" class="mx-auto mb-2 max-h-12 object-contain" />
-              <p class="font-semibold">{{ form.businessName || 'Your Business Name' }}</p>
-              <p *ngIf="form.businessAddress" class="mt-1 whitespace-pre-line text-[10px]">{{ form.businessAddress }}</p>
-            </div>
-            <div class="my-3 border-t border-dashed border-gray-400"></div>
-            <div class="space-y-1">
-              <div class="flex justify-between"><span>Sample Item x1</span><span>₱100.00</span></div>
-              <div class="flex justify-between"><span>Sample Item x2</span><span>₱200.00</span></div>
-            </div>
-            <div class="my-3 border-t border-dashed border-gray-400"></div>
-            <div class="flex justify-between font-semibold"><span>Total</span><span>₱300.00</span></div>
-            <div class="flex justify-between"><span>Amount Paid</span><span>₱500.00</span></div>
-            <div class="flex justify-between"><span>Change</span><span>₱200.00</span></div>
-            <p *ngIf="printForm.posReceiptFooterText" class="mt-4 text-center text-[10px]">{{ printForm.posReceiptFooterText }}</p>
-            <p *ngIf="printForm.footerText && !printForm.posReceiptFooterText" class="mt-4 text-center text-[10px]">{{ printForm.footerText }}</p>
-            <p class="mt-2 text-center text-[10px] text-gray-500">{{ printForm.posReceiptPaperWidth }} · Preview only</p>
-          </div>
-        </div>
       </div>
     </div>
 

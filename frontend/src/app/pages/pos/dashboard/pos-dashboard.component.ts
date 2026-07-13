@@ -18,6 +18,7 @@ import { RbacService } from '../../../shared/services/rbac.service';
 import { ActionBusyService } from '../../../shared/services/action-busy.service';
 import { GlobalActionLoaderComponent } from '../../../shared/components/common/global-action-loader/global-action-loader.component';
 import { PosOnscreenKeyboardComponent } from '../../../shared/components/pos/pos-onscreen-keyboard/pos-onscreen-keyboard.component';
+import { PosKeyboardService } from '../../../shared/services/pos-keyboard.service';
 import { PosPageHeaderComponent } from '../shared/pos-page-header.component';
 
 type KeyboardInputTarget = 'search' | 'amount' | 'variantSearch' | null;
@@ -98,8 +99,13 @@ export class PosDashboardComponent implements OnInit {
     private readonly notify: NotificationService,
     private readonly rbac: RbacService,
     private readonly actionBusy: ActionBusyService,
+    private readonly keyboardSvc: PosKeyboardService,
   ) {
     this.isCashierMode = this.rbac.isCashier();
+  }
+
+  get keyboardBottomPad(): number {
+    return this.keyboardVisible && this.useOnscreenKeyboard ? this.keyboardSvc.heightPx : 0;
   }
 
   get useCategoryDropdown(): boolean {
@@ -186,7 +192,8 @@ export class PosDashboardComponent implements OnInit {
       cartKey: line.cartKey ?? this.cartService.cartKey(line.variantId, line.unitType ?? 'piece'),
       unitType: line.unitType ?? 'piece',
     }));
-    this.cartOpen = this.cart.length > 0;
+    // Desktop shows the cart column via md:flex; keep mobile drawer closed so header stays clickable.
+    this.cartOpen = false;
     const savedKeyboard = localStorage.getItem('pos-keyboard-mode');
     if (savedKeyboard === 'device' || savedKeyboard === 'onscreen') {
       this.keyboardMode = savedKeyboard;
@@ -195,6 +202,25 @@ export class PosDashboardComponent implements OnInit {
     void this.loadDiscounts();
     void this.loadPaymentMethods();
     void this.loadCatalog();
+    void this.tryPosFullscreen();
+  }
+
+  private async tryPosFullscreen(): Promise<void> {
+    try {
+      if (document.fullscreenElement) return;
+      const root = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => Promise<void> };
+      if (root.requestFullscreen) {
+        await root.requestFullscreen();
+      } else if (root.webkitRequestFullscreen) {
+        await root.webkitRequestFullscreen();
+      }
+    } catch {
+      /* Browsers may require a user gesture — retried on first tap */
+    }
+  }
+
+  onPosSurfaceTap(): void {
+    void this.tryPosFullscreen();
   }
 
   get selectedDiscount(): PosDiscount | null {
@@ -216,6 +242,7 @@ export class PosDashboardComponent implements OnInit {
     if (mode === 'device') {
       this.keyboardVisible = false;
       this.keyboardTarget = null;
+      this.keyboardSvc.setVisible(false);
     }
   }
 
@@ -223,8 +250,12 @@ export class PosDashboardComponent implements OnInit {
     if (!this.useOnscreenKeyboard || !target) return;
     this.keyboardTarget = target;
     this.keyboardVisible = true;
+    this.keyboardSvc.setVisible(true);
     if (target === 'amount') {
       this.amountReceivedText = this.amountReceived > 0 ? String(this.amountReceived) : '';
+      setTimeout(() => {
+        this.amountReceivedInput?.nativeElement?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      }, 80);
     }
   }
 
@@ -287,6 +318,7 @@ export class PosDashboardComponent implements OnInit {
   closeKeyboard(): void {
     this.keyboardVisible = false;
     this.keyboardTarget = null;
+    this.keyboardSvc.setVisible(false);
   }
 
   onSearchFieldFocus(): void {

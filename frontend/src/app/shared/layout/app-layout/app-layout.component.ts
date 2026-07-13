@@ -6,6 +6,7 @@ import { AppHeaderComponent } from '../app-header/app-header.component';
 import { AppSidebarComponent } from '../app-sidebar/app-sidebar.component';
 import { BackdropComponent } from '../backdrop/backdrop.component';
 import { GlobalActionLoaderComponent } from '../../components/common/global-action-loader/global-action-loader.component';
+import { PosChatWidgetComponent } from '../../components/pos/pos-chat-widget/pos-chat-widget.component';
 import { RbacService } from '../../services/rbac.service';
 import { SidebarService } from '../../services/sidebar.service';
 
@@ -18,6 +19,7 @@ import { SidebarService } from '../../services/sidebar.service';
     AppSidebarComponent,
     BackdropComponent,
     GlobalActionLoaderComponent,
+    PosChatWidgetComponent,
   ],
   templateUrl: './app-layout.component.html',
 })
@@ -26,6 +28,7 @@ export class AppLayoutComponent implements OnInit, OnDestroy {
   readonly isHovered$;
   readonly isMobileOpen$;
   readonly isCashierMode: boolean;
+  readonly showPosChat: boolean;
   isPosDashboardRoute = false;
   private routeSub?: Subscription;
 
@@ -38,6 +41,7 @@ export class AppLayoutComponent implements OnInit, OnDestroy {
     this.isHovered$ = this.sidebarService.isHovered$;
     this.isMobileOpen$ = this.sidebarService.isMobileOpen$;
     this.isCashierMode = rbac.isCashier();
+    this.showPosChat = rbac.isPosOrg();
   }
 
   ngOnInit(): void {

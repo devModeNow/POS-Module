@@ -260,6 +260,37 @@ export class PosService {
     return r.data;
   }
 
+  async getTransactionDetail(transactionId: number) {
+    const r = await apiClient.get<{
+      success: boolean;
+      data?: {
+        id: number;
+        saleDate: string;
+        createdAt: string;
+        cashier: string;
+        paymentMethod: string;
+        paymentStatus: string;
+        amountPaid: number | null;
+        changeAmount: number | null;
+        discountAmount: number;
+        totalAmount: number;
+        itemCount: number;
+        items: Array<{
+          id: number;
+          variantId: number;
+          productName: string;
+          variantName: string;
+          quantitySold: number;
+          unitType: string;
+          unitPrice: number;
+          totalAmount: number;
+        }>;
+      };
+      message?: string;
+    }>(`/api/pos/reports/transactions/${transactionId}`);
+    return r.data;
+  }
+
   async getTopProductsReport(from?: string, to?: string) {
     const params: Record<string, string> = {};
     if (from) params['from'] = from;

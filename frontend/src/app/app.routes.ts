@@ -24,6 +24,7 @@ import { PosMySalesComponent } from './pages/pos/my-sales/pos-my-sales.component
 import { PosStaffMonitorComponent } from './pages/pos/staff-monitor/pos-staff-monitor.component';
 import { PosAuditTrailComponent } from './pages/pos/audit-trail/pos-audit-trail.component';
 import { PosCompanyProfileComponent } from './pages/pos/company-profile/pos-company-profile.component';
+import { PosSaleDetailComponent } from './pages/pos/sale-detail/pos-sale-detail.component';
 import { ProfileComponent } from './pages/profile/profile.component';
 import { SchedulingFormComponent } from './pages/catering/public/scheduling-form/scheduling-form.component';
 import { RatingPageComponent } from './pages/catering/public/rating-page/rating-page.component';
@@ -175,6 +176,13 @@ export const routes: Routes = [
         canActivate: [rbacGuard],
         data: { menu: 'pos-company-profile', permission: 'canRead' },
         title: 'Company Profile',
+      },
+      {
+        path: 'pos-sales/:id',
+        component: PosSaleDetailComponent,
+        canActivate: [rbacGuard],
+        data: { menu: 'reports', permission: 'canRead' },
+        title: 'Sale Details',
       },
 
       // ── Catering menus ──────────────────────────────────────────────────
