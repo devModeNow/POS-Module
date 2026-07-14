@@ -21,27 +21,16 @@ import { FormsModule } from '@angular/forms';
 import { Subscription } from 'rxjs';
 
 import {
-
   PosChatMessage,
-
   PosChatUser,
-
   PosCommunicationsService,
-
 } from '../../../services/pos-communications.service';
-
 import { PosChatUiService } from '../../../services/pos-chat-ui.service';
-
 import { PosService } from '../../../services/pos.service';
-
 import { RbacService } from '../../../services/rbac.service';
 
-
-
 const HIDDEN_KEY = 'pos-chat-hidden';
-
 const HEARTBEAT_MS = 2 * 60 * 1000;
-
 const USERS_POLL_MS = 15 * 1000;
 
 
@@ -133,8 +122,11 @@ export class PosChatWidgetComponent implements OnInit, OnDestroy {
   users: PosChatUser[] = [];
 
   messages: PosChatMessage[] = [];
-
   lastMessageId = 0;
+
+  selectedImageFile: File | null = null;
+  selectedImagePreview: string | null = null;
+  lightboxUrl: string | null = null;
 
 
 
@@ -143,6 +135,8 @@ export class PosChatWidgetComponent implements OnInit, OnDestroy {
   @ViewChild('fabBtn') fabBtnRef?: ElementRef<HTMLButtonElement>;
 
   @ViewChild('messagesBox') messagesBoxRef?: ElementRef<HTMLElement>;
+
+  @ViewChild('fileInput') fileInputRef?: ElementRef<HTMLInputElement>;
 
 
 
@@ -269,19 +263,20 @@ export class PosChatWidgetComponent implements OnInit, OnDestroy {
 
 
   @HostListener('document:mousedown', ['$event'])
-
   onDocumentClick(event: MouseEvent): void {
-
+    const target = event.target as HTMLElement;
+    if (this.lightboxUrl) return;
     if (!this.expanded || this.hidden) return;
-
-    const target = event.target as Node;
-
     if (this.chatPanelRef?.nativeElement.contains(target)) return;
-
     if (this.fabBtnRef?.nativeElement.contains(target)) return;
-
     this.expanded = false;
+  }
 
+  @HostListener('document:keydown.escape')
+  onEscape(): void {
+    if (this.lightboxUrl) {
+      this.closeLightbox();
+    }
   }
 
 
@@ -508,6 +503,8 @@ export class PosChatWidgetComponent implements OnInit, OnDestroy {
 
     this.privateUserSearch = '';
 
+    this.clearSelectedImage();
+
     if (this.chatMode === 'team') {
 
       this.privateRecipientId = null;
@@ -628,7 +625,7 @@ export class PosChatWidgetComponent implements OnInit, OnDestroy {
 
     const text = this.draft.trim();
 
-    if (!text || this.sending) return;
+    if ((!text && !this.selectedImageFile) || this.sending) return;
 
     if (this.chatMode === 'private' && !this.privateRecipientId) {
 
@@ -644,15 +641,22 @@ export class PosChatWidgetComponent implements OnInit, OnDestroy {
 
     try {
 
-      const r = await this.comms.sendChatMessage(text, this.chatMode, this.privateRecipientId ?? undefined);
+      const r = await this.comms.sendChatMessage(
+        text,
+        this.chatMode,
+        this.privateRecipientId ?? undefined,
+        this.selectedImageFile,
+      );
 
       if (r?.success) {
 
         this.draft = '';
 
+        this.clearSelectedImage();
+
         const sent = r.data;
 
-        if (sent?.id && sent.message != null) {
+        if (sent?.id) {
 
           if (!this.messages.some((m) => m.id === sent.id)) {
 
@@ -685,6 +689,114 @@ export class PosChatWidgetComponent implements OnInit, OnDestroy {
   }
 
 
+
+  triggerFilePicker(): void {
+
+    this.fileInputRef?.nativeElement.click();
+
+  }
+
+
+
+  onFileSelected(event: Event): void {
+
+    const input = event.target as HTMLInputElement;
+
+    const file = input.files?.[0] ?? null;
+
+    if (file) this.setSelectedImage(file);
+
+    input.value = '';
+
+  }
+
+
+
+  onComposerPaste(event: ClipboardEvent): void {
+
+    const items = event.clipboardData?.items;
+
+    if (!items) return;
+
+    for (const item of Array.from(items)) {
+
+      if (item.type.startsWith('image/')) {
+
+        const file = item.getAsFile();
+
+        if (file) {
+
+          this.setSelectedImage(file);
+
+          event.preventDefault();
+
+        }
+
+        break;
+
+      }
+
+    }
+
+  }
+
+
+
+  private setSelectedImage(file: File): void {
+
+    if (!file.type.startsWith('image/')) {
+
+      this.sendError = 'Only image files can be attached.';
+
+      return;
+
+    }
+
+    if (file.size > 8 * 1024 * 1024) {
+
+      this.sendError = 'Image must be under 8MB.';
+
+      return;
+
+    }
+
+    this.sendError = '';
+
+    this.selectedImageFile = file;
+
+    const reader = new FileReader();
+
+    reader.onload = () => {
+
+      this.selectedImagePreview = reader.result as string;
+
+    };
+
+    reader.readAsDataURL(file);
+
+  }
+
+
+
+  clearSelectedImage(): void {
+
+    this.selectedImageFile = null;
+
+    this.selectedImagePreview = null;
+
+  }
+
+
+
+  openAttachment(url?: string | null): void {
+    if (!url) return;
+    // data: URLs open as blank tabs in many browsers — show an in-app lightbox instead
+    this.lightboxUrl = url;
+  }
+
+  closeLightbox(): void {
+    this.lightboxUrl = null;
+  }
 
   isOwnMessage(msg: PosChatMessage): boolean {
 

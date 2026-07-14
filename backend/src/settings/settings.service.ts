@@ -43,6 +43,14 @@ type OrgSettingsRow = {
   posReceiptFooterText: string | null;
   posPrinterName: string | null;
   posReceiptTemplateJson: string | null;
+  posPrinterConnectionType: string | null;
+  posPrinterHost: string | null;
+  posPrinterPort: string | null;
+  posPrinterUsbVendorId: string | null;
+  posPrinterUsbProductId: string | null;
+  posPrinterUsbProductName: string | null;
+  posPrinterBtDeviceId: string | null;
+  posPrinterBtDeviceName: string | null;
 };
 
 const EMPTY_SETTINGS: OrgSettingsRow = {
@@ -62,6 +70,9 @@ const EMPTY_SETTINGS: OrgSettingsRow = {
   printSignatureApprovedBy: null,
   posReceiptPaperWidth: null, posReceiptShowLogo: null, posReceiptFooterText: null,
   posPrinterName: null, posReceiptTemplateJson: null,
+  posPrinterConnectionType: null, posPrinterHost: null, posPrinterPort: null,
+  posPrinterUsbVendorId: null, posPrinterUsbProductId: null, posPrinterUsbProductName: null,
+  posPrinterBtDeviceId: null, posPrinterBtDeviceName: null,
 };
 
 @Injectable()
@@ -108,7 +119,15 @@ export class SettingsService {
         ADD COLUMN IF NOT EXISTS pos_receipt_show_logo BOOLEAN DEFAULT TRUE,
         ADD COLUMN IF NOT EXISTS pos_receipt_footer_text TEXT,
         ADD COLUMN IF NOT EXISTS pos_printer_name TEXT,
-        ADD COLUMN IF NOT EXISTS pos_receipt_template_json TEXT
+        ADD COLUMN IF NOT EXISTS pos_receipt_template_json TEXT,
+        ADD COLUMN IF NOT EXISTS pos_printer_connection_type TEXT DEFAULT 'browser',
+        ADD COLUMN IF NOT EXISTS pos_printer_host TEXT,
+        ADD COLUMN IF NOT EXISTS pos_printer_port TEXT DEFAULT '9100',
+        ADD COLUMN IF NOT EXISTS pos_printer_usb_vendor_id TEXT,
+        ADD COLUMN IF NOT EXISTS pos_printer_usb_product_id TEXT,
+        ADD COLUMN IF NOT EXISTS pos_printer_usb_product_name TEXT,
+        ADD COLUMN IF NOT EXISTS pos_printer_bt_device_id TEXT,
+        ADD COLUMN IF NOT EXISTS pos_printer_bt_device_name TEXT
     `);
     this.schemaReady = true;
   }
@@ -171,7 +190,15 @@ export class SettingsService {
            s.pos_receipt_show_logo          AS "posReceiptShowLogo",
            s.pos_receipt_footer_text        AS "posReceiptFooterText",
            s.pos_printer_name               AS "posPrinterName",
-           s.pos_receipt_template_json      AS "posReceiptTemplateJson"
+           s.pos_receipt_template_json      AS "posReceiptTemplateJson",
+           s.pos_printer_connection_type    AS "posPrinterConnectionType",
+           s.pos_printer_host               AS "posPrinterHost",
+           s.pos_printer_port               AS "posPrinterPort",
+           s.pos_printer_usb_vendor_id      AS "posPrinterUsbVendorId",
+           s.pos_printer_usb_product_id     AS "posPrinterUsbProductId",
+           s.pos_printer_usb_product_name   AS "posPrinterUsbProductName",
+           s.pos_printer_bt_device_id       AS "posPrinterBtDeviceId",
+           s.pos_printer_bt_device_name     AS "posPrinterBtDeviceName"
          FROM tblorg_settings s
          WHERE s.org_id = $1
          LIMIT 1`,
@@ -238,6 +265,14 @@ export class SettingsService {
         posReceiptFooterText:     'pos_receipt_footer_text',
         posPrinterName:           'pos_printer_name',
         posReceiptTemplateJson:   'pos_receipt_template_json',
+        posPrinterConnectionType: 'pos_printer_connection_type',
+        posPrinterHost:           'pos_printer_host',
+        posPrinterPort:           'pos_printer_port',
+        posPrinterUsbVendorId:    'pos_printer_usb_vendor_id',
+        posPrinterUsbProductId:   'pos_printer_usb_product_id',
+        posPrinterUsbProductName: 'pos_printer_usb_product_name',
+        posPrinterBtDeviceId:     'pos_printer_bt_device_id',
+        posPrinterBtDeviceName:   'pos_printer_bt_device_name',
       };
 
       const sets: string[] = [];

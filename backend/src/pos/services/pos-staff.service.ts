@@ -41,12 +41,18 @@ export class PosStaffService {
         fullname: string | null;
         roleName: string | null;
         lastSeen: string;
+        profilePicture: string | null;
       }>(
         `SELECT p.user_id AS "userId",
                 u.username,
                 COALESCE(to_jsonb(u)->>'fullname', u.username) AS fullname,
                 r."roleName" AS "roleName",
-                p.last_seen AS "lastSeen"
+                p.last_seen AS "lastSeen",
+                NULLIF(TRIM(COALESCE(
+                  to_jsonb(u)->>'profile_picture',
+                  to_jsonb(u)->>'profilePicture',
+                  ''
+                )), '') AS "profilePicture"
          FROM tblpos_staff_presence p
          INNER JOIN tblusers u ON u.id = p.user_id
          LEFT JOIN tblrbac r ON r.id = COALESCE(

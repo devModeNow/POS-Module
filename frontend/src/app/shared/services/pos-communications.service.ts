@@ -18,6 +18,8 @@ export type PosChatMessage = {
   roleName: string | null;
   senderProfilePicture?: string | null;
   message: string;
+  attachmentUrl?: string | null;
+  attachmentType?: string | null;
   createdAt: string;
 };
 
@@ -44,12 +46,22 @@ export type PosReceiptTemplateElement = {
   bold?: boolean;
 };
 
+export type PosPrinterConnectionType = 'browser' | 'network' | 'usb' | 'bluetooth';
+
 export type PosPrinterSettings = {
   posReceiptPaperWidth: string;
   posReceiptShowLogo: boolean;
   posReceiptFooterText: string;
   posPrinterName: string;
   posReceiptTemplateJson: string;
+  posPrinterConnectionType: PosPrinterConnectionType;
+  posPrinterHost: string;
+  posPrinterPort: string;
+  posPrinterUsbVendorId: string;
+  posPrinterUsbProductId: string;
+  posPrinterUsbProductName: string;
+  posPrinterBtDeviceId: string;
+  posPrinterBtDeviceName: string;
   businessName?: string | null;
   businessAddress?: string | null;
   businessLogoLight?: string | null;
@@ -99,15 +111,21 @@ export class PosCommunicationsService {
     return r.data;
   }
 
-  async sendChatMessage(message: string, mode: 'team' | 'private' = 'team', recipientId?: number) {
+  async sendChatMessage(
+    message: string,
+    mode: 'team' | 'private' = 'team',
+    recipientId?: number,
+    image?: File | null,
+  ) {
     const peer = recipientId != null ? Number(recipientId) : undefined;
+    const form = new FormData();
+    form.append('message', message ?? '');
+    form.append('mode', mode);
+    if (mode === 'private' && peer && peer > 0) form.append('recipientId', String(peer));
+    if (image) form.append('image', image);
     const r = await apiClient.post<{ success: boolean; data?: PosChatMessage; message?: string }>(
       '/api/pos/communications/chat/messages',
-      {
-        message,
-        mode,
-        recipientId: mode === 'private' && peer && peer > 0 ? peer : null,
-      },
+      form,
     );
     return r.data;
   }
@@ -150,7 +168,31 @@ export class PosCommunicationsService {
         posReceiptFooterText: payload.posReceiptFooterText,
         posPrinterName: payload.posPrinterName,
         posReceiptTemplateJson: payload.posReceiptTemplateJson,
+        posPrinterConnectionType: payload.posPrinterConnectionType,
+        posPrinterHost: payload.posPrinterHost,
+        posPrinterPort: payload.posPrinterPort,
+        posPrinterUsbVendorId: payload.posPrinterUsbVendorId,
+        posPrinterUsbProductId: payload.posPrinterUsbProductId,
+        posPrinterUsbProductName: payload.posPrinterUsbProductName,
+        posPrinterBtDeviceId: payload.posPrinterBtDeviceId,
+        posPrinterBtDeviceName: payload.posPrinterBtDeviceName,
       },
+    );
+    return r.data;
+  }
+
+  async testPrinterConnection(host: string, port: number) {
+    const r = await apiClient.post<{ success: boolean; message?: string }>(
+      '/api/pos/printer-settings/test-connection',
+      { host, port },
+    );
+    return r.data;
+  }
+
+  async printRawToNetworkPrinter(host: string, port: number, text: string) {
+    const r = await apiClient.post<{ success: boolean; message?: string }>(
+      '/api/pos/printer-settings/print-raw',
+      { host, port, text },
     );
     return r.data;
   }

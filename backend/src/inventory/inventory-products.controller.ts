@@ -77,6 +77,11 @@ export class InventoryProductsController {
     return this.svc.saveProduct(orgId(req), body);
   }
 
+  @Post('bulk-import')
+  bulkImportProducts(@Body() body: { products?: unknown[] }, @Req() req: AuthReq) {
+    return this.svc.bulkImportProducts(orgId(req), (body?.products ?? []) as never);
+  }
+
   @Post(':id/image')
   @UseInterceptors(FileInterceptor('image', { storage: memoryStorage() }))
   uploadProductImage(

@@ -44,4 +44,12 @@ export class UpdateBusinessProfileDto {
   posReceiptFooterText?: string | null;
   posPrinterName?: string | null;
   posReceiptTemplateJson?: string | null;
+  posPrinterConnectionType?: string | null;
+  posPrinterHost?: string | null;
+  posPrinterPort?: string | null;
+  posPrinterUsbVendorId?: string | null;
+  posPrinterUsbProductId?: string | null;
+  posPrinterUsbProductName?: string | null;
+  posPrinterBtDeviceId?: string | null;
+  posPrinterBtDeviceName?: string | null;
 }

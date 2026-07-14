@@ -183,4 +183,18 @@
    - Fix the UI issue on cashier dashboard, so that It can be usable weather the system is used on a touchscreen device or a desktop/laptop device.
    - Make sure to fix all errors and bugs you encounter while working on this task.
    - Make sure to check all taskss under this continuation before setting it to done because in the past there are tasks that has not been done so be sure to check if its all done properly and without errors and bugs.
+   //Continuation 3.5
+   - in posadmin dashboard, when making some changes/editing data in the inventory do not reload the whole table that is bad for UI experience.
+   - in posadmin dashboard inventory, in product variants view, make the product rows clickable.
+   - in posadmin dashboard, when adding product/variants in adding image part, add a feature where in when there is no image uploaded, generate an automated image depending product name or what product is added so that the card will not be blank in image.
+   - In both dashboard of posadmin and cashier, in printer settings, since its a web app, add a feature where in I can setup and connect to a wireless or wired printer. I want this feature so that I will be not needed to go to device settings.
+   - In posadmin dashboard -> On duty staff page, add the profile images.
+   - In posadmin dashboard -> reports page, add a feature where in the admin or I can export a report into a pdf or an csv or excel file.
+   - In posadmin dashboard -> inventory page, add a import product and export product feature so that they can just insert all data in a excel file and just upload it in the web app for more convenient way of adding products.
+   - In both dashboard, in notification popup when the bell is clicked, add a read and unread filter so that user can filter the notification, also add a category type for notification so that the notification for messages and new sales or any are separated, also remove the text saying "Tap to open".
+   - In the chat feature, add feature where in users can upload images and screenshots and also be able to react to a message like heart, laugh, sad etc...
+   - In cashier dashboard, make the cart scrollable when many products are in it.
+   - Make sure to fix all errors and bugs you encounter while working on this task.
+   - Make sure to check all taskss under this continuation before setting it to done because in the past there are tasks that has not been done so be sure to check if its all done properly and without errors and bugs.
+
 

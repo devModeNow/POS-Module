@@ -607,6 +607,151 @@ export class InventoryProductsService {
     }
   }
 
+  async bulkImportProducts(
+    orgId: number,
+    products: Array<{
+      name: string;
+      category?: string;
+      brand?: string;
+      description?: string;
+      variants: Array<{
+        variantName: string;
+        unitType?: string;
+        stockQty?: number;
+        stockWarning?: number;
+        costPrice?: number;
+        sellingPrice?: number;
+        salePrice?: number | null;
+      }>;
+    }>,
+  ) {
+    if (!Array.isArray(products) || products.length === 0) {
+      return { success: false, message: 'No products provided' };
+    }
+    if (products.length > 500) {
+      return { success: false, message: 'Maximum 500 products per import' };
+    }
+
+    let importedProducts = 0;
+    let updatedProducts = 0;
+    let importedVariants = 0;
+    let updatedVariants = 0;
+    const errors: string[] = [];
+
+    try {
+      await this.db.withTransaction(async (client) => {
+        for (let i = 0; i < products.length; i++) {
+          const p = products[i];
+          const name = String(p?.name ?? '').trim();
+          if (!name) {
+            errors.push(`Row ${i + 1}: Product name is required`);
+            continue;
+          }
+          const variants = (p.variants ?? []).filter((v) => String(v?.variantName ?? '').trim());
+          if (!variants.length) {
+            errors.push(`Product "${name}": at least one variant with a name is required`);
+            continue;
+          }
+          const variantNameError = this.validateVariantNames(variants);
+          if (variantNameError) {
+            errors.push(`Product "${name}": ${variantNameError}`);
+            continue;
+          }
+
+          const category = p.category?.trim() || null;
+          if (category) {
+            await client.query(
+              `INSERT INTO tblinventory_categories (org_id, name)
+               VALUES ($1, $2)
+               ON CONFLICT (org_id, LOWER(name)) DO NOTHING`,
+              [orgId, category],
+            );
+          }
+
+          const existingProduct = await client.query<{ id: number }>(
+            `SELECT id FROM tblinventory_products
+             WHERE org_id = $1 AND lower(name) = lower($2) LIMIT 1`,
+            [orgId, name],
+          );
+
+          let productId: number;
+          if (existingProduct.rowCount) {
+            productId = existingProduct.rows[0].id;
+            await client.query(
+              `UPDATE tblinventory_products
+               SET category = COALESCE($1, category), brand = COALESCE($2, brand),
+                   description = COALESCE($3, description), is_active = TRUE, updated_at = NOW()
+               WHERE id = $4 AND org_id = $5`,
+              [category, p.brand?.trim() || null, p.description?.trim() || null, productId, orgId],
+            );
+            updatedProducts++;
+          } else {
+            const ins = await client.query<{ id: number }>(
+              `INSERT INTO tblinventory_products (org_id, name, category, brand, description)
+               VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+              [orgId, name, category, p.brand?.trim() || null, p.description?.trim() || null],
+            );
+            productId = ins.rows[0].id;
+            importedProducts++;
+          }
+
+          for (const v of variants) {
+            const vName = String(v.variantName).trim();
+            const units = this.normalizeUnits(v);
+            const primary = units[0];
+            const stockQty = this.toFiniteNumber(v.stockQty, 0);
+            const stockWarning = this.toFiniteNumber(v.stockWarning, 0);
+            const costPrice = this.toFiniteNumber(v.costPrice, 0);
+            const sellingPrice = this.toFiniteNumber(primary?.sellingPrice, 0);
+            const salePrice = this.toOptionalNumber(primary?.salePrice);
+            const marginPercent = this.computeMarginPercent(costPrice, sellingPrice);
+
+            const existingVariant = await client.query<{ id: number }>(
+              `SELECT id FROM tblinventory_variants
+               WHERE product_id = $1 AND org_id = $2 AND lower(variant_name) = lower($3) LIMIT 1`,
+              [productId, orgId, vName],
+            );
+
+            let variantId: number;
+            if (existingVariant.rowCount) {
+              variantId = existingVariant.rows[0].id;
+              await client.query(
+                `UPDATE tblinventory_variants
+                 SET stock_qty = $1, stock_warning = $2, cost_price = $3, selling_price = $4,
+                     sale_price = $5, unit_type = $6, margin_percent = $7, is_active = TRUE, updated_at = NOW()
+                 WHERE id = $8 AND org_id = $9`,
+                [stockQty, stockWarning, costPrice, sellingPrice, salePrice, primary?.unitType ?? null, marginPercent, variantId, orgId],
+              );
+              updatedVariants++;
+            } else {
+              const ins = await client.query<{ id: number }>(
+                `INSERT INTO tblinventory_variants
+                   (org_id, product_id, variant_name, stock_qty, stock_warning,
+                    cost_price, selling_price, sale_price, unit_type, margin_percent)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+                [orgId, productId, vName, stockQty, stockWarning, costPrice, sellingPrice, salePrice, primary?.unitType ?? null, marginPercent],
+              );
+              variantId = ins.rows[0].id;
+              importedVariants++;
+            }
+            await this.saveVariantUnits(client, orgId, variantId, units);
+          }
+        }
+      });
+
+      return {
+        success: true,
+        importedProducts,
+        updatedProducts,
+        importedVariants,
+        updatedVariants,
+        errors: errors.length ? errors : undefined,
+      };
+    } catch (e) {
+      return { success: false, message: this.formatSaveError(e) };
+    }
+  }
+
   async deleteVariant(variantId: number, orgId: number) {
     try {
       await this.db.withTransaction(async (client) => {

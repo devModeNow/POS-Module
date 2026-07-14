@@ -13,6 +13,7 @@ import { OrgService } from '../../shared/services/org.service';
 import { RbacService } from '../../shared/services/rbac.service';
 import { NotificationService } from '../../shared/services/notification.service';
 import { ActionBusyService } from '../../shared/services/action-busy.service';
+import ExcelJS from 'exceljs/dist/exceljs.min.js';
 
 type MainTab = 'inventory' | 'purchase-orders' | 'reports';
 type DrawerMode = 'create' | 'edit';
@@ -33,6 +34,22 @@ type VariantUnitFormRow = {
   salePrice: number | null;
   isManualEntry: boolean;
   isDefault: boolean;
+};
+
+type PosImportProductGroup = {
+  name: string;
+  category?: string;
+  brand?: string;
+  description?: string;
+  variants: Array<{
+    variantName: string;
+    unitType?: string;
+    stockQty: number;
+    stockWarning: number;
+    costPrice: number;
+    sellingPrice: number;
+    salePrice: number | null;
+  }>;
 };
 
 @Component({
@@ -330,6 +347,25 @@ export class InventoryComponent implements OnInit, OnDestroy {
   importData: any[] = [];
   isImporting = false;
   importResult: { success: boolean; imported?: number; updated?: number; errors?: string[]; message?: string } | null = null;
+
+  // POS Import/Export
+  showPosImportModal = false;
+  posImportFileName = '';
+  posImportRows: PosImportProductGroup[] = [];
+  isPosImporting = false;
+  posImportResult: {
+    success: boolean;
+    importedProducts?: number;
+    updatedProducts?: number;
+    importedVariants?: number;
+    updatedVariants?: number;
+    errors?: string[];
+    message?: string;
+  } | null = null;
+
+  get posImportVariantCount(): number {
+    return this.posImportRows.reduce((sum, g) => sum + g.variants.length, 0);
+  }
 
   // Stock Adjustment
   showAdjustModal = false;
@@ -1008,25 +1044,43 @@ export class InventoryComponent implements OnInit, OnDestroy {
       }
 
       if (this.isEditingVariantOnly && this.editingVariantId) {
+        const local = this.productForm.variants[0];
+        if (!local.imageFile && !local.imagePreview && !local.imageUrl) {
+          local.imageFile = await this.generatePlaceholderImage(`${this.productForm.name} ${local.variantName}`.trim());
+        }
         const r = await this.posSvc.saveInventoryVariant(this.editingVariantId, variantPayloads[0]);
         if (!r.success) {
           this.notify.error('Failed', r.message ?? 'Could not save variant.');
           return;
         }
-        const local = this.productForm.variants[0];
-        if (local?.imageFile) {
+        let uploadedImageUrl: string | null | undefined;
+        if (local.imageFile) {
           const upload = await this.posSvc.uploadVariantImage(this.editingVariantId, local.imageFile);
           if (!upload.success) {
             this.notify.warning('Image', upload.message ?? 'Variant image upload failed.');
+          } else {
+            uploadedImageUrl = upload.data?.imageUrl ?? null;
           }
         }
         this.notify.success('Saved', 'Variant updated.');
         this.isItemDrawerOpen = false;
         this.editingVariantOnly = false;
+        const patchedVariantId = this.editingVariantId;
+        const parentProductId = this.editingProductId;
         this.editingVariantId = null;
         this.clearFormDrafts();
-        await this.loadItems();
+        this.patchVariantOnlyLocal(patchedVariantId, variantPayloads[0], uploadedImageUrl, parentProductId);
         return;
+      }
+
+      if (!this.productForm.imageFile && !this.productForm.imagePreview && !this.productForm.imageUrl) {
+        this.productForm.imageFile = await this.generatePlaceholderImage(this.productForm.name.trim() || 'Product');
+      }
+      for (const v of this.productForm.variants) {
+        if (!v.variantName.trim()) continue;
+        if (!v.imageFile && !v.imagePreview && !v.imageUrl) {
+          v.imageFile = await this.generatePlaceholderImage(`${this.productForm.name} ${v.variantName}`.trim());
+        }
       }
 
       const payload = {
@@ -1047,38 +1101,201 @@ export class InventoryComponent implements OnInit, OnDestroy {
         this.notify.error('Failed', 'Product saved but no product id was returned.');
         return;
       }
+      let productImageUrl: string | null | undefined;
       if (this.productForm.imageFile) {
         const upload = await this.posSvc.uploadProductImage(savedId, this.productForm.imageFile);
         if (!upload.success) {
           this.notify.error('Image upload failed', upload.message ?? 'Product saved but image upload failed.');
+        } else {
+          productImageUrl = upload.data?.imageUrl ?? null;
         }
       }
-      {
-        const fresh = await this.posSvc.getInventoryProduct(savedId);
-        const savedVariants = fresh.data?.variants ?? [];
+
+      const fresh = await this.posSvc.getInventoryProduct(savedId);
+      if (fresh.success && fresh.data) {
+        const variantImageUpdates = new Map<number, string>();
         for (const local of this.productForm.variants) {
           if (!local.imageFile || !local.variantName.trim()) continue;
-          const remote = savedVariants.find((sv: InventoryVariantRow) => sv.variantName === local.variantName.trim());
+          const remote = (fresh.data.variants ?? []).find((sv: InventoryVariantRow) => sv.variantName === local.variantName.trim());
           if (remote?.id) {
             const upload = await this.posSvc.uploadVariantImage(remote.id, local.imageFile);
             if (!upload.success) {
               this.notify.warning('Image', upload.message ?? `Variant "${local.variantName}" image upload failed.`);
+            } else if (upload.data?.imageUrl) {
+              variantImageUpdates.set(remote.id, upload.data.imageUrl);
             }
           }
         }
+        const patchedVariants = (fresh.data.variants ?? []).map((v: InventoryVariantRow) => ({
+          ...v,
+          imageUrl: variantImageUpdates.get(v.id) ?? v.imageUrl,
+        }));
+        this.applyProductToLocalState(
+          { ...fresh.data, imageUrl: productImageUrl !== undefined ? productImageUrl : fresh.data.imageUrl },
+          patchedVariants,
+        );
       }
+
       this.notify.success('Saved', this.itemDrawerMode === 'create' ? 'Product added.' : 'Product updated.');
       this.isItemDrawerOpen = false;
       this.editingProductId = null;
       if (this.itemDrawerMode === 'create') {
         this.clearFormDrafts();
       }
-      await this.loadItems();
     } catch {
       this.notify.error('Error', 'Unexpected error.');
     } finally {
       this.isSavingItem = false;
     }
+  }
+
+  private patchVariantOnlyLocal(
+    variantId: number,
+    payload: ReturnType<typeof this.buildVariantPayload>,
+    imageUrl: string | null | undefined,
+    productId: number | null,
+  ): void {
+    const idx = this.variantItems.findIndex((v) => v.id === variantId);
+    if (idx >= 0) {
+      const existing = this.variantItems[idx];
+      this.variantItems[idx] = {
+        ...existing,
+        variantName: payload.variantName,
+        stockQty: payload.stockQty,
+        stockWarning: payload.stockWarning,
+        costPrice: payload.costPrice,
+        sellingPrice: payload.sellingPrice,
+        salePrice: payload.salePrice,
+        unitType: payload.unitType ?? existing.unitType,
+        marginPercent: payload.marginPercent,
+        imageUrl: imageUrl !== undefined ? imageUrl : existing.imageUrl,
+      };
+    }
+    this.recomputeProductAggregates(productId);
+  }
+
+  private recomputeProductAggregates(productId: number | null | undefined): void {
+    if (!productId) return;
+    const idx = this.productItems.findIndex((p) => p.id === productId);
+    if (idx < 0) return;
+    const variants = this.variantItems.filter((v) => v.productId === productId);
+    const prices = variants.map((v) => v.sellingPrice || 0);
+    this.productItems[idx] = {
+      ...this.productItems[idx],
+      variantCount: variants.length,
+      totalStock: variants.reduce((sum, v) => sum + (v.stockQty || 0), 0),
+      minPrice: prices.length ? Math.min(...prices) : 0,
+      maxPrice: prices.length ? Math.max(...prices) : 0,
+      hasSale: variants.some((v) => v.salePrice != null && v.salePrice > 0 && v.salePrice < v.sellingPrice),
+    };
+  }
+
+  private applyProductToLocalState(
+    product: { id: number; name: string; category?: string | null; brand?: string | null; imageUrl?: string | null },
+    variants: Array<InventoryVariantRow & Record<string, unknown>>,
+  ): void {
+    this.variantItems = this.variantItems.filter((v) => v.productId !== product.id);
+    const mappedVariants: InventoryVariantRow[] = variants.map((v) => ({
+      id: v.id,
+      productId: product.id,
+      productName: product.name,
+      category: product.category ?? null,
+      brand: product.brand ?? null,
+      variantName: String(v.variantName ?? ''),
+      stockQty: Number(v.stockQty ?? 0),
+      stockWarning: Number(v.stockWarning ?? 0),
+      costPrice: Number(v.costPrice ?? 0),
+      sellingPrice: Number(v.sellingPrice ?? 0),
+      salePrice: v.salePrice != null ? Number(v.salePrice) : null,
+      unitType: (v.unitType as string | null | undefined) ?? null,
+      marginPercent: v.marginPercent != null ? Number(v.marginPercent) : null,
+      imageUrl: (v.imageUrl as string | null | undefined) ?? null,
+    }));
+    this.variantItems = [...mappedVariants, ...this.variantItems];
+
+    const prices = mappedVariants.map((v) => v.sellingPrice || 0);
+    const productRow: InventoryProductRow = {
+      id: product.id,
+      name: product.name,
+      category: product.category ?? null,
+      brand: product.brand ?? null,
+      imageUrl: product.imageUrl ?? null,
+      variantCount: mappedVariants.length,
+      minPrice: prices.length ? Math.min(...prices) : 0,
+      maxPrice: prices.length ? Math.max(...prices) : 0,
+      totalStock: mappedVariants.reduce((sum, v) => sum + v.stockQty, 0),
+      hasSale: mappedVariants.some((v) => v.salePrice != null && v.salePrice > 0 && v.salePrice < v.sellingPrice),
+    };
+    const idx = this.productItems.findIndex((p) => p.id === product.id);
+    if (idx >= 0) {
+      this.productItems[idx] = productRow;
+    } else {
+      this.productItems = [productRow, ...this.productItems];
+    }
+  }
+
+  // ── Auto-generated placeholder images ───────────────────────────────────
+
+  private hashStringToHue(str: string): number {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = (hash << 5) - hash + str.charCodeAt(i);
+      hash |= 0;
+    }
+    return Math.abs(hash) % 360;
+  }
+
+  private getInitials(name: string): string {
+    const words = name.trim().split(/\s+/).filter(Boolean);
+    if (!words.length) return '?';
+    if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+    return (words[0][0] + words[1][0]).toUpperCase();
+  }
+
+  initialsFor(name: string | null | undefined): string {
+    return this.getInitials(name || '');
+  }
+
+  avatarColorFor(name: string | null | undefined): string {
+    const hue = this.hashStringToHue((name || 'Product').trim());
+    return `hsl(${hue}, 55%, 45%)`;
+  }
+
+  private async generatePlaceholderImage(label: string): Promise<File> {
+    const text = (label || 'Product').trim() || 'Product';
+    const size = 400;
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return new File([new Blob()], 'placeholder.png', { type: 'image/png' });
+
+    const hue = this.hashStringToHue(text);
+    const gradient = ctx.createLinearGradient(0, 0, size, size);
+    gradient.addColorStop(0, `hsl(${hue}, 55%, 48%)`);
+    gradient.addColorStop(1, `hsl(${hue}, 55%, 30%)`);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, size, size);
+
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.font = `bold ${Math.round(size * 0.36)}px Arial, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(this.getInitials(text), size / 2, size * 0.44);
+
+    const bannerHeight = size * 0.16;
+    ctx.fillStyle = 'rgba(0,0,0,0.28)';
+    ctx.fillRect(0, size - bannerHeight, size, bannerHeight);
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.font = `600 ${Math.round(size * 0.075)}px Arial, sans-serif`;
+    const truncated = text.length > 24 ? `${text.slice(0, 22)}…` : text;
+    ctx.fillText(truncated, size / 2, size - bannerHeight / 2);
+
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), 'image/webp', 0.92));
+    const finalBlob = blob ?? (await new Promise<Blob | null>((resolve) => canvas.toBlob((b) => resolve(b), 'image/png')));
+    const safeName = text.replace(/[^a-z0-9]+/gi, '-').toLowerCase().replace(/^-+|-+$/g, '') || 'placeholder';
+    const ext = finalBlob?.type === 'image/webp' ? 'webp' : 'png';
+    return new File([finalBlob ?? new Blob()], `${safeName}.${ext}`, { type: finalBlob?.type || 'image/png' });
   }
 
   requestDeleteVariant(variant: InventoryVariantRow): void {
@@ -1098,7 +1315,9 @@ export class InventoryComponent implements OnInit, OnDestroy {
         return;
       }
       this.notify.success('Deleted', 'Variant removed.');
-      await this.loadItems();
+      const removed = this.variantItems.find((v) => v.id === variantId);
+      this.variantItems = this.variantItems.filter((v) => v.id !== variantId);
+      if (removed) this.recomputeProductAggregates(removed.productId);
     } catch {
       this.notify.error('Error', 'Failed to delete variant.');
     }
@@ -1137,7 +1356,9 @@ export class InventoryComponent implements OnInit, OnDestroy {
         return;
       }
       this.notify.success('Restored', 'Variant restored.');
-      await this.loadItems();
+      if (this.isDeletedView) {
+        this.variantItems = this.variantItems.filter((v) => v.id !== variantId);
+      }
     } catch {
       this.notify.error('Error', 'Failed to restore variant.');
     }
@@ -1159,7 +1380,10 @@ export class InventoryComponent implements OnInit, OnDestroy {
         return;
       }
       this.notify.success('Restored', 'Product restored.');
-      await this.loadItems();
+      if (this.isDeletedView) {
+        this.productItems = this.productItems.filter((p) => p.id !== productId);
+        this.variantItems = this.variantItems.filter((v) => v.productId !== productId);
+      }
     } catch {
       this.notify.error('Error', 'Failed to restore product.');
     }
@@ -1173,7 +1397,8 @@ export class InventoryComponent implements OnInit, OnDestroy {
         return;
       }
       this.notify.success('Deleted', 'Product removed.');
-      await this.loadItems();
+      this.productItems = this.productItems.filter((p) => p.id !== productId);
+      this.variantItems = this.variantItems.filter((v) => v.productId !== productId);
     } catch {
       this.notify.error('Error', 'Failed to delete product.');
     }
@@ -1567,6 +1792,204 @@ export class InventoryComponent implements OnInit, OnDestroy {
     a.download = 'inventory-import-template.csv';
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  // ── POS Import / Export ─────────────────────────────────────────────────
+
+  private downloadBlob(blob: Blob, filename: string): void {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  private readonly posExportHeaders = [
+    'Product Name', 'Category', 'Brand', 'Description', 'Variant Name',
+    'Unit Type', 'Stock Qty', 'Stock Warning', 'Cost Price', 'Selling Price', 'Sale Price',
+  ];
+
+  async exportPosInventory(): Promise<void> {
+    if (!this.variantItems.length) {
+      this.notify.warning('No data', 'No inventory data to export.');
+      return;
+    }
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Inventory');
+      sheet.columns = this.posExportHeaders.map((h: string) => ({ width: Math.max(14, h.length + 4) }));
+      const headerRow = sheet.addRow(this.posExportHeaders);
+      headerRow.font = { bold: true };
+      headerRow.eachCell((cell: { fill: unknown }) => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE5E7EB' } };
+      });
+      for (const v of this.variantItems) {
+        sheet.addRow([
+          v.productName, v.category || '', v.brand || '', '',
+          v.variantName, v.unitType || 'piece', v.stockQty, v.stockWarning,
+          v.costPrice, v.sellingPrice, v.salePrice ?? '',
+        ]);
+      }
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      this.downloadBlob(blob, `pos-inventory-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    } catch {
+      this.notify.error('Error', 'Failed to export inventory.');
+    }
+  }
+
+  async downloadPosTemplate(): Promise<void> {
+    const sampleRows = [
+      ['Peanut', 'Snacks', 'Brand X', 'Roasted peanuts', 'Garlic', 'piece', 50, 10, 5, 10, ''],
+      ['Peanut', 'Snacks', 'Brand X', 'Roasted peanuts', 'Honey Roasted', 'piece', 30, 10, 6, 12, ''],
+    ];
+    try {
+      const workbook = new ExcelJS.Workbook();
+      const sheet = workbook.addWorksheet('Template');
+      sheet.columns = this.posExportHeaders.map((h: string) => ({ width: Math.max(14, h.length + 4) }));
+      const headerRow = sheet.addRow(this.posExportHeaders);
+      headerRow.font = { bold: true };
+      headerRow.eachCell((cell: { fill: unknown }) => {
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE5E7EB' } };
+      });
+      sampleRows.forEach((row) => sheet.addRow(row));
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      this.downloadBlob(blob, 'pos-inventory-import-template.xlsx');
+    } catch {
+      this.notify.error('Error', 'Failed to generate template.');
+    }
+  }
+
+  openPosImportModal(): void {
+    this.posImportRows = [];
+    this.posImportFileName = '';
+    this.posImportResult = null;
+    this.showPosImportModal = true;
+  }
+
+  closePosImportModal(): void {
+    if (this.isPosImporting) return;
+    this.showPosImportModal = false;
+  }
+
+  async onPosImportFileSelected(event: Event): Promise<void> {
+    const file = (event.target as HTMLInputElement).files?.[0];
+    this.posImportResult = null;
+    if (!file) {
+      this.posImportRows = [];
+      this.posImportFileName = '';
+      return;
+    }
+    this.posImportFileName = file.name;
+    try {
+      const rawRows = file.name.toLowerCase().endsWith('.csv')
+        ? this.parsePosCsvRows(await file.text())
+        : await this.parsePosXlsxRows(file);
+      this.posImportRows = this.buildPosImportGroups(rawRows);
+      if (!this.posImportRows.length) {
+        this.notify.warning('No rows', 'No valid product rows found in the selected file.');
+      }
+    } catch {
+      this.posImportRows = [];
+      this.notify.error('Error', 'Failed to read the file. Check the format and try again.');
+    }
+  }
+
+  private parsePosCsvRows(text: string): Array<Record<string, string>> {
+    const lines = text.split(/\r?\n/).filter((l) => l.trim());
+    if (lines.length < 2) return [];
+    const headers = lines[0].split(',').map((h) => h.trim().replace(/^"|"$/g, ''));
+    return lines.slice(1).map((line) => {
+      const cols = line.split(',').map((c) => c.trim().replace(/^"|"$/g, ''));
+      const row: Record<string, string> = {};
+      headers.forEach((h, i) => { row[h] = cols[i] ?? ''; });
+      return row;
+    });
+  }
+
+  private async parsePosXlsxRows(file: File): Promise<Array<Record<string, string>>> {
+    const buffer = await file.arrayBuffer();
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(buffer);
+    const sheet = workbook.worksheets[0];
+    if (!sheet) return [];
+    const headers: string[] = [];
+    sheet.getRow(1).eachCell((cell: { value: unknown }, colNumber: number) => {
+      headers[colNumber] = String(cell.value ?? '').trim();
+    });
+    const rows: Array<Record<string, string>> = [];
+    sheet.eachRow((row: { eachCell: (cb: (cell: { value: unknown }, colNumber: number) => void) => void }, rowNumber: number) => {
+      if (rowNumber === 1) return;
+      const obj: Record<string, string> = {};
+      row.eachCell((cell, colNumber) => {
+        const key = headers[colNumber];
+        if (key) obj[key] = cell.value != null ? String(cell.value) : '';
+      });
+      if (Object.values(obj).some((v) => v.trim())) rows.push(obj);
+    });
+    return rows;
+  }
+
+  private pickField(row: Record<string, string>, keys: string[]): string {
+    const lowerMap = new Map(Object.keys(row).map((k) => [k.trim().toLowerCase(), row[k]]));
+    for (const key of keys) {
+      const v = lowerMap.get(key.toLowerCase());
+      if (v != null && String(v).trim()) return String(v).trim();
+    }
+    return '';
+  }
+
+  private buildPosImportGroups(rows: Array<Record<string, string>>): PosImportProductGroup[] {
+    const groups = new Map<string, PosImportProductGroup>();
+    for (const row of rows) {
+      const name = this.pickField(row, ['Product Name', 'ProductName', 'Product']);
+      if (!name) continue;
+      const key = name.toLowerCase();
+      if (!groups.has(key)) {
+        groups.set(key, {
+          name,
+          category: this.pickField(row, ['Category']) || undefined,
+          brand: this.pickField(row, ['Brand']) || undefined,
+          description: this.pickField(row, ['Description']) || undefined,
+          variants: [],
+        });
+      }
+      const group = groups.get(key)!;
+      const variantName = this.pickField(row, ['Variant Name', 'VariantName', 'Variant']) || name;
+      const salePriceRaw = this.pickField(row, ['Sale Price', 'SalePrice']);
+      group.variants.push({
+        variantName,
+        unitType: this.pickField(row, ['Unit Type', 'UnitType', 'Unit']) || undefined,
+        stockQty: Number(this.pickField(row, ['Stock Qty', 'StockQty', 'Stock'])) || 0,
+        stockWarning: Number(this.pickField(row, ['Stock Warning', 'StockWarning'])) || 0,
+        costPrice: Number(this.pickField(row, ['Cost Price', 'CostPrice'])) || 0,
+        sellingPrice: Number(this.pickField(row, ['Selling Price', 'SellingPrice'])) || 0,
+        salePrice: salePriceRaw ? Number(salePriceRaw) : null,
+      });
+    }
+    return Array.from(groups.values());
+  }
+
+  async executePosImport(): Promise<void> {
+    if (!this.posImportRows.length) return;
+    this.isPosImporting = true;
+    this.posImportResult = null;
+    try {
+      const r = await this.posSvc.bulkImportProducts(this.posImportRows);
+      this.posImportResult = r;
+      if (r.success) {
+        this.posImportRows = [];
+        this.posImportFileName = '';
+        await this.loadCategoryOptions();
+        await this.loadItems();
+      }
+    } catch {
+      this.posImportResult = { success: false, message: 'Unexpected error during import.' };
+    } finally {
+      this.isPosImporting = false;
+    }
   }
 
   // ── Stock Adjustment ──────────────────────────────────────────────────

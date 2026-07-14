@@ -18,11 +18,43 @@
       <h5 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Notifications</h5>
       <button type="button" (click)="close()" class="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-300">✕</button>
     </div>
+
+    <div class="mb-2 flex shrink-0 flex-wrap gap-1">
+      @for (opt of readFilterOptions; track opt.value) {
+        <button type="button" (click)="setReadFilter(opt.value)"
+          class="rounded-full px-2.5 py-1 text-[11px] font-semibold transition"
+          [class.bg-brand-500]="readFilter === opt.value"
+          [class.text-white]="readFilter === opt.value"
+          [class.bg-gray-100]="readFilter !== opt.value"
+          [class.text-gray-600]="readFilter !== opt.value"
+          [class.dark:bg-gray-800]="readFilter !== opt.value"
+          [class.dark:text-gray-300]="readFilter !== opt.value">
+          {{ opt.label }}
+        </button>
+      }
+    </div>
+    <div class="mb-3 flex shrink-0 flex-wrap gap-1 border-b border-gray-100 pb-3 dark:border-gray-800">
+      @for (opt of categoryOptions; track opt.value) {
+        <button type="button" (click)="setCategoryFilter(opt.value)"
+          class="rounded-full px-2.5 py-1 text-[11px] font-semibold transition"
+          [class.bg-gray-800]="categoryFilter === opt.value"
+          [class.text-white]="categoryFilter === opt.value"
+          [class.dark:bg-white]="categoryFilter === opt.value"
+          [class.dark:text-gray-900]="categoryFilter === opt.value"
+          [class.bg-gray-100]="categoryFilter !== opt.value"
+          [class.text-gray-600]="categoryFilter !== opt.value"
+          [class.dark:bg-gray-800]="categoryFilter !== opt.value"
+          [class.dark:text-gray-300]="categoryFilter !== opt.value">
+          {{ opt.label }}
+        </button>
+      }
+    </div>
+
     <ul class="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain">
       @if (loading) {
         <li class="py-6 text-center text-sm text-gray-500">Loading…</li>
       } @else {
-        @for (item of items; track item.id) {
+        @for (item of filteredItems; track item.id) {
           <li>
             <button type="button" (click)="onItemClick(item)"
               class="w-full rounded-lg border border-gray-100 p-3 text-left transition hover:bg-gray-50 dark:border-gray-800 dark:hover:bg-gray-800/60"
@@ -31,20 +63,25 @@
               <div class="flex gap-2">
                 <span class="text-lg">{{ typeIcon(item.type) }}</span>
                 <div class="min-w-0 flex-1">
-                  <p class="text-sm font-medium text-gray-800 dark:text-gray-100">{{ item.title }}</p>
+                  <div class="flex items-center gap-2">
+                    <p class="text-sm font-medium text-gray-800 dark:text-gray-100">{{ item.title }}</p>
+                    @if (!item.isRead) {
+                      <span class="h-1.5 w-1.5 shrink-0 rounded-full bg-orange-500"></span>
+                    }
+                  </div>
                   @if (item.body) {
                     <p class="mt-0.5 line-clamp-2 text-xs text-gray-500 dark:text-gray-400">{{ item.body }}</p>
                   }
-                  <p class="mt-1 text-[10px] text-gray-400">{{ formatTime(item.createdAt) }}</p>
-                  @if (isClickable(item)) {
-                    <p class="mt-1 text-[10px] font-medium text-brand-600">Tap to open</p>
-                  }
+                  <div class="mt-1 flex items-center gap-2">
+                    <span class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-gray-500 dark:bg-gray-800 dark:text-gray-400">{{ categoryLabel(item.type) }}</span>
+                    <p class="text-[10px] text-gray-400">{{ formatTime(item.createdAt) }}</p>
+                  </div>
                 </div>
               </div>
             </button>
           </li>
         } @empty {
-          <li class="py-8 text-center text-sm text-gray-500">No notifications yet.</li>
+          <li class="py-8 text-center text-sm text-gray-500">No notifications match your filters.</li>
         }
       }
     </ul>

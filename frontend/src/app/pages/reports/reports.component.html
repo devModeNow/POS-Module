@@ -56,6 +56,21 @@
         {{ isLoading ? 'Loading...' : 'Refresh' }}
       </app-button>
 
+      <div class="flex items-center gap-2">
+        <button type="button" (click)="exportCsv()" [disabled]="!canExport()" title="Export current report as CSV"
+          class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+          Export CSV
+        </button>
+        <button type="button" (click)="exportExcel()" [disabled]="!canExport()" title="Export current report as Excel"
+          class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+          Export Excel
+        </button>
+        <button type="button" (click)="exportPdf()" [disabled]="!canExport()" title="Export current report as PDF"
+          class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+          Export PDF
+        </button>
+      </div>
+
       <label>
         <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Rows per page</span>
         <select [(ngModel)]="pageSize" (ngModelChange)="onPageSizeChange()"

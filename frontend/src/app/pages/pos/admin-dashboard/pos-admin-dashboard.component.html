@@ -124,9 +124,14 @@
               <ul class="divide-y dark:divide-gray-800">
                 @for (row of onDutyStaff; track row.userId) {
                   <li class="flex items-center justify-between gap-2 py-2.5 text-sm">
-                    <div class="min-w-0">
-                      <p class="font-medium text-gray-800 dark:text-gray-200">{{ row.fullname }}</p>
-                      <p class="text-xs text-gray-500">{{ row.roleName || 'Cashier' }}</p>
+                    <div class="flex min-w-0 items-center gap-2.5">
+                      <img [src]="avatarUrl(row)" [alt]="row.fullname"
+                        class="h-8 w-8 shrink-0 rounded-full object-cover ring-1 ring-gray-200 dark:ring-gray-700"
+                        (error)="$any($event.target).src = defaultStaffAvatar" />
+                      <div class="min-w-0">
+                        <p class="font-medium text-gray-800 dark:text-gray-200">{{ row.fullname }}</p>
+                        <p class="text-xs text-gray-500">{{ row.roleName || 'Cashier' }}</p>
+                      </div>
                     </div>
                     <div class="flex shrink-0 items-center gap-2">
                       <span class="text-xs text-emerald-600">Active</span>
@@ -275,7 +280,14 @@
                 <tbody>
                   @for (row of onDutyStaff; track row.userId) {
                     <tr class="border-b dark:border-gray-800/70">
-                      <td class="px-4 py-2.5 font-medium text-gray-800 dark:text-gray-200">{{ row.fullname }}</td>
+                      <td class="px-4 py-2.5 font-medium text-gray-800 dark:text-gray-200">
+                        <div class="flex items-center gap-2.5">
+                          <img [src]="avatarUrl(row)" [alt]="row.fullname"
+                            class="h-7 w-7 shrink-0 rounded-full object-cover ring-1 ring-gray-200 dark:ring-gray-700"
+                            (error)="$any($event.target).src = defaultStaffAvatar" />
+                          <span>{{ row.fullname }}</span>
+                        </div>
+                      </td>
                       <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">{{ row.roleName || 'Cashier' }}</td>
                       <td class="px-4 py-2.5 text-gray-600 dark:text-gray-400">{{ formatDateTime(row.lastSeen) }}</td>
                       <td class="px-4 py-2.5"><span class="text-xs font-medium text-emerald-600">On duty</span></td>

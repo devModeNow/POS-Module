@@ -276,7 +276,9 @@ export class PosAdminDashboardComponent implements OnInit {
 
   report: PosDashboardReport | null = null;
 
-  onDutyStaff: Array<{ userId: number; fullname: string; roleName: string | null; lastSeen: string }> = [];
+  onDutyStaff: Array<{ userId: number; fullname: string; roleName: string | null; lastSeen: string; profilePicture?: string | null }> = [];
+
+  readonly defaultStaffAvatar = '/images/user/faceless-avatar.svg';
 
   lowStock: Array<{ partName: string; category: string | null; stockQty: number; stockWarning: number; sellingPrice: number }> = [];
 
@@ -799,6 +801,14 @@ export class PosAdminDashboardComponent implements OnInit {
   messageStaff(row: { userId: number; fullname: string }): void {
 
     this.chatUi.openPrivateChat(row.userId, row.fullname || 'Cashier');
+
+  }
+
+
+
+  avatarUrl(row: { profilePicture?: string | null }): string {
+
+    return row.profilePicture?.trim() || this.defaultStaffAvatar;
 
   }
 

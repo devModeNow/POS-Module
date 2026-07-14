@@ -60,7 +60,14 @@
             <tbody>
               @for (row of staff; track row.userId) {
                 <tr class="border-b border-gray-100 transition-colors hover:bg-gray-50/80 last:border-0 dark:border-gray-800/70 dark:hover:bg-white/[0.02]">
-                  <td class="px-4 py-3.5 text-sm font-medium text-gray-800 dark:text-gray-200">{{ row.fullname || row.username }}</td>
+                  <td class="px-4 py-3.5">
+                    <div class="flex items-center gap-3">
+                      <img [src]="avatarUrl(row)" [alt]="row.fullname || row.username"
+                        class="h-9 w-9 shrink-0 rounded-full object-cover ring-1 ring-gray-200 dark:ring-gray-700"
+                        (error)="$any($event.target).src = defaultAvatar" />
+                      <span class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ row.fullname || row.username }}</span>
+                    </div>
+                  </td>
                   <td class="px-4 py-3.5 text-sm text-gray-600 dark:text-gray-400">{{ row.roleName || '—' }}</td>
                   <td class="px-4 py-3.5 text-sm text-gray-600 dark:text-gray-400">{{ row.lastSeen | date:'MMM dd, yyyy HH:mm' }}</td>
                   <td class="px-4 py-3.5 text-right">

@@ -1,9 +1,17 @@
 import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { PosCommunicationsService, PosReceiptTemplateElement } from '../../../services/pos-communications.service';
+import {
+  PosCommunicationsService,
+  PosPrinterConnectionType,
+  PosReceiptTemplateElement,
+} from '../../../services/pos-communications.service';
 import { PosReceiptPrintService, ReceiptPrintContext } from '../../../services/pos-receipt-print.service';
+import { PosUsbPrinterService } from '../../../services/pos-usb-printer.service';
+import { PosBluetoothPrinterService } from '../../../services/pos-bluetooth-printer.service';
 import { PosReceiptTemplateEditorComponent } from '../pos-receipt-template-editor/pos-receipt-template-editor.component';
+
+type ConnectionStatus = 'idle' | 'testing' | 'connected' | 'failed';
 
 @Component({
   selector: 'app-pos-printer-settings-panel',
@@ -28,6 +36,17 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
   logoUrl: string | null = null;
   templateElements: PosReceiptTemplateElement[] = [];
 
+  connectionType: PosPrinterConnectionType = 'browser';
+  printerHost = '';
+  printerPort = '9100';
+  usbVendorId = '';
+  usbProductId = '';
+  usbProductName = '';
+  btDeviceId = '';
+  btDeviceName = '';
+  connectionStatus: ConnectionStatus = 'idle';
+  connectionMessage = '';
+
   readonly printerOptions = [
     'System Default',
     'EPSON TM-T88',
@@ -39,6 +58,8 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
   constructor(
     private readonly comms: PosCommunicationsService,
     private readonly receiptPrint: PosReceiptPrintService,
+    private readonly usbPrinter: PosUsbPrinterService,
+    private readonly bluetoothPrinter: PosBluetoothPrinterService,
   ) {}
 
   ngOnInit(): void {
@@ -59,6 +80,16 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
       this.businessAddress = String(item['businessAddress'] ?? '');
       this.logoUrl = (item['businessLogoLight'] as string) || (item['businessLogoDark'] as string) || null;
       this.templateElements = this.receiptPrint.resolveTemplateElements(String(item['posReceiptTemplateJson'] ?? ''));
+      this.connectionType = (String(item['posPrinterConnectionType'] ?? 'browser') as PosPrinterConnectionType) || 'browser';
+      this.printerHost = String(item['posPrinterHost'] ?? '');
+      this.printerPort = String(item['posPrinterPort'] ?? '9100');
+      this.usbVendorId = String(item['posPrinterUsbVendorId'] ?? '');
+      this.usbProductId = String(item['posPrinterUsbProductId'] ?? '');
+      this.usbProductName = String(item['posPrinterUsbProductName'] ?? '');
+      this.btDeviceId = String(item['posPrinterBtDeviceId'] ?? '');
+      this.btDeviceName = String(item['posPrinterBtDeviceName'] ?? '');
+      this.connectionStatus = 'idle';
+      this.connectionMessage = '';
     } catch {
       this.error = 'Failed to load printer settings.';
     } finally {
@@ -76,6 +107,14 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
         posReceiptShowLogo: this.showLogo,
         posReceiptFooterText: this.footerText,
         posReceiptTemplateJson: JSON.stringify(this.templateElements),
+        posPrinterConnectionType: this.connectionType,
+        posPrinterHost: this.printerHost,
+        posPrinterPort: this.printerPort,
+        posPrinterUsbVendorId: this.usbVendorId,
+        posPrinterUsbProductId: this.usbProductId,
+        posPrinterUsbProductName: this.usbProductName,
+        posPrinterBtDeviceId: this.btDeviceId,
+        posPrinterBtDeviceName: this.btDeviceName,
       });
       if (!r?.success) {
         this.error = r?.message ?? 'Failed to save printer settings.';
@@ -109,6 +148,93 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
       ? this.templateElements
       : this.receiptPrint.defaultTemplateElements();
     this.receiptPrint.printFromSettings(elements, ctx, this.paperWidth);
+  }
+
+  get usbSupported(): boolean {
+    return this.usbPrinter.isSupported();
+  }
+
+  get bluetoothSupported(): boolean {
+    return this.bluetoothPrinter.isSupported();
+  }
+
+  get connectionStatusLabel(): string {
+    switch (this.connectionStatus) {
+      case 'testing': return 'Testing…';
+      case 'connected': return 'Connected';
+      case 'failed': return 'Not connected';
+      default: return this.connectionType === 'browser' ? 'Using browser print dialog' : 'Not tested yet';
+    }
+  }
+
+  get connectionStatusClass(): string {
+    switch (this.connectionStatus) {
+      case 'testing': return 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300';
+      case 'connected': return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300';
+      case 'failed': return 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-300';
+      default: return 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400';
+    }
+  }
+
+  onConnectionTypeChange(): void {
+    this.connectionStatus = 'idle';
+    this.connectionMessage = '';
+  }
+
+  async testConnection(): Promise<void> {
+    if (!this.printerHost.trim()) {
+      this.connectionStatus = 'failed';
+      this.connectionMessage = 'Enter a host/IP address first.';
+      return;
+    }
+    this.connectionStatus = 'testing';
+    this.connectionMessage = '';
+    try {
+      const r = await this.comms.testPrinterConnection(this.printerHost.trim(), Number(this.printerPort) || 9100);
+      this.connectionStatus = r?.success ? 'connected' : 'failed';
+      this.connectionMessage = r?.message ?? (r?.success ? 'Connected.' : 'Could not connect.');
+    } catch {
+      this.connectionStatus = 'failed';
+      this.connectionMessage = 'Failed to reach the printer.';
+    }
+  }
+
+  async selectUsbPrinter(): Promise<void> {
+    if (!this.usbSupported) {
+      this.connectionStatus = 'failed';
+      this.connectionMessage = 'Not supported in this browser. Use Chrome or Edge.';
+      return;
+    }
+    const info = await this.usbPrinter.requestDevice();
+    if (!info) {
+      this.connectionMessage = 'No USB printer selected.';
+      return;
+    }
+    this.usbVendorId = info.vendorId;
+    this.usbProductId = info.productId;
+    this.usbProductName = info.productName;
+    this.connectionStatus = 'connected';
+    this.connectionMessage = `Selected ${info.productName}.`;
+  }
+
+  async selectBluetoothPrinter(): Promise<void> {
+    if (!this.bluetoothSupported) {
+      this.connectionStatus = 'failed';
+      this.connectionMessage = 'Not supported in this browser. Use Chrome or Edge on HTTPS/localhost.';
+      return;
+    }
+    this.connectionStatus = 'testing';
+    this.connectionMessage = 'Waiting for Bluetooth device…';
+    const info = await this.bluetoothPrinter.requestDevice();
+    if (!info) {
+      this.connectionStatus = 'failed';
+      this.connectionMessage = 'No Bluetooth printer selected, or pairing was cancelled.';
+      return;
+    }
+    this.btDeviceId = info.deviceId;
+    this.btDeviceName = info.deviceName;
+    this.connectionStatus = 'connected';
+    this.connectionMessage = `Connected to ${info.deviceName}. Save settings to keep this printer.`;
   }
 
   get previewWidthClass(): string {

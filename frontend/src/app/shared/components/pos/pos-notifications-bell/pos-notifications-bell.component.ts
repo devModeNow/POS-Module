@@ -44,10 +44,36 @@ export class PosNotificationsBellComponent implements OnInit, OnDestroy {
   loading = false;
   unreadCount = 0;
   items: PosNotification[] = [];
+  readFilter: 'all' | 'unread' | 'read' = 'all';
+  categoryFilter: 'all' | 'message' | 'sale' | 'other' = 'all';
+
+  readonly readFilterOptions: Array<{ value: 'all' | 'unread' | 'read'; label: string }> = [
+    { value: 'all', label: 'All' },
+    { value: 'unread', label: 'Unread' },
+    { value: 'read', label: 'Read' },
+  ];
+
+  readonly categoryOptions: Array<{ value: 'all' | 'message' | 'sale' | 'other'; label: string }> = [
+    { value: 'all', label: 'All types' },
+    { value: 'message', label: 'Messages' },
+    { value: 'sale', label: 'Sales' },
+    { value: 'other', label: 'Other' },
+  ];
 
   private pollTimer?: ReturnType<typeof setInterval>;
   private panelView?: EmbeddedViewRef<unknown>;
   private panelEl: HTMLElement | null = null;
+
+  get filteredItems(): PosNotification[] {
+    return this.items.filter((item) => {
+      if (this.readFilter === 'unread' && item.isRead) return false;
+      if (this.readFilter === 'read' && !item.isRead) return false;
+      if (this.categoryFilter === 'message' && item.type !== 'message') return false;
+      if (this.categoryFilter === 'sale' && item.type !== 'sale') return false;
+      if (this.categoryFilter === 'other' && (item.type === 'message' || item.type === 'sale')) return false;
+      return true;
+    });
+  }
 
   constructor(
     private readonly comms: PosCommunicationsService,
@@ -224,6 +250,22 @@ export class PosNotificationsBellComponent implements OnInit, OnDestroy {
 
   typeIcon(type: string): string {
     return type === 'sale' ? '💰' : type === 'message' ? '💬' : '🔔';
+  }
+
+  categoryLabel(type: string): string {
+    if (type === 'sale') return 'Sale';
+    if (type === 'message') return 'Message';
+    return 'System';
+  }
+
+  setReadFilter(value: 'all' | 'unread' | 'read'): void {
+    this.readFilter = value;
+    this.panelView?.detectChanges();
+  }
+
+  setCategoryFilter(value: 'all' | 'message' | 'sale' | 'other'): void {
+    this.categoryFilter = value;
+    this.panelView?.detectChanges();
   }
 
   isClickable(item: PosNotification): boolean {

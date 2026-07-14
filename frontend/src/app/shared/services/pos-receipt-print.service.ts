@@ -1,9 +1,12 @@
 import { Injectable } from '@angular/core';
 import {
   PosCommunicationsService,
+  PosPrinterConnectionType,
   PosReceiptTemplateElement,
 } from './pos-communications.service';
 import { PosService } from './pos.service';
+import { PosUsbPrinterService } from './pos-usb-printer.service';
+import { PosBluetoothPrinterService } from './pos-bluetooth-printer.service';
 
 export type ReceiptPrintContext = {
   businessName?: string;
@@ -21,11 +24,22 @@ export type ReceiptPrintContext = {
   saleDate?: string;
 };
 
+export type PosPrinterConnection = {
+  connectionType: PosPrinterConnectionType;
+  host?: string;
+  port?: number;
+  usbVendorId?: string;
+  usbProductId?: string;
+  btDeviceId?: string;
+};
+
 @Injectable({ providedIn: 'root' })
 export class PosReceiptPrintService {
   constructor(
     private readonly comms: PosCommunicationsService,
     private readonly pos: PosService,
+    private readonly usbPrinter: PosUsbPrinterService,
+    private readonly bluetoothPrinter: PosBluetoothPrinterService,
   ) {}
 
   defaultTemplateElements(): PosReceiptTemplateElement[] {
@@ -119,6 +133,63 @@ export class PosReceiptPrintService {
 </body></html>`;
   }
 
+  buildReceiptText(ctx: ReceiptPrintContext): string {
+    const rule = '--------------------------------';
+    const lines: string[] = [ctx.businessName || 'Store'];
+    if (ctx.businessAddress) lines.push(ctx.businessAddress);
+    lines.push(rule);
+    if (ctx.saleDate) lines.push(ctx.saleDate);
+    const metaLine = [ctx.cashier, ctx.paymentMethod].filter(Boolean).join(' · ');
+    if (metaLine) lines.push(metaLine);
+    lines.push(rule);
+    if (ctx.itemsText) lines.push(ctx.itemsText);
+    lines.push(rule);
+    lines.push(`Total: ${ctx.total ?? '₱0.00'}`);
+    if (ctx.amountPaid) lines.push(`Paid: ${ctx.amountPaid}`);
+    if (ctx.change) lines.push(`Change: ${ctx.change}`);
+    lines.push(rule);
+    lines.push(ctx.footer || 'Thank you!');
+    return lines.join('\n');
+  }
+
+  /**
+   * Prints a receipt using the configured connection type, falling back to
+   * the browser print dialog when a network/USB printer is unavailable.
+   */
+  async printViaConnection(
+    elements: PosReceiptTemplateElement[],
+    ctx: ReceiptPrintContext,
+    paperWidth: string,
+    connection: PosPrinterConnection,
+  ): Promise<{ success: boolean; message?: string; usedFallback?: boolean }> {
+    if (connection.connectionType === 'network' && connection.host) {
+      const text = this.buildReceiptText(ctx);
+      const r = await this.comms.printRawToNetworkPrinter(connection.host, connection.port || 9100, text);
+      if (r?.success) return { success: true };
+      this.printFromSettings(elements, ctx, paperWidth);
+      return { success: false, message: r?.message ?? 'Network printer unavailable.', usedFallback: true };
+    }
+
+    if (connection.connectionType === 'usb' && connection.usbVendorId && connection.usbProductId) {
+      const text = this.buildReceiptText(ctx);
+      const r = await this.usbPrinter.printText(connection.usbVendorId, connection.usbProductId, text);
+      if (r.success) return { success: true };
+      this.printFromSettings(elements, ctx, paperWidth);
+      return { success: false, message: r.message ?? 'USB printer unavailable.', usedFallback: true };
+    }
+
+    if (connection.connectionType === 'bluetooth' && connection.btDeviceId) {
+      const text = this.buildReceiptText(ctx);
+      const r = await this.bluetoothPrinter.printText(connection.btDeviceId, text);
+      if (r.success) return { success: true };
+      this.printFromSettings(elements, ctx, paperWidth);
+      return { success: false, message: r.message ?? 'Bluetooth printer unavailable.', usedFallback: true };
+    }
+
+    this.printFromSettings(elements, ctx, paperWidth);
+    return { success: true };
+  }
+
   openPrintWindow(html: string): void {
     const win = window.open('', '_blank', 'width=420,height=720');
     if (!win) return;
@@ -161,7 +232,15 @@ export class PosReceiptPrintService {
       cashier: sale.cashier,
       saleDate: new Date(sale.createdAt || sale.saleDate).toLocaleString('en-PH'),
     };
-    this.printFromSettings(elements, ctx, paperWidth);
+    const connection: PosPrinterConnection = {
+      connectionType: (item['posPrinterConnectionType'] as PosPrinterConnectionType) || 'browser',
+      host: String(item['posPrinterHost'] ?? ''),
+      port: Number(item['posPrinterPort']) || 9100,
+      usbVendorId: String(item['posPrinterUsbVendorId'] ?? ''),
+      usbProductId: String(item['posPrinterUsbProductId'] ?? ''),
+      btDeviceId: String(item['posPrinterBtDeviceId'] ?? ''),
+    };
+    await this.printViaConnection(elements, ctx, paperWidth, connection);
     return true;
   }
 }

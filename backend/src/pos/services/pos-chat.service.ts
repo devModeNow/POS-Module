@@ -1,8 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from 'src/database/database.service';
+import sharp from 'sharp';
 
 /** Minutes since last heartbeat / chat activity to count as online */
 const ONLINE_WITHIN_MINUTES = 15;
+
+const MAX_ATTACHMENT_SIZE = 8 * 1024 * 1024;
+const MAX_ATTACHMENT_DIMENSION = 1600;
 
 @Injectable()
 export class PosChatService {
@@ -61,6 +65,11 @@ export class PosChatService {
         ADD COLUMN IF NOT EXISTS recipient_id BIGINT
     `);
     await this.db.query(`
+      ALTER TABLE public.tblpos_chat_messages
+        ADD COLUMN IF NOT EXISTS attachment_url TEXT,
+        ADD COLUMN IF NOT EXISTS attachment_type TEXT
+    `);
+    await this.db.query(`
       CREATE TABLE IF NOT EXISTS public.tblpos_staff_presence (
         user_id    BIGINT NOT NULL,
         org_id     BIGINT NOT NULL,
@@ -80,6 +89,20 @@ export class PosChatService {
        ON CONFLICT (user_id, org_id) DO UPDATE SET last_seen = NOW()`,
       [userId, orgId],
     );
+  }
+
+  private async processAttachment(file: Express.Multer.File): Promise<{ url: string; type: string }> {
+    if (!file?.buffer || file.size <= 0) throw new Error('Image file is required');
+    if (!String(file.mimetype ?? '').startsWith('image/')) throw new Error('Only image files are allowed');
+    if (file.size > MAX_ATTACHMENT_SIZE) throw new Error('Image must be under 8MB');
+    const resizedBuffer = await sharp(file.buffer)
+      .resize(MAX_ATTACHMENT_DIMENSION, MAX_ATTACHMENT_DIMENSION, {
+        fit: 'inside',
+        withoutEnlargement: true,
+      })
+      .webp({ quality: 82 })
+      .toBuffer();
+    return { url: `data:image/webp;base64,${resizedBuffer.toString('base64')}`, type: 'image/webp' };
   }
 
   async listChatUsers(orgId: number, currentUserId: number) {
@@ -144,8 +167,8 @@ export class PosChatService {
       await this.touchPresence(orgId, userId);
 
       if (mode === 'private') {
-        const peer = Number(recipientId ?? 0);
-        if (!peer) return { success: false, message: 'Recipient is required for private chat' };
+        const peer = Number(recipientId) || 0;
+        if (!peer) return { success: false, message: 'Select a user for private chat' };
         const result = await this.db.query<{
           id: number;
           senderId: number;
@@ -154,6 +177,8 @@ export class PosChatService {
           roleName: string | null;
           senderProfilePicture: string | null;
           message: string;
+          attachmentUrl: string | null;
+          attachmentType: string | null;
           createdAt: string;
         }>(
           `SELECT m.id,
@@ -163,6 +188,8 @@ export class PosChatService {
                   COALESCE(to_jsonb(r)->>'roleName', to_jsonb(r)->>'rolename') AS "roleName",
                   ${this.profilePictureSql} AS "senderProfilePicture",
                   m.message,
+                  m.attachment_url AS "attachmentUrl",
+                  m.attachment_type AS "attachmentType",
                   m.created_at AS "createdAt"
            FROM tblpos_chat_messages m
            INNER JOIN tblusers u ON u.id = m.sender_id
@@ -188,6 +215,8 @@ export class PosChatService {
         roleName: string | null;
         senderProfilePicture: string | null;
         message: string;
+        attachmentUrl: string | null;
+        attachmentType: string | null;
         createdAt: string;
       }>(
         `SELECT m.id,
@@ -197,6 +226,8 @@ export class PosChatService {
                 COALESCE(to_jsonb(r)->>'roleName', to_jsonb(r)->>'rolename') AS "roleName",
                 ${this.profilePictureSql} AS "senderProfilePicture",
                 m.message,
+                m.attachment_url AS "attachmentUrl",
+                m.attachment_type AS "attachmentType",
                 m.created_at AS "createdAt"
          FROM tblpos_chat_messages m
          INNER JOIN tblusers u ON u.id = m.sender_id
@@ -214,7 +245,7 @@ export class PosChatService {
     }
   }
 
-  private async getMessageById(orgId: number, messageId: number) {
+  private async getMessageById(orgId: number, messageId: number, _viewerId: number) {
     const result = await this.db.query<{
       id: number;
       senderId: number;
@@ -223,6 +254,8 @@ export class PosChatService {
       roleName: string | null;
       senderProfilePicture: string | null;
       message: string;
+      attachmentUrl: string | null;
+      attachmentType: string | null;
       createdAt: string;
     }>(
       `SELECT m.id,
@@ -232,6 +265,8 @@ export class PosChatService {
               COALESCE(to_jsonb(r)->>'roleName', to_jsonb(r)->>'rolename') AS "roleName",
               ${this.profilePictureSql} AS "senderProfilePicture",
               m.message,
+              m.attachment_url AS "attachmentUrl",
+              m.attachment_type AS "attachmentType",
               m.created_at AS "createdAt"
        FROM tblpos_chat_messages m
        INNER JOIN tblusers u ON u.id = m.sender_id
@@ -242,24 +277,44 @@ export class PosChatService {
     return result.rows[0] ?? null;
   }
 
-  async sendMessage(orgId: number, senderId: number, message: string, recipientId?: number | null) {
+  async sendMessage(
+    orgId: number,
+    senderId: number,
+    message: string,
+    recipientId?: number | null,
+    file?: Express.Multer.File,
+  ) {
     const text = String(message ?? '').trim();
-    if (!text) return { success: false, message: 'Message is required' };
     if (!orgId || !senderId) {
       return { success: false, message: 'Invalid session — please sign in again' };
     }
+
+    let attachmentUrl: string | null = null;
+    let attachmentType: string | null = null;
+    if (file) {
+      try {
+        const processed = await this.processAttachment(file);
+        attachmentUrl = processed.url;
+        attachmentType = processed.type;
+      } catch (e) {
+        return { success: false, message: e instanceof Error ? e.message : 'Failed to process image' };
+      }
+    }
+
+    if (!text && !attachmentUrl) return { success: false, message: 'Message is required' };
+
     const peer = recipientId != null && recipientId > 0 ? recipientId : null;
     try {
       await this.ensureSchema();
       await this.touchPresence(orgId, senderId);
       const result = await this.db.query<{ id: number; createdAt: string }>(
-        `INSERT INTO tblpos_chat_messages (org_id, sender_id, recipient_id, message)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO tblpos_chat_messages (org_id, sender_id, recipient_id, message, attachment_url, attachment_type)
+         VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id, created_at AS "createdAt"`,
-        [orgId, senderId, peer, text],
+        [orgId, senderId, peer, text, attachmentUrl, attachmentType],
       );
       const inserted = result.rows[0];
-      const full = inserted ? await this.getMessageById(orgId, inserted.id) : null;
+      const full = inserted ? await this.getMessageById(orgId, inserted.id, senderId) : null;
       return { success: true, data: full ?? inserted, recipientId: peer };
     } catch (e) {
       return { success: false, message: e instanceof Error ? e.message : 'Failed to send message' };

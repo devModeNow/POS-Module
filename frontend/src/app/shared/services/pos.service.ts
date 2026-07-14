@@ -424,6 +424,33 @@ export class PosService {
     return r.data;
   }
 
+  async bulkImportProducts(products: Array<{
+    name: string;
+    category?: string;
+    brand?: string;
+    description?: string;
+    variants: Array<{
+      variantName: string;
+      unitType?: string;
+      stockQty?: number;
+      stockWarning?: number;
+      costPrice?: number;
+      sellingPrice?: number;
+      salePrice?: number | null;
+    }>;
+  }>) {
+    const r = await apiClient.post<{
+      success: boolean;
+      importedProducts?: number;
+      updatedProducts?: number;
+      importedVariants?: number;
+      updatedVariants?: number;
+      errors?: string[];
+      message?: string;
+    }>('/inventory/products/bulk-import', { products });
+    return r.data;
+  }
+
   async uploadProductImage(productId: number, file: File) {
     const form = new FormData();
     form.append('image', file);

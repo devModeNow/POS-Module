@@ -15,7 +15,8 @@ import { PosChatUiService } from '../../../shared/services/pos-chat-ui.service';
 export class PosStaffMonitorComponent implements OnInit {
   loading = false;
   error = '';
-  staff: Array<{ userId: number; username: string; fullname: string | null; roleName: string | null; lastSeen: string }> = [];
+  staff: Array<{ userId: number; username: string; fullname: string | null; roleName: string | null; lastSeen: string; profilePicture?: string | null }> = [];
+  readonly defaultAvatar = '/images/user/faceless-avatar.svg';
   lastUpdatedLabel = '';
 
   constructor(
@@ -25,6 +26,11 @@ export class PosStaffMonitorComponent implements OnInit {
   ) {}
 
   ngOnInit(): void { void this.load(); }
+
+  avatarUrl(row: { profilePicture?: string | null }): string {
+    const pic = row.profilePicture?.trim();
+    return pic || this.defaultAvatar;
+  }
 
   async load(): Promise<void> {
     this.loading = true;

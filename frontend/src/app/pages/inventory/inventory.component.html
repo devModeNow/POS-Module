@@ -30,7 +30,13 @@
                     <button type="button" (mousedown)="pickInventorySearchSuggestion(item)"
                       class="flex w-full items-center gap-3 rounded-md p-2 text-left hover:bg-brand-50 dark:hover:bg-brand-500/10">
                       <div class="h-10 w-10 shrink-0 overflow-hidden rounded-md bg-gray-100 dark:bg-gray-800">
-                        @if (item.imageUrl) { <img [src]="item.imageUrl" [alt]="item.label" class="h-full w-full object-cover" /> }
+                        @if (item.imageUrl) {
+                          <img [src]="item.imageUrl" [alt]="item.label" class="h-full w-full object-cover" />
+                        } @else {
+                          <div class="flex h-full w-full items-center justify-center text-[10px] font-semibold text-white" [style.background-color]="avatarColorFor(item.label)">
+                            {{ initialsFor(item.label) }}
+                          </div>
+                        }
                       </div>
                       <div class="min-w-0">
                         <span class="block truncate text-sm font-medium">{{ item.label }}</span>
@@ -100,6 +106,10 @@
             <app-button *appCan="{ menu: 'inventory', permission: 'canCreate' }" size="sm" variant="outline" (btnClick)="showImportModal = true">Import CSV</app-button>
             <app-button *appCan="{ menu: 'inventory', permission: 'canCreate' }" size="sm" (btnClick)="openCreateItem()">Add Item</app-button>
           }
+          @if (isPosOrg) {
+            <app-button *appCan="{ menu: 'inventory', permission: 'canRead' }" size="sm" variant="outline" (btnClick)="exportPosInventory()">Export</app-button>
+            <app-button *appCan="{ menu: 'inventory', permission: 'canCreate' }" size="sm" variant="outline" (btnClick)="openPosImportModal()">Import</app-button>
+          }
           @if (isPosOrg && !isDeletedView) {
             <button type="button" *appCan="{ menu: 'inventory', permission: 'canCreate' }" (click)="openCreateItem()" title="Add product"
               class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-brand-500 text-white hover:bg-brand-600">
@@ -146,11 +156,20 @@
                 <tr><td [attr.colspan]="visibleColumnCount" class="px-4 py-8 text-center text-sm text-gray-500">Loading...</td></tr>
               } @else {
                 @for (v of paginatedVariants; track v.id) {
-                  <tr class="border-b border-gray-100 hover:bg-gray-50/70 dark:border-gray-800/70" [class.opacity-60]="isDeletedView">
+                  <tr class="border-b border-gray-100 hover:bg-gray-50/70 dark:border-gray-800/70"
+                    [class.cursor-pointer]="!isDeletedView"
+                    [class.opacity-60]="isDeletedView"
+                    (click)="!isDeletedView && openEditProduct(v)">
                     @if (isColumnVisible('image')) {
                     <td class="px-4 py-3">
                       <div class="h-12 w-12 overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-800">
-                        @if (v.imageUrl) { <img [src]="v.imageUrl" [alt]="v.variantName" class="h-full w-full object-cover" /> }
+                        @if (v.imageUrl) {
+                          <img [src]="v.imageUrl" [alt]="v.variantName" class="h-full w-full object-cover" />
+                        } @else {
+                          <div class="flex h-full w-full items-center justify-center text-xs font-semibold text-white" [style.background-color]="avatarColorFor(v.variantName)">
+                            {{ initialsFor(v.variantName) }}
+                          </div>
+                        }
                       </div>
                     </td>
                     }
@@ -180,7 +199,7 @@
                     </td>
                     }
                     @if (isColumnVisible('actions')) {
-                    <td class="px-4 py-3 text-right">
+                    <td class="px-4 py-3 text-right" (click)="$event.stopPropagation()">
                       <div class="flex justify-end gap-1">
                         @if (isDeletedView) {
                           <button type="button" *appCan="{ menu: 'inventory', permission: 'canUpdate' }" (click)="requestRestoreVariant(v)" title="Restore variant"
@@ -241,7 +260,13 @@
                     @if (isColumnVisible('image')) {
                     <td class="px-4 py-3">
                       <div class="h-12 w-12 overflow-hidden rounded-lg bg-gray-100 dark:bg-gray-800">
-                        @if (p.imageUrl) { <img [src]="p.imageUrl" [alt]="p.name" class="h-full w-full object-cover" /> }
+                        @if (p.imageUrl) {
+                          <img [src]="p.imageUrl" [alt]="p.name" class="h-full w-full object-cover" />
+                        } @else {
+                          <div class="flex h-full w-full items-center justify-center text-xs font-semibold text-white" [style.background-color]="avatarColorFor(p.name)">
+                            {{ initialsFor(p.name) }}
+                          </div>
+                        }
                       </div>
                     </td>
                     }
@@ -1038,6 +1063,59 @@
               @if (importResult.errors?.length) {
                 <ul class="mt-2 space-y-1">
                   @for (err of importResult.errors; track $index) {
+                    <li class="text-xs text-error-600 dark:text-error-400">{{ err }}</li>
+                  }
+                </ul>
+              }
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  }
+
+  <!-- POS Import Modal -->
+  @if (showPosImportModal) {
+    <div class="fixed inset-0 z-[200000] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm">
+      <div class="w-full max-w-lg rounded-2xl border border-gray-200 bg-white shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+        <div class="flex items-center justify-between border-b border-gray-200 px-6 py-4 dark:border-gray-700">
+          <h3 class="text-lg font-semibold text-gray-800 dark:text-white/90">Import Products</h3>
+          <button type="button" (click)="closePosImportModal()"
+            class="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300">Close</button>
+        </div>
+        <div class="space-y-4 px-6 py-5">
+          <div class="rounded-lg border border-dashed border-gray-300 p-4 text-center dark:border-gray-600">
+            <p class="text-sm text-gray-600 dark:text-gray-400">Upload an Excel (.xlsx) or CSV file with products and variants</p>
+            <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Columns: Product Name, Category, Brand, Description, Variant Name, Unit Type, Stock Qty, Stock Warning, Cost Price, Selling Price, Sale Price</p>
+            <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Rows with the same Product Name are grouped into one product with multiple variants.</p>
+            <input type="file" accept=".xlsx,.csv" (change)="onPosImportFileSelected($event)"
+              class="mt-3 block w-full text-sm text-gray-500 file:mr-4 file:rounded-lg file:border-0 file:bg-brand-50 file:px-4 file:py-2 file:text-sm file:font-medium file:text-brand-700 hover:file:bg-brand-100 dark:text-gray-400 dark:file:bg-brand-900/20 dark:file:text-brand-400" />
+          </div>
+          @if (posImportRows.length > 0) {
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+              Found <strong>{{ posImportRows.length }}</strong> product(s) with <strong>{{ posImportVariantCount }}</strong> variant(s) in "{{ posImportFileName }}".
+            </p>
+          }
+          <div class="flex items-center justify-between">
+            <button type="button" (click)="downloadPosTemplate()" class="text-xs text-brand-600 hover:underline dark:text-brand-400">⬇ Download Excel Template</button>
+            <button type="button" (click)="executePosImport()" [disabled]="isPosImporting || !posImportRows.length"
+              class="rounded-lg bg-brand-500 px-4 py-2 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-60">
+              {{ isPosImporting ? 'Importing...' : 'Import ' + posImportRows.length + ' product(s)' }}
+            </button>
+          </div>
+          @if (posImportResult) {
+            <div class="rounded-lg border p-3" [ngClass]="posImportResult.success ? 'border-success-200 bg-success-50 dark:border-success-700 dark:bg-success-900/20' : 'border-error-200 bg-error-50 dark:border-error-700 dark:bg-error-900/20'">
+              @if (posImportResult.success) {
+                <p class="text-sm font-medium text-success-700 dark:text-success-400">
+                  ✓ {{ posImportResult.importedProducts ?? 0 }} new product(s), {{ posImportResult.updatedProducts ?? 0 }} updated ·
+                  {{ posImportResult.importedVariants ?? 0 }} new variant(s), {{ posImportResult.updatedVariants ?? 0 }} updated
+                </p>
+              } @else {
+                <p class="text-sm font-medium text-error-700 dark:text-error-400">{{ posImportResult.message }}</p>
+              }
+              @if (posImportResult.errors?.length) {
+                <ul class="mt-2 space-y-1">
+                  @for (err of posImportResult.errors; track $index) {
                     <li class="text-xs text-error-600 dark:text-error-400">{{ err }}</li>
                   }
                 </ul>

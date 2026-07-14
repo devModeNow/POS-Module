@@ -17,6 +17,7 @@ import { PosNotificationsService } from './services/pos-notifications.service';
 import { PosOperationsController } from './controllers/pos-operations.controller';
 import { PosStaffService } from './services/pos-staff.service';
 import { PosVoidService } from './services/pos-void.service';
+import { PosPrinterService } from './services/pos-printer.service';
 
 @Module({
   imports: [DatabaseModule, SettingsModule],
@@ -38,6 +39,7 @@ import { PosVoidService } from './services/pos-void.service';
     PosVoidService,
     PosChatService,
     PosNotificationsService,
+    PosPrinterService,
   ],
 })
 export class PosModule {}

@@ -4,6 +4,7 @@ import { UpdateBusinessProfileDto } from 'src/settings/dto/update-business-profi
 import { SettingsService } from 'src/settings/settings.service';
 import { PosDiscountsService } from '../services/discounts.service';
 import { PosPaymentMethodsService } from '../services/payment-methods.service';
+import { PosPrinterService } from '../services/pos-printer.service';
 import { PosTerminalService } from '../services/terminal.service';
 
 type AuthReq = { user?: Record<string, unknown> };
@@ -18,6 +19,7 @@ export class PosTerminalController {
     private readonly discountsService: PosDiscountsService,
     private readonly paymentMethodsService: PosPaymentMethodsService,
     private readonly settingsService: SettingsService,
+    private readonly printerService: PosPrinterService,
   ) {}
 
   @Get('products')
@@ -86,7 +88,25 @@ export class PosTerminalController {
       posReceiptFooterText: dto.posReceiptFooterText,
       posPrinterName: dto.posPrinterName,
       posReceiptTemplateJson: dto.posReceiptTemplateJson,
+      posPrinterConnectionType: dto.posPrinterConnectionType,
+      posPrinterHost: dto.posPrinterHost,
+      posPrinterPort: dto.posPrinterPort,
+      posPrinterUsbVendorId: dto.posPrinterUsbVendorId,
+      posPrinterUsbProductId: dto.posPrinterUsbProductId,
+      posPrinterUsbProductName: dto.posPrinterUsbProductName,
+      posPrinterBtDeviceId: dto.posPrinterBtDeviceId,
+      posPrinterBtDeviceName: dto.posPrinterBtDeviceName,
     };
     return this.settingsService.updateBusinessProfile(allowed, orgId(req));
+  }
+
+  @Post('printer-settings/test-connection')
+  testPrinterConnection(@Body() body: { host?: string; port?: number | string }) {
+    return this.printerService.testConnection(String(body?.host ?? ''), Number(body?.port) || 0);
+  }
+
+  @Post('printer-settings/print-raw')
+  printRaw(@Body() body: { host?: string; port?: number | string; text?: string }) {
+    return this.printerService.printRaw(String(body?.host ?? ''), Number(body?.port) || 0, String(body?.text ?? ''));
   }
 }

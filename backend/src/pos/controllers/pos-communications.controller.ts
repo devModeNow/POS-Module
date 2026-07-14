@@ -1,4 +1,17 @@
-import { Body, Controller, Get, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Patch,
+  Post,
+  Query,
+  Req,
+  UploadedFile,
+  UseGuards,
+  UseInterceptors,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { PosChatService } from '../services/pos-chat.service';
 import { PosNotificationsService } from '../services/pos-notifications.service';
@@ -41,8 +54,10 @@ export class PosCommunicationsController {
   }
 
   @Post('chat/messages')
+  @UseInterceptors(FileInterceptor('image', { storage: memoryStorage() }))
   async sendChat(
-    @Body() body: { message?: string; recipientId?: number | null; mode?: string },
+    @Body() body: { message?: string; recipientId?: string | number | null; mode?: string },
+    @UploadedFile() file: Express.Multer.File | undefined,
     @Req() req: AuthReq,
   ) {
     const oid = posOrgId(req);
@@ -54,10 +69,10 @@ export class PosCommunicationsController {
       return { success: false, message: 'Select a user for private chat' };
     }
 
-    const result = await this.chatService.sendMessage(oid, uid, body?.message ?? '', peer);
+    const result = await this.chatService.sendMessage(oid, uid, body?.message ?? '', peer, file);
     if (result.success) {
       const senderName = String(req.user?.['fullname'] ?? req.user?.['username'] ?? 'User');
-      const preview = String(body?.message ?? '').trim().slice(0, 120);
+      const preview = String(body?.message ?? '').trim().slice(0, 120) || (file ? '📷 Sent a photo' : '');
       if (peer) {
         await this.notificationsService.notifyMessage(
           oid,
