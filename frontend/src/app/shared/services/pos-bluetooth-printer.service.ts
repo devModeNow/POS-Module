@@ -1,12 +1,12 @@
 import { Injectable } from '@angular/core';
+import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 
 /** Common BLE GATT services used by thermal / portable receipt printers. */
 const PRINTER_SERVICE_UUIDS = [
-  // Nordic UART Service (NUS) — common on BLE thermal printers
+  // Nordic UART Service (NUS)
   '6e400001-b5a3-f393-e0a9-e50e24dcca9e',
-  // Generic “FFE0” serial service used by many Chinese BLE POS printers
+  // Generic “FFE0” serial service (many Chinese BLE POS printers)
   '0000ffe0-0000-1000-8000-00805f9b34fb',
-  // Hot printer / ESC-POS BLE adapters
   '0000ff00-0000-1000-8000-00805f9b34fb',
   '49535343-fe7d-4ae5-8fa9-9fafd205e455',
 ];
@@ -55,16 +55,15 @@ export type BluetoothPrinterInfo = {
 };
 
 /**
- * Thin wrapper around the Web Bluetooth API for sending plain-text /
- * ESC/POS-style receipts to a BLE thermal printer.
- * Requires Chrome/Edge on desktop or Android (HTTPS / localhost).
- * Classic (non-BLE) Bluetooth printers are not supported by browsers —
- * pair those via OS settings and use Browser Print Dialog instead.
+ * Browser-native Web Bluetooth printer bridge (no third-party desktop app).
+ * Pairs BLE thermal printers in Chrome/Edge and reconnects via getDevices()
+ * after page reload when the permission is still granted.
  */
 @Injectable({ providedIn: 'root' })
 export class PosBluetoothPrinterService {
   private device: BluetoothDeviceLike | null = null;
   private writeChar: BluetoothRemoteGATTCharacteristicLike | null = null;
+  private lastDeviceId = '';
 
   isSupported(): boolean {
     return !!bluetoothApi();
@@ -80,15 +79,41 @@ export class PosBluetoothPrinterService {
       });
       this.device = device;
       this.writeChar = null;
+      this.lastDeviceId = device.id;
       device.addEventListener('gattserverdisconnected', () => {
         this.writeChar = null;
       });
-      // Probe connect so the user learns early if GATT fails
       await this.connectAndResolveWriteChar(device);
       return this.toInfo(device);
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Reconnect to a previously permitted Bluetooth printer without prompting.
+   * Returns connection info when successful.
+   */
+  async restoreConnection(deviceId: string): Promise<BluetoothPrinterInfo | null> {
+    if (!deviceId || !this.isSupported()) return null;
+    const bt = bluetoothApi();
+    if (!bt) return null;
+    try {
+      const device = await this.resolveDevice(bt, deviceId);
+      if (!device) return null;
+      const char = await this.connectAndResolveWriteChar(device);
+      if (!char) return null;
+      this.lastDeviceId = device.id;
+      return this.toInfo(device);
+    } catch {
+      return null;
+    }
+  }
+
+  async isConnected(deviceId?: string): Promise<boolean> {
+    const id = deviceId || this.lastDeviceId;
+    if (!id || !this.device || this.device.id !== id) return false;
+    return !!this.device.gatt?.connected && !!this.writeChar;
   }
 
   async printText(deviceId: string, text: string): Promise<{ success: boolean; message?: string }> {
@@ -110,12 +135,12 @@ export class PosBluetoothPrinterService {
         return {
           success: false,
           message:
-            'Connected, but no writable Bluetooth characteristic was found. This printer may use classic Bluetooth — pair it in OS settings and use Browser Print Dialog instead.',
+            'Connected, but no writable Bluetooth characteristic was found. This printer may use classic Bluetooth — use Network/USB or Browser Print instead.',
         };
       }
 
-      const payload = new TextEncoder().encode(`${text}\n\n\n`);
-      await this.writeInChunks(char, payload);
+      const bytes = this.encodeReceipt(text);
+      await this.writeInChunks(char, bytes);
       return { success: true };
     } catch (error) {
       return {
@@ -125,12 +150,35 @@ export class PosBluetoothPrinterService {
     }
   }
 
+  private encodeReceipt(text: string): Uint8Array {
+    try {
+      const encoder = new ReceiptPrinterEncoder({ language: 'esc-pos' });
+      const encoded = encoder
+        .initialize()
+        .codepage('auto')
+        .text(text)
+        .newline()
+        .newline()
+        .newline()
+        .cut()
+        .encode();
+      return encoded instanceof Uint8Array ? encoded : new Uint8Array(encoded);
+    } catch {
+      return new TextEncoder().encode(`${text}\n\n\n`);
+    }
+  }
+
   private async resolveDevice(bt: BluetoothLike, deviceId: string): Promise<BluetoothDeviceLike | null> {
     if (this.device?.id === deviceId) return this.device;
     if (typeof bt.getDevices === 'function') {
       const known = await bt.getDevices();
       const found = known.find((d) => d.id === deviceId) ?? null;
-      if (found) this.device = found;
+      if (found) {
+        this.device = found;
+        found.addEventListener('gattserverdisconnected', () => {
+          this.writeChar = null;
+        });
+      }
       return found;
     }
     return null;
@@ -142,7 +190,6 @@ export class PosBluetoothPrinterService {
     if (!device.gatt) return null;
     if (!device.gatt.connected) await device.gatt.connect();
 
-    // Prefer known printer services first, then scan all primary services.
     for (const uuid of PRINTER_SERVICE_UUIDS) {
       try {
         const service = await device.gatt.getPrimaryService(uuid);
@@ -152,7 +199,7 @@ export class PosBluetoothPrinterService {
           return char;
         }
       } catch {
-        // Service not present on this device — try the next UUID.
+        /* try next service */
       }
     }
 
@@ -166,7 +213,7 @@ export class PosBluetoothPrinterService {
         }
       }
     } catch {
-      // Some platforms reject unrestricted primary-service scans.
+      /* unrestricted primary-service scan may be blocked */
     }
 
     return this.writeChar;
@@ -185,7 +232,6 @@ export class PosBluetoothPrinterService {
     char: BluetoothRemoteGATTCharacteristicLike,
     data: Uint8Array,
   ): Promise<void> {
-    // Stay under typical BLE ATT MTU (20 bytes without negotiation).
     const chunkSize = 20;
     for (let offset = 0; offset < data.length; offset += chunkSize) {
       const chunk = data.slice(offset, offset + chunkSize);
@@ -194,7 +240,6 @@ export class PosBluetoothPrinterService {
       } else {
         await char.writeValue(chunk);
       }
-      // Small delay so low-end printer controllers keep up.
       await new Promise((r) => setTimeout(r, 15));
     }
   }

@@ -61,6 +61,7 @@ export class PosStaffService {
          )
          WHERE p.org_id = $1
            AND p.last_seen >= NOW() - ($2 || ' minutes')::interval
+           AND LOWER(COALESCE(r."roleName", to_jsonb(r)->>'rolename', '')) LIKE '%cashier%'
          ORDER BY p.last_seen DESC`,
         [orgId, withinMinutes],
       );

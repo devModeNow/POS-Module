@@ -52,9 +52,19 @@
         </label>
       }
 
-      <app-button (btnClick)="generate()" [disabled]="isLoading">
-        {{ isLoading ? 'Loading...' : 'Refresh' }}
-      </app-button>
+      <button type="button" (click)="generate()" [disabled]="isLoading" title="Refresh"
+        class="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+        @if (isLoading) {
+          <svg class="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+          </svg>
+        } @else {
+          <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        }
+      </button>
 
       <div class="flex items-center gap-2">
         <button type="button" (click)="exportCsv()" [disabled]="!canExport()" title="Export current report as CSV"

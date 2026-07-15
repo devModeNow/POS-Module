@@ -51,6 +51,28 @@ export class PosUsbPrinterService {
     }
   }
 
+  /** Reattach to a previously permitted USB printer without prompting again. */
+  async restoreConnection(vendorId: string, productId: string): Promise<UsbPrinterInfo | null> {
+    const usb = usbApi();
+    if (!usb || !vendorId || !productId) return null;
+    try {
+      const device = await this.resolveDevice(usb, vendorId, productId);
+      if (!device) return null;
+      if (!device.opened) await device.open();
+      if (!device.configuration) await device.selectConfiguration(1);
+      return this.toInfo(device);
+    } catch {
+      return null;
+    }
+  }
+
+  async isConnected(vendorId: string, productId: string): Promise<boolean> {
+    const usb = usbApi();
+    if (!usb || !vendorId || !productId) return false;
+    const device = await this.resolveDevice(usb, vendorId, productId);
+    return !!device?.opened;
+  }
+
   async printText(vendorId: string, productId: string, text: string): Promise<{ success: boolean; message?: string }> {
     const usb = usbApi();
     if (!usb) return { success: false, message: 'WebUSB is not supported in this browser.' };

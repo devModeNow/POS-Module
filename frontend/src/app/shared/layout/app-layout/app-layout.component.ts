@@ -7,6 +7,7 @@ import { AppSidebarComponent } from '../app-sidebar/app-sidebar.component';
 import { BackdropComponent } from '../backdrop/backdrop.component';
 import { GlobalActionLoaderComponent } from '../../components/common/global-action-loader/global-action-loader.component';
 import { PosChatWidgetComponent } from '../../components/pos/pos-chat-widget/pos-chat-widget.component';
+import { PosReceiptPrintService } from '../../services/pos-receipt-print.service';
 import { RbacService } from '../../services/rbac.service';
 import { SidebarService } from '../../services/sidebar.service';
 
@@ -35,6 +36,7 @@ export class AppLayoutComponent implements OnInit, OnDestroy {
   constructor(
     public sidebarService: SidebarService,
     private readonly router: Router,
+    private readonly receiptPrint: PosReceiptPrintService,
     rbac: RbacService,
   ) {
     this.isExpanded$ = this.sidebarService.isExpanded$;
@@ -49,6 +51,9 @@ export class AppLayoutComponent implements OnInit, OnDestroy {
     this.routeSub = this.router.events
       .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
       .subscribe((e) => this.syncPosDashboardRoute(e.urlAfterRedirects));
+    if (this.showPosChat) {
+      void this.receiptPrint.restoreSavedPrinterConnection();
+    }
   }
 
   ngOnDestroy(): void {

@@ -94,43 +94,108 @@ export class PosReceiptPrintService {
     ctx: ReceiptPrintContext,
     paperWidth = '80mm',
   ): string {
-    const widthPx = paperWidth === '58mm' ? 220 : 300;
-    const itemLines = (ctx.itemsText ?? '').split('\n').filter(Boolean).length;
-    const heightPx = Math.max(420, 160 + itemLines * 22);
+    const widthMm = paperWidth === '58mm' ? '58mm' : '80mm';
+    const widthPx = paperWidth === '58mm' ? 220 : 302;
     const logo = ctx.showLogo !== false && ctx.logoUrl
-      ? `<img src="${ctx.logoUrl}" alt="" style="max-width:60%;max-height:48px;display:block;margin:0 auto 8px;" />`
+      ? `<div class="block center"><img class="logo" src="${this.escapeAttr(ctx.logoUrl)}" alt="" /></div>`
       : '';
 
-    const body = elements
+    // Flow layout (top → bottom) so printed height hugs content instead of a fixed blank page.
+    const sorted = [...elements].sort((a, b) => (a.y ?? 0) - (b.y ?? 0) || (a.x ?? 0) - (b.x ?? 0));
+    const body = sorted
       .map((el) => {
-        const style = this.elementStyle(el);
-        const styleStr = Object.entries(style)
-          .map(([k, v]) => `${k.replace(/([A-Z])/g, '-$1').toLowerCase()}:${v}`)
-          .join(';');
+        const align = el.align ?? 'left';
+        const fontSize = el.fontSize ?? 12;
+        const weight = el.bold ? '700' : '400';
         if (el.type === 'image') {
-          return `<div style="position:absolute;${styleStr}"><img src="${el.content}" alt="" style="width:100%;object-fit:contain;" /></div>`;
+          const w = Math.min(100, Math.max(20, el.width ?? 40));
+          return `<div class="block ${align}"><img src="${this.escapeAttr(el.content)}" alt="" style="width:${w}%;max-width:100%;height:auto;" /></div>`;
         }
-        const text = this.renderTemplateText(el.content, ctx)
-          .replace(/\n/g, '<br/>')
-          .replace(/ /g, '&nbsp;');
-        return `<div style="position:absolute;${styleStr}">${text}</div>`;
+        const text = this.escapeHtml(this.renderTemplateText(el.content, ctx)).replace(/\n/g, '<br/>');
+        return `<div class="block ${align}" style="font-size:${fontSize}px;font-weight:${weight};">${text}</div>`;
       })
       .join('');
 
     return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Receipt</title>
 <style>
-  @page { size: ${paperWidth} auto; margin: 4mm; }
-  html, body { margin: 0; padding: 0; background: #fff; }
-  body { font-family: monospace, ui-monospace, monospace; color: #111; }
-  .receipt { position: relative; width: ${widthPx}px; min-height: ${heightPx}px; margin: 0 auto; overflow: hidden; }
+  @page {
+    size: ${widthMm} auto;
+    margin: 0;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: ${widthMm};
+    height: auto !important;
+    background: #fff;
+    color: #111;
+    font-family: "Courier New", Courier, monospace;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .receipt {
+    width: ${widthPx}px;
+    max-width: 100%;
+    margin: 0;
+    padding: 2mm 3mm 4mm;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible;
+  }
+  .block {
+    display: block;
+    width: 100%;
+    margin: 0 0 4px;
+    line-height: 1.25;
+    word-break: break-word;
+    white-space: pre-wrap;
+  }
+  .block.left { text-align: left; }
+  .block.center { text-align: center; }
+  .block.right { text-align: right; }
+  .logo {
+    max-width: 60%;
+    max-height: 48px;
+    height: auto;
+    display: inline-block;
+  }
   @media print {
-    html, body { width: ${widthPx}px; }
-    .receipt { page-break-after: always; }
+    html, body {
+      width: ${widthMm} !important;
+      height: auto !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    .receipt {
+      width: 100% !important;
+      margin: 0 !important;
+      page-break-inside: avoid;
+      page-break-after: avoid;
+      page-break-before: avoid;
+    }
   }
 </style></head><body>
   <div class="receipt">${logo}${body}</div>
-  <script>window.onload = function(){ window.focus(); window.print(); }<\/script>
+  <script>
+    window.onload = function () {
+      window.focus();
+      setTimeout(function () { window.print(); }, 50);
+    };
+  <\/script>
 </body></html>`;
+  }
+
+  private escapeHtml(value: string): string {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  private escapeAttr(value: string): string {
+    return this.escapeHtml(value).replace(/'/g, '&#39;');
   }
 
   buildReceiptText(ctx: ReceiptPrintContext): string {
@@ -191,7 +256,9 @@ export class PosReceiptPrintService {
   }
 
   openPrintWindow(html: string): void {
-    const win = window.open('', '_blank', 'width=420,height=720');
+    const width = 420;
+    // Short popup — actual print height is driven by receipt content / @page size
+    const win = window.open('', '_blank', `width=${width},height=640`);
     if (!win) return;
     win.document.open();
     win.document.write(html);
@@ -242,5 +309,24 @@ export class PosReceiptPrintService {
     };
     await this.printViaConnection(elements, ctx, paperWidth, connection);
     return true;
+  }
+
+  /** Silently restore Bluetooth/USB printer permission after page load. */
+  async restoreSavedPrinterConnection(): Promise<void> {
+    try {
+      const r = await this.comms.getPrinterSettings();
+      const item = r?.item ?? {};
+      const type = String(item['posPrinterConnectionType'] ?? 'browser');
+      if (type === 'bluetooth') {
+        const id = String(item['posPrinterBtDeviceId'] ?? '');
+        if (id) await this.bluetoothPrinter.restoreConnection(id);
+      } else if (type === 'usb') {
+        const vendor = String(item['posPrinterUsbVendorId'] ?? '');
+        const product = String(item['posPrinterUsbProductId'] ?? '');
+        if (vendor && product) await this.usbPrinter.restoreConnection(vendor, product);
+      }
+    } catch {
+      /* ignore — user can re-select in settings */
+    }
   }
 }

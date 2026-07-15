@@ -88,12 +88,74 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
       this.usbProductName = String(item['posPrinterUsbProductName'] ?? '');
       this.btDeviceId = String(item['posPrinterBtDeviceId'] ?? '');
       this.btDeviceName = String(item['posPrinterBtDeviceName'] ?? '');
-      this.connectionStatus = 'idle';
-      this.connectionMessage = '';
+      await this.restoreSavedConnection();
     } catch {
       this.error = 'Failed to load printer settings.';
+      this.connectionStatus = 'idle';
+      this.connectionMessage = '';
     } finally {
       this.loading = false;
+    }
+  }
+
+  /** Keep previously saved printer linked after reload (no re-pair required). */
+  private async restoreSavedConnection(): Promise<void> {
+    this.connectionStatus = 'idle';
+    this.connectionMessage = '';
+
+    if (this.connectionType === 'browser') {
+      this.connectionStatus = 'connected';
+      this.connectionMessage = 'Using browser print dialog.';
+      return;
+    }
+
+    if (this.connectionType === 'network' && this.printerHost.trim()) {
+      this.connectionStatus = 'testing';
+      try {
+        const r = await this.comms.testPrinterConnection(
+          this.printerHost.trim(),
+          Number(this.printerPort) || 9100,
+        );
+        this.connectionStatus = r?.success ? 'connected' : 'failed';
+        this.connectionMessage = r?.success
+          ? `Connected to ${this.printerHost}:${this.printerPort || 9100}`
+          : (r?.message ?? 'Saved network printer unreachable.');
+      } catch {
+        this.connectionStatus = 'failed';
+        this.connectionMessage = 'Saved network printer unreachable.';
+      }
+      return;
+    }
+
+    if (this.connectionType === 'usb' && this.usbVendorId && this.usbProductId) {
+      this.connectionStatus = 'testing';
+      this.connectionMessage = 'Reconnecting saved USB printer…';
+      const info = await this.usbPrinter.restoreConnection(this.usbVendorId, this.usbProductId);
+      if (info) {
+        this.usbProductName = info.productName || this.usbProductName;
+        this.connectionStatus = 'connected';
+        this.connectionMessage = `Reconnected to ${this.usbProductName || 'USB printer'}.`;
+      } else {
+        this.connectionStatus = 'failed';
+        this.connectionMessage = 'Saved USB printer not found. Plug it in or select it again.';
+      }
+      return;
+    }
+
+    if (this.connectionType === 'bluetooth' && this.btDeviceId) {
+      this.connectionStatus = 'testing';
+      this.connectionMessage = 'Reconnecting saved Bluetooth printer…';
+      const info = await this.bluetoothPrinter.restoreConnection(this.btDeviceId);
+      if (info) {
+        this.btDeviceName = info.deviceName || this.btDeviceName;
+        this.btDeviceId = info.deviceId;
+        this.connectionStatus = 'connected';
+        this.connectionMessage = `Reconnected to ${this.btDeviceName}.`;
+      } else {
+        this.connectionStatus = 'failed';
+        this.connectionMessage =
+          'Saved Bluetooth printer not in range or permission was reset. Select it again.';
+      }
     }
   }
 
@@ -119,6 +181,12 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
       if (!r?.success) {
         this.error = r?.message ?? 'Failed to save printer settings.';
         return;
+      }
+      // Keep connection active after save — do not reset to idle
+      if (this.connectionStatus !== 'connected') {
+        await this.restoreSavedConnection();
+      } else if (!this.connectionMessage) {
+        this.connectionMessage = 'Printer settings saved. Connection kept active.';
       }
       this.saved.emit();
     } catch {

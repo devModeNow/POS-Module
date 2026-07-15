@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, Input, OnInit } from '@angular/core';
-import { Router, RouterLink } from '@angular/router';
+import { NavigationEnd, Router, RouterLink } from '@angular/router';
+import { filter } from 'rxjs/operators';
 import { ConfirmDialogComponent } from '../../../shared/components/ui/confirm-dialog/confirm-dialog.component';
 import { PosNotificationsBellComponent } from '../../../shared/components/pos/pos-notifications-bell/pos-notifications-bell.component';
 import { PosPrinterSettingsPanelComponent } from '../../../shared/components/pos/pos-printer-settings-panel/pos-printer-settings-panel.component';
@@ -29,8 +30,14 @@ export class PosPageHeaderComponent implements OnInit {
   companyName = '';
   confirmOpen = false;
   printerModalOpen = false;
+  currentPath = '';
   readonly isCashierMode: boolean;
   readonly isPosOrg: boolean;
+
+  private readonly navActiveClass =
+    'touch-manipulation rounded-md border border-brand-500 bg-brand-50 p-2.5 text-brand-600 hover:bg-brand-100 dark:border-brand-400 dark:bg-brand-500/10 dark:text-brand-400 dark:hover:bg-brand-500/20';
+  private readonly navIdleClass =
+    'touch-manipulation rounded-md border border-gray-300 p-2.5 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800';
 
   constructor(
     private readonly rbac: RbacService,
@@ -41,6 +48,7 @@ export class PosPageHeaderComponent implements OnInit {
   ) {
     this.isCashierMode = rbac.isCashier();
     this.isPosOrg = rbac.isPosOrg();
+    this.currentPath = this.normalizePath(this.router.url);
   }
 
   get displayTitle(): string {
@@ -68,8 +76,19 @@ export class PosPageHeaderComponent implements OnInit {
   }
 
   get isOnPosHome(): boolean {
-    const url = this.router.url.split('?')[0] ?? '';
-    return url.includes('/pos-dashboard') || url.includes('/pos-terminal');
+    return this.currentPath.includes('/pos-dashboard') || this.currentPath.includes('/pos-terminal');
+  }
+
+  get isOnMySales(): boolean {
+    return this.currentPath.includes('/pos-my-sales');
+  }
+
+  get isOnProfile(): boolean {
+    return this.currentPath === '/profile' || this.currentPath.startsWith('/profile/');
+  }
+
+  navClass(active: boolean): string {
+    return active ? this.navActiveClass : this.navIdleClass;
   }
 
   get showCashierNav(): boolean {
@@ -80,6 +99,15 @@ export class PosPageHeaderComponent implements OnInit {
     this.cashierName = this.rbac.getDisplayName();
     this.companyName = this.orgService.getContext().name ?? 'POS';
     void this.loadCompanyName();
+    this.router.events
+      .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
+      .subscribe((e) => {
+        this.currentPath = this.normalizePath(e.urlAfterRedirects || e.url);
+      });
+  }
+
+  private normalizePath(url: string): string {
+    return (url.split('?')[0] ?? '').split('#')[0] ?? '';
   }
 
   async loadCompanyName(): Promise<void> {

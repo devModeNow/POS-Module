@@ -122,8 +122,8 @@
       <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
         <strong>Browser Print</strong> opens the system print dialog so you can pick any printer installed on this device.
         <strong>Network</strong> sends the receipt directly to a thermal printer at <em>IP:9100</em> from the server.
-        <strong>USB</strong> requires Chrome or Edge and a printer that supports WebUSB.
-        <strong>Bluetooth</strong> pairs a BLE thermal printer in Chrome/Edge (classic Bluetooth printers should be paired in OS settings, then use Browser Print).
+        <strong>USB</strong> uses the built-in WebUSB bridge (Chrome/Edge) — no third-party app.
+        <strong>Bluetooth</strong> uses the built-in Web Bluetooth + ESC/POS encoder to print directly from this web app (Chrome/Edge on HTTPS/localhost). Saved printers reconnect automatically after reload.
       </p>
     </div>
 

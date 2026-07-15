@@ -38,7 +38,7 @@ export class PosDashboardComponent implements OnInit {
   categories: string[] = [];
   products: PosProduct[] = [];
   variantCatalog: PosVariant[] = [];
-  catalogMode: 'types' | 'variants' = 'types';
+  catalogMode: 'types' | 'variants' = 'variants';
   productViewMode: 'grid' | 'list' = 'grid';
   readonly isCashierMode: boolean;
   discounts: PosDiscount[] = [];

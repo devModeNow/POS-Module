@@ -196,5 +196,13 @@
    - In cashier dashboard, make the cart scrollable when many products are in it.
    - Make sure to fix all errors and bugs you encounter while working on this task.
    - Make sure to check all taskss under this continuation before setting it to done because in the past there are tasks that has not been done so be sure to check if its all done properly and without errors and bugs.
-
+   //Continuation 3.6
+   - In cashier dashboard, make the default view of the product cards in "Variants" not "Product Types".
+   - In cashier dashboard, when user is in specific page like for example in "My Profile" or "My sales" page, be sure to highlight the icon in the header so that the user will know on what page is currently active or he/she viewing.
+   - For both posadmin and cashier dashboard, in printer connection make sure that when a printer is already connected and settings was saved, make sure to not disconnect it even page loaded.
+   - For both posadmin and cashier dashboard, in printer settings, use a compatible plugin to use a bluetooth printer to print directly from the web app and not using a third-party app.
+   - In posadmin dashboard, do not include in the list of On-duty cashiers the account of the admin since its an admin account not a cashier.
+   - In posadmin dashboard -> reports, the refresh button size looks off in size, its bigger, make sure to make it in uniform size like other elements, also just an refresh icon to it and remove the text "refresh" same thing in the main dashboard refresh button.
+   - Make sure to fix all errors and bugs you encounter while working on this task.
+   - Make sure to check all taskss under this continuation before setting it to done because in the past there are tasks that has not been done so be sure to check if its all done properly and without errors and bugs.
 

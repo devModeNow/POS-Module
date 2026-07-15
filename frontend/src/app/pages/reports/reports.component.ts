@@ -12,7 +12,6 @@ import {
   NgApexchartsModule,
 } from 'ng-apexcharts';
 import { PageBreadcrumbComponent } from '../../shared/components/common/page-breadcrumb/page-breadcrumb.component';
-import { ButtonComponent } from '../../shared/components/ui/button/button.component';
 import { PosCompletedSale, PosDashboardReport, PosSaleTransaction, PosService } from '../../shared/services/pos.service';
 import {
   ReportsService,
@@ -37,7 +36,7 @@ type ReportType =
 
 @Component({
   selector: 'app-reports',
-  imports: [CommonModule, FormsModule, RouterModule, PageBreadcrumbComponent, ButtonComponent, NgApexchartsModule],
+  imports: [CommonModule, FormsModule, RouterModule, PageBreadcrumbComponent, NgApexchartsModule],
   templateUrl: './reports.component.html',
 })
 export class ReportsComponent implements OnInit {
