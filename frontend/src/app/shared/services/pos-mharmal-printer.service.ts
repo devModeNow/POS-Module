@@ -4,12 +4,19 @@ import ReceiptPrinterEncoder from '@point-of-sale/receipt-printer-encoder';
 export const MHARMAL_DEFAULT_HOST = '127.0.0.1';
 export const MHARMAL_DEFAULT_PORT = 22300;
 
+/** How we encode the WebSocket print job for Magmal / Mharmal Printer. */
+export type MharmalPayloadFormat =
+  | 'image-datauri'
+  | 'image-base64'
+  | 'image-binary'
+  | 'escpos-binary'
+  | 'json-image';
+
+const PAYLOAD_STORAGE_KEY = 'posMharmalPayloadFormat';
+
 /**
  * Bridge to the Mharmal Printer Android app (com.escpos.printer).
- * The app runs a local WebSocket server and forwards ESC/POS / Base64
- * jobs to a Bluetooth or USB thermal printer on the same tablet.
- *
- * Docs (Play Store): ws://localhost:22300 — Base64 images or raw ESC/POS bytes.
+ * Play Store: Base64 images (preferred) or raw ESC/POS bytes over ws://host:22300.
  */
 @Injectable({ providedIn: 'root' })
 export class PosMharmalPrinterService {
@@ -17,9 +24,26 @@ export class PosMharmalPrinterService {
   private host = MHARMAL_DEFAULT_HOST;
   private port = MHARMAL_DEFAULT_PORT;
   private openPromise: Promise<void> | null = null;
+  private lastServerMessage = '';
 
   isSupported(): boolean {
     return typeof WebSocket !== 'undefined';
+  }
+
+  getPayloadFormat(): MharmalPayloadFormat {
+    const saved = (localStorage.getItem(PAYLOAD_STORAGE_KEY) || 'image-datauri') as MharmalPayloadFormat;
+    const allowed: MharmalPayloadFormat[] = [
+      'image-datauri',
+      'image-base64',
+      'image-binary',
+      'escpos-binary',
+      'json-image',
+    ];
+    return allowed.includes(saved) ? saved : 'image-datauri';
+  }
+
+  setPayloadFormat(format: MharmalPayloadFormat): void {
+    localStorage.setItem(PAYLOAD_STORAGE_KEY, format);
   }
 
   buildUrl(host = MHARMAL_DEFAULT_HOST, port = MHARMAL_DEFAULT_PORT): string {
@@ -88,7 +112,6 @@ export class PosMharmalPrinterService {
     }
   }
 
-  /** Restore / keep the WebSocket alive after page reload (same tablet). */
   async restoreConnection(
     host = MHARMAL_DEFAULT_HOST,
     port = MHARMAL_DEFAULT_PORT,
@@ -100,25 +123,29 @@ export class PosMharmalPrinterService {
     text: string,
     host = MHARMAL_DEFAULT_HOST,
     port = MHARMAL_DEFAULT_PORT,
+    paperWidth = '80mm',
   ): Promise<{ success: boolean; message?: string }> {
     const linked = await this.connect(host, port);
     if (!linked.success) return linked;
 
-    const bytes = this.encodeReceipt(text);
-    return this.sendEscPos(bytes);
+    try {
+      const canvas = this.renderReceiptCanvas(text, paperWidth);
+      const dataUrl = canvas.toDataURL('image/png');
+      const format = this.getPayloadFormat();
+      this.sendPayload(format, canvas, dataUrl, text);
+      const reply = this.lastServerMessage ? ` Server: ${this.lastServerMessage}` : '';
+      return {
+        success: true,
+        message: `Print job sent as ${format}.${reply}`,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to build/send Mharmal print job.',
+      };
+    }
   }
 
-  async printEscPos(
-    bytes: Uint8Array,
-    host = MHARMAL_DEFAULT_HOST,
-    port = MHARMAL_DEFAULT_PORT,
-  ): Promise<{ success: boolean; message?: string }> {
-    const linked = await this.connect(host, port);
-    if (!linked.success) return linked;
-    return this.sendEscPos(bytes);
-  }
-
-  /** Quick connectivity check used by printer settings. */
   async testConnection(
     host = MHARMAL_DEFAULT_HOST,
     port = MHARMAL_DEFAULT_PORT,
@@ -126,22 +153,113 @@ export class PosMharmalPrinterService {
     return this.connect(host, port);
   }
 
-  private sendEscPos(bytes: Uint8Array): { success: boolean; message?: string } {
+  private sendPayload(
+    format: MharmalPayloadFormat,
+    canvas: HTMLCanvasElement,
+    dataUrl: string,
+    text: string,
+  ): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      return { success: false, message: 'Mharmal WebSocket is not connected.' };
+      throw new Error('Mharmal WebSocket is not connected.');
     }
 
-    try {
-      // Single Base64 text frame of ESC/POS bytes (avoids double-print if both
-      // formats were processed). Magmal accepts Base64 and raw ESC/POS.
-      this.ws.send(this.toBase64(bytes));
-      return { success: true };
-    } catch (error) {
-      return {
-        success: false,
-        message: error instanceof Error ? error.message : 'Failed to send print job to Mharmal.',
-      };
+    const bareBase64 = dataUrl.includes(',') ? dataUrl.split(',')[1]! : dataUrl;
+
+    switch (format) {
+      case 'image-datauri':
+        // Preferred per Play Store (“Base64 encoded images”).
+        this.ws.send(dataUrl);
+        break;
+      case 'image-base64':
+        this.ws.send(bareBase64);
+        break;
+      case 'image-binary': {
+        const raw = this.base64ToBytes(bareBase64);
+        this.ws.send(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
+        break;
+      }
+      case 'escpos-binary': {
+        const bytes = this.encodeEscPosFromCanvas(canvas, text);
+        this.ws.send(bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength));
+        break;
+      }
+      case 'json-image':
+        this.ws.send(JSON.stringify({ type: 'image', format: 'png', data: bareBase64 }));
+        break;
+      default:
+        this.ws.send(dataUrl);
     }
+  }
+
+  private renderReceiptCanvas(text: string, paperWidth: string): HTMLCanvasElement {
+    const widthPx = paperWidth === '58mm' ? 384 : 576; // multiples of 8 (required by ESC/POS raster)
+    const lines = String(text ?? '').split(/\r?\n/);
+    const fontSize = 22;
+    const lineHeight = 28;
+    const padX = 12;
+    const padY = 16;
+    const rawHeight = padY * 2 + lines.length * lineHeight + 48;
+    const height = Math.max(Math.ceil(rawHeight / 8) * 8, 128);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = widthPx;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Could not create canvas for receipt image.');
+
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, widthPx, height);
+    ctx.fillStyle = '#000000';
+    ctx.font = `${fontSize}px "Courier New", Courier, monospace`;
+    ctx.textBaseline = 'top';
+
+    lines.forEach((line, i) => {
+      ctx.fillText(line, padX, padY + i * lineHeight, widthPx - padX * 2);
+    });
+
+    return canvas;
+  }
+
+  private encodeEscPosFromCanvas(canvas: HTMLCanvasElement, fallbackText: string): Uint8Array {
+    try {
+      // Typings for this package omit `.image()`, but it exists at runtime.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const encoder: any = new ReceiptPrinterEncoder({ language: 'esc-pos' });
+      const encoded = encoder
+        .initialize()
+        .image(canvas, canvas.width, canvas.height, 'threshold')
+        .newline()
+        .cut()
+        .encode();
+      return encoded instanceof Uint8Array ? encoded : new Uint8Array(encoded);
+    } catch {
+      return this.encodeEscPosText(fallbackText);
+    }
+  }
+
+  private encodeEscPosText(text: string): Uint8Array {
+    try {
+      const encoder = new ReceiptPrinterEncoder({ language: 'esc-pos' });
+      const encoded = encoder
+        .initialize()
+        .codepage('auto')
+        .text(text)
+        .newline()
+        .newline()
+        .newline()
+        .cut()
+        .encode();
+      return encoded instanceof Uint8Array ? encoded : new Uint8Array(encoded);
+    } catch {
+      return new TextEncoder().encode(`${text}\n\n\n`);
+    }
+  }
+
+  private base64ToBytes(b64: string): Uint8Array {
+    const binary = atob(b64);
+    const out = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+    return out;
   }
 
   private openSocket(url: string): Promise<void> {
@@ -178,6 +296,18 @@ export class PosMharmalPrinterService {
           resolve();
         };
 
+        ws.onmessage = (event) => {
+          try {
+            if (typeof event.data === 'string') {
+              this.lastServerMessage = event.data.slice(0, 200);
+            } else {
+              this.lastServerMessage = `[binary ${event.data?.byteLength ?? 0} bytes]`;
+            }
+          } catch {
+            this.lastServerMessage = '';
+          }
+        };
+
         ws.onerror = () => {
           if (settled) return;
           settled = true;
@@ -203,32 +333,5 @@ export class PosMharmalPrinterService {
     });
 
     return this.openPromise;
-  }
-
-  private encodeReceipt(text: string): Uint8Array {
-    try {
-      const encoder = new ReceiptPrinterEncoder({ language: 'esc-pos' });
-      const encoded = encoder
-        .initialize()
-        .codepage('auto')
-        .text(text)
-        .newline()
-        .newline()
-        .newline()
-        .cut()
-        .encode();
-      return encoded instanceof Uint8Array ? encoded : new Uint8Array(encoded);
-    } catch {
-      return new TextEncoder().encode(`${text}\n\n\n`);
-    }
-  }
-
-  private toBase64(bytes: Uint8Array): string {
-    let binary = '';
-    const chunk = 0x8000;
-    for (let i = 0; i < bytes.length; i += chunk) {
-      binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-    }
-    return btoa(binary);
   }
 }

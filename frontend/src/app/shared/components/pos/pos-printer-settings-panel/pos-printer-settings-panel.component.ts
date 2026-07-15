@@ -12,6 +12,7 @@ import { PosBluetoothPrinterService } from '../../../services/pos-bluetooth-prin
 import {
   MHARMAL_DEFAULT_HOST,
   MHARMAL_DEFAULT_PORT,
+  MharmalPayloadFormat,
   PosMharmalPrinterService,
 } from '../../../services/pos-mharmal-printer.service';
 import { PosReceiptTemplateEditorComponent } from '../pos-receipt-template-editor/pos-receipt-template-editor.component';
@@ -49,6 +50,7 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
   usbProductName = '';
   btDeviceId = '';
   btDeviceName = '';
+  mharmalPayloadFormat: MharmalPayloadFormat = 'image-datauri';
   connectionStatus: ConnectionStatus = 'idle';
   connectionMessage = '';
 
@@ -58,6 +60,14 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
     'EPSON TM-T20',
     'Star TSP100',
     'Custom / Network Printer',
+  ];
+
+  readonly mharmalPayloadOptions: Array<{ value: MharmalPayloadFormat; label: string }> = [
+    { value: 'image-datauri', label: 'PNG image (data URI) — recommended' },
+    { value: 'image-base64', label: 'PNG image (raw Base64)' },
+    { value: 'image-binary', label: 'PNG image (binary frame)' },
+    { value: 'escpos-binary', label: 'Raw ESC/POS bytes' },
+    { value: 'json-image', label: 'JSON { type, data }' },
   ];
 
   constructor(
@@ -100,6 +110,7 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
       this.usbProductName = String(item['posPrinterUsbProductName'] ?? '');
       this.btDeviceId = String(item['posPrinterBtDeviceId'] ?? '');
       this.btDeviceName = String(item['posPrinterBtDeviceName'] ?? '');
+      this.mharmalPayloadFormat = this.mharmalPrinter.getPayloadFormat();
       await this.restoreSavedConnection();
     } catch {
       this.error = 'Failed to load printer settings.';
@@ -242,6 +253,7 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
     if (this.connectionType === 'mharmal') {
       const host = this.printerHost.trim() || MHARMAL_DEFAULT_HOST;
       const port = Number(this.printerPort) || MHARMAL_DEFAULT_PORT;
+      this.mharmalPrinter.setPayloadFormat(this.mharmalPayloadFormat);
       void this.receiptPrint
         .printViaConnection(elements, ctx, this.paperWidth, {
           connectionType: 'mharmal',
@@ -254,7 +266,9 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
             this.connectionMessage = r.message ?? 'Print via Mharmal failed.';
           } else {
             this.connectionStatus = 'connected';
-            this.connectionMessage = 'Test receipt sent to Mharmal Printer.';
+            this.connectionMessage =
+              r.message ??
+              'Test receipt sent. If nothing prints, try another Payload format below.';
           }
         });
       return;
@@ -336,6 +350,11 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
     }
   }
 
+  onMharmalPayloadFormatChange(): void {
+    this.mharmalPrinter.setPayloadFormat(this.mharmalPayloadFormat);
+    this.connectionMessage = `Payload format set to ${this.mharmalPayloadFormat}. Try Print preview.`;
+  }
+
   async testMharmalConnection(): Promise<void> {
     if (!this.mharmalSupported) {
       this.connectionStatus = 'failed';
@@ -348,6 +367,7 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
     const port = Number(this.printerPort) || MHARMAL_DEFAULT_PORT;
     this.printerHost = host;
     this.printerPort = String(port);
+    this.mharmalPrinter.setPayloadFormat(this.mharmalPayloadFormat);
     try {
       const r = await this.mharmalPrinter.testConnection(host, port);
       this.connectionStatus = r.success ? 'connected' : 'failed';

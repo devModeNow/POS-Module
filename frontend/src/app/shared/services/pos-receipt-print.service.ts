@@ -257,8 +257,8 @@ export class PosReceiptPrintService {
       const text = this.buildReceiptText(ctx);
       const host = connection.host?.trim() || '127.0.0.1';
       const port = connection.port && connection.port > 0 ? connection.port : MHARMAL_DEFAULT_PORT;
-      const r = await this.mharmalPrinter.printText(text, host, port);
-      if (r.success) return { success: true };
+      const r = await this.mharmalPrinter.printText(text, host, port, paperWidth);
+      if (r.success) return { success: true, message: r.message };
       this.printFromSettings(elements, ctx, paperWidth);
       return { success: false, message: r.message ?? 'Mharmal Printer unavailable.', usedFallback: true };
     }
