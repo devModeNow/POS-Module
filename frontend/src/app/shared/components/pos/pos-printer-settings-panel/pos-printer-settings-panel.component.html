@@ -49,6 +49,7 @@
             <option value="network">Network (IP/Hostname)</option>
             <option value="usb">USB / Local device</option>
             <option value="bluetooth">Bluetooth</option>
+            <option value="mharmal">Android / Mharmal Printer</option>
           </select>
         </div>
 
@@ -72,6 +73,33 @@
             </button>
             @if (connectionMessage) {
               <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ connectionMessage }}</p>
+            }
+          </div>
+        }
+
+        @if (connectionType === 'mharmal') {
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Bridge host</label>
+              <input [(ngModel)]="printerHost" placeholder="127.0.0.1"
+                class="w-full rounded-lg border px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">WebSocket port</label>
+              <input [(ngModel)]="printerPort" placeholder="22300"
+                class="w-full rounded-lg border px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
+            </div>
+          </div>
+          <div class="md:col-span-2">
+            <button type="button" (click)="testMharmalConnection()" [disabled]="connectionStatus === 'testing'"
+              class="rounded-lg border px-4 py-2 text-sm font-semibold hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800">
+              {{ connectionStatus === 'testing' ? 'Connecting…' : 'Connect to Mharmal' }}
+            </button>
+            <p class="mt-2 text-xs text-gray-600 dark:text-gray-400">
+              Install <strong>Mharmal Printer</strong> on this Android tablet, pair your Bluetooth/USB thermal printer in that app, then start its WebSocket service. Use host <em>127.0.0.1</em> when the POS runs in Chrome on the same tablet.
+            </p>
+            @if (connectionMessage) {
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ connectionMessage }}</p>
             }
           </div>
         }
@@ -124,6 +152,7 @@
         <strong>Network</strong> sends the receipt directly to a thermal printer at <em>IP:9100</em> from the server.
         <strong>USB</strong> uses the built-in WebUSB bridge (Chrome/Edge) — no third-party app.
         <strong>Bluetooth</strong> uses the built-in Web Bluetooth + ESC/POS encoder to print directly from this web app (Chrome/Edge on HTTPS/localhost). Saved printers reconnect automatically after reload.
+        <strong>Android / Mharmal</strong> sends ESC/POS over WebSocket to the Mharmal Printer app on this tablet (default <em>ws://127.0.0.1:22300</em>), which then prints to your Bluetooth/USB thermal printer.
       </p>
     </div>
 

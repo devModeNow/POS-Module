@@ -9,6 +9,11 @@ import {
 import { PosReceiptPrintService, ReceiptPrintContext } from '../../../services/pos-receipt-print.service';
 import { PosUsbPrinterService } from '../../../services/pos-usb-printer.service';
 import { PosBluetoothPrinterService } from '../../../services/pos-bluetooth-printer.service';
+import {
+  MHARMAL_DEFAULT_HOST,
+  MHARMAL_DEFAULT_PORT,
+  PosMharmalPrinterService,
+} from '../../../services/pos-mharmal-printer.service';
 import { PosReceiptTemplateEditorComponent } from '../pos-receipt-template-editor/pos-receipt-template-editor.component';
 
 type ConnectionStatus = 'idle' | 'testing' | 'connected' | 'failed';
@@ -60,6 +65,7 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
     private readonly receiptPrint: PosReceiptPrintService,
     private readonly usbPrinter: PosUsbPrinterService,
     private readonly bluetoothPrinter: PosBluetoothPrinterService,
+    private readonly mharmalPrinter: PosMharmalPrinterService,
   ) {}
 
   ngOnInit(): void {
@@ -83,6 +89,12 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
       this.connectionType = (String(item['posPrinterConnectionType'] ?? 'browser') as PosPrinterConnectionType) || 'browser';
       this.printerHost = String(item['posPrinterHost'] ?? '');
       this.printerPort = String(item['posPrinterPort'] ?? '9100');
+      if (this.connectionType === 'mharmal') {
+        if (!this.printerHost.trim()) this.printerHost = MHARMAL_DEFAULT_HOST;
+        if (!this.printerPort.trim() || this.printerPort === '9100') {
+          this.printerPort = String(MHARMAL_DEFAULT_PORT);
+        }
+      }
       this.usbVendorId = String(item['posPrinterUsbVendorId'] ?? '');
       this.usbProductId = String(item['posPrinterUsbProductId'] ?? '');
       this.usbProductName = String(item['posPrinterUsbProductName'] ?? '');
@@ -156,6 +168,17 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
         this.connectionMessage =
           'Saved Bluetooth printer not in range or permission was reset. Select it again.';
       }
+      return;
+    }
+
+    if (this.connectionType === 'mharmal') {
+      this.connectionStatus = 'testing';
+      this.connectionMessage = 'Connecting to Mharmal Printer…';
+      const host = this.printerHost.trim() || MHARMAL_DEFAULT_HOST;
+      const port = Number(this.printerPort) || MHARMAL_DEFAULT_PORT;
+      const r = await this.mharmalPrinter.restoreConnection(host, port);
+      this.connectionStatus = r.success ? 'connected' : 'failed';
+      this.connectionMessage = r.message ?? (r.success ? 'Connected to Mharmal.' : 'Mharmal unreachable.');
     }
   }
 
@@ -215,6 +238,28 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
     const elements = this.templateElements.length
       ? this.templateElements
       : this.receiptPrint.defaultTemplateElements();
+
+    if (this.connectionType === 'mharmal') {
+      const host = this.printerHost.trim() || MHARMAL_DEFAULT_HOST;
+      const port = Number(this.printerPort) || MHARMAL_DEFAULT_PORT;
+      void this.receiptPrint
+        .printViaConnection(elements, ctx, this.paperWidth, {
+          connectionType: 'mharmal',
+          host,
+          port,
+        })
+        .then((r) => {
+          if (!r.success) {
+            this.connectionStatus = 'failed';
+            this.connectionMessage = r.message ?? 'Print via Mharmal failed.';
+          } else {
+            this.connectionStatus = 'connected';
+            this.connectionMessage = 'Test receipt sent to Mharmal Printer.';
+          }
+        });
+      return;
+    }
+
     this.receiptPrint.printFromSettings(elements, ctx, this.paperWidth);
   }
 
@@ -224,6 +269,10 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
 
   get bluetoothSupported(): boolean {
     return this.bluetoothPrinter.isSupported();
+  }
+
+  get mharmalSupported(): boolean {
+    return this.mharmalPrinter.isSupported();
   }
 
   get connectionStatusLabel(): string {
@@ -247,9 +296,29 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
   onConnectionTypeChange(): void {
     this.connectionStatus = 'idle';
     this.connectionMessage = '';
+    if (this.connectionType === 'mharmal') {
+      if (!this.printerHost.trim()) {
+        this.printerHost = MHARMAL_DEFAULT_HOST;
+      }
+      if (!this.printerPort.trim() || this.printerPort === '9100') {
+        this.printerPort = String(MHARMAL_DEFAULT_PORT);
+      }
+    } else if (this.connectionType === 'network') {
+      if (this.printerPort === String(MHARMAL_DEFAULT_PORT)) {
+        this.printerPort = '9100';
+      }
+      if (this.printerHost === MHARMAL_DEFAULT_HOST || this.printerHost === 'localhost') {
+        this.printerHost = '';
+      }
+    }
   }
 
   async testConnection(): Promise<void> {
+    if (this.connectionType === 'mharmal') {
+      await this.testMharmalConnection();
+      return;
+    }
+
     if (!this.printerHost.trim()) {
       this.connectionStatus = 'failed';
       this.connectionMessage = 'Enter a host/IP address first.';
@@ -264,6 +333,28 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
     } catch {
       this.connectionStatus = 'failed';
       this.connectionMessage = 'Failed to reach the printer.';
+    }
+  }
+
+  async testMharmalConnection(): Promise<void> {
+    if (!this.mharmalSupported) {
+      this.connectionStatus = 'failed';
+      this.connectionMessage = 'WebSocket is not available in this browser.';
+      return;
+    }
+    this.connectionStatus = 'testing';
+    this.connectionMessage = 'Connecting to Mharmal Printer…';
+    const host = this.printerHost.trim() || MHARMAL_DEFAULT_HOST;
+    const port = Number(this.printerPort) || MHARMAL_DEFAULT_PORT;
+    this.printerHost = host;
+    this.printerPort = String(port);
+    try {
+      const r = await this.mharmalPrinter.testConnection(host, port);
+      this.connectionStatus = r.success ? 'connected' : 'failed';
+      this.connectionMessage = r.message ?? (r.success ? 'Connected.' : 'Could not connect.');
+    } catch {
+      this.connectionStatus = 'failed';
+      this.connectionMessage = 'Failed to reach Mharmal Printer.';
     }
   }
 

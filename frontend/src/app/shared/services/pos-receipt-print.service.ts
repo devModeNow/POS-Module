@@ -7,6 +7,7 @@ import {
 import { PosService } from './pos.service';
 import { PosUsbPrinterService } from './pos-usb-printer.service';
 import { PosBluetoothPrinterService } from './pos-bluetooth-printer.service';
+import { PosMharmalPrinterService, MHARMAL_DEFAULT_PORT } from './pos-mharmal-printer.service';
 
 export type ReceiptPrintContext = {
   businessName?: string;
@@ -40,6 +41,7 @@ export class PosReceiptPrintService {
     private readonly pos: PosService,
     private readonly usbPrinter: PosUsbPrinterService,
     private readonly bluetoothPrinter: PosBluetoothPrinterService,
+    private readonly mharmalPrinter: PosMharmalPrinterService,
   ) {}
 
   defaultTemplateElements(): PosReceiptTemplateElement[] {
@@ -251,6 +253,16 @@ export class PosReceiptPrintService {
       return { success: false, message: r.message ?? 'Bluetooth printer unavailable.', usedFallback: true };
     }
 
+    if (connection.connectionType === 'mharmal') {
+      const text = this.buildReceiptText(ctx);
+      const host = connection.host?.trim() || '127.0.0.1';
+      const port = connection.port && connection.port > 0 ? connection.port : MHARMAL_DEFAULT_PORT;
+      const r = await this.mharmalPrinter.printText(text, host, port);
+      if (r.success) return { success: true };
+      this.printFromSettings(elements, ctx, paperWidth);
+      return { success: false, message: r.message ?? 'Mharmal Printer unavailable.', usedFallback: true };
+    }
+
     this.printFromSettings(elements, ctx, paperWidth);
     return { success: true };
   }
@@ -299,10 +311,13 @@ export class PosReceiptPrintService {
       cashier: sale.cashier,
       saleDate: new Date(sale.createdAt || sale.saleDate).toLocaleString('en-PH'),
     };
+    const connectionType = (item['posPrinterConnectionType'] as PosPrinterConnectionType) || 'browser';
+    const rawPort = Number(item['posPrinterPort']);
+    const defaultPort = connectionType === 'mharmal' ? MHARMAL_DEFAULT_PORT : 9100;
     const connection: PosPrinterConnection = {
-      connectionType: (item['posPrinterConnectionType'] as PosPrinterConnectionType) || 'browser',
-      host: String(item['posPrinterHost'] ?? ''),
-      port: Number(item['posPrinterPort']) || 9100,
+      connectionType,
+      host: String(item['posPrinterHost'] ?? (connectionType === 'mharmal' ? '127.0.0.1' : '')),
+      port: Number.isFinite(rawPort) && rawPort > 0 ? rawPort : defaultPort,
       usbVendorId: String(item['posPrinterUsbVendorId'] ?? ''),
       usbProductId: String(item['posPrinterUsbProductId'] ?? ''),
       btDeviceId: String(item['posPrinterBtDeviceId'] ?? ''),
@@ -311,7 +326,7 @@ export class PosReceiptPrintService {
     return true;
   }
 
-  /** Silently restore Bluetooth/USB printer permission after page load. */
+  /** Silently restore Bluetooth/USB/Mharmal printer connection after page load. */
   async restoreSavedPrinterConnection(): Promise<void> {
     try {
       const r = await this.comms.getPrinterSettings();
@@ -324,6 +339,10 @@ export class PosReceiptPrintService {
         const vendor = String(item['posPrinterUsbVendorId'] ?? '');
         const product = String(item['posPrinterUsbProductId'] ?? '');
         if (vendor && product) await this.usbPrinter.restoreConnection(vendor, product);
+      } else if (type === 'mharmal') {
+        const host = String(item['posPrinterHost'] ?? '127.0.0.1') || '127.0.0.1';
+        const port = Number(item['posPrinterPort']) || MHARMAL_DEFAULT_PORT;
+        await this.mharmalPrinter.restoreConnection(host, port);
       }
     } catch {
       /* ignore — user can re-select in settings */
