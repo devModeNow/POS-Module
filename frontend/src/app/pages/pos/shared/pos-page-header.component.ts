@@ -8,6 +8,9 @@ import { PosPrinterSettingsPanelComponent } from '../../../shared/components/pos
 import { AuthService } from '../../../shared/services/auth.service';
 import { BusinessSettingsService } from '../../../shared/services/business-settings.service';
 import { OrgService } from '../../../shared/services/org.service';
+import { PosCommunicationsService } from '../../../shared/services/pos-communications.service';
+import { NotificationService } from '../../../shared/services/notification.service';
+import { PosPrintHubService } from '../../../shared/services/pos-printhub.service';
 import { RbacService } from '../../../shared/services/rbac.service';
 
 @Component({
@@ -31,6 +34,9 @@ export class PosPageHeaderComponent implements OnInit {
   confirmOpen = false;
   printerModalOpen = false;
   currentPath = '';
+  printerConnectionType = 'browser';
+  paperWidth = '58mm';
+  printHubConnecting = false;
   readonly isCashierMode: boolean;
   readonly isPosOrg: boolean;
 
@@ -45,10 +51,27 @@ export class PosPageHeaderComponent implements OnInit {
     private readonly businessSettings: BusinessSettingsService,
     private readonly auth: AuthService,
     private readonly router: Router,
+    private readonly comms: PosCommunicationsService,
+    private readonly printHub: PosPrintHubService,
+    private readonly notify: NotificationService,
   ) {
     this.isCashierMode = rbac.isCashier();
     this.isPosOrg = rbac.isPosOrg();
     this.currentPath = this.normalizePath(this.router.url);
+  }
+
+  get showPrintHubConnect(): boolean {
+    if (!this.isPosOrg || !this.showPosTools) return false;
+    if (this.printerConnectionType === 'printhub') return true;
+    try {
+      return localStorage.getItem('pos.printerConnectionType') === 'printhub';
+    } catch {
+      return false;
+    }
+  }
+
+  get printHubConnected(): boolean {
+    return this.printHub.isConnected();
   }
 
   get displayTitle(): string {
@@ -99,11 +122,44 @@ export class PosPageHeaderComponent implements OnInit {
     this.cashierName = this.rbac.getDisplayName();
     this.companyName = this.orgService.getContext().name ?? 'POS';
     void this.loadCompanyName();
+    void this.loadPrinterConnectionType();
     this.router.events
       .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
       .subscribe((e) => {
         this.currentPath = this.normalizePath(e.urlAfterRedirects || e.url);
       });
+  }
+
+  async loadPrinterConnectionType(): Promise<void> {
+    try {
+      const r = await this.comms.getPrinterSettings();
+      const item = r?.item ?? {};
+      this.printerConnectionType = String(item['posPrinterConnectionType'] ?? 'browser');
+      this.paperWidth = String(item['posReceiptPaperWidth'] ?? '58mm');
+    } catch {
+      this.printerConnectionType = 'browser';
+    }
+  }
+
+  async connectPrintHub(): Promise<void> {
+    if (this.printHubConnecting) return;
+    this.printHubConnecting = true;
+    try {
+      const r = await this.printHub.connect(this.paperWidth, 'bluetooth');
+      if (r.success) {
+        try {
+          localStorage.setItem('pos.printerConnectionType', 'printhub');
+        } catch {
+          /* ignore */
+        }
+        this.printerConnectionType = 'printhub';
+        this.notify.success('Printer connected', r.message ?? 'PrintHub is ready. Sales will print here — no browser dialog.');
+      } else {
+        this.notify.error('Printer not connected', r.message ?? 'Could not connect via PrintHub.');
+      }
+    } finally {
+      this.printHubConnecting = false;
+    }
   }
 
   private normalizePath(url: string): string {
@@ -139,5 +195,6 @@ export class PosPageHeaderComponent implements OnInit {
 
   closePrinterSettings(): void {
     this.printerModalOpen = false;
+    void this.loadPrinterConnectionType();
   }
 }

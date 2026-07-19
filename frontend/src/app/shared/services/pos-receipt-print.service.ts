@@ -7,6 +7,7 @@ import {
 import { PosService } from './pos.service';
 import { PosUsbPrinterService } from './pos-usb-printer.service';
 import { PosBluetoothPrinterService } from './pos-bluetooth-printer.service';
+import { PosPrintHubService } from './pos-printhub.service';
 import { PosMharmalPrinterService, MHARMAL_DEFAULT_PORT } from './pos-mharmal-printer.service';
 
 export type ReceiptPrintContext = {
@@ -41,6 +42,7 @@ export class PosReceiptPrintService {
     private readonly pos: PosService,
     private readonly usbPrinter: PosUsbPrinterService,
     private readonly bluetoothPrinter: PosBluetoothPrinterService,
+    private readonly printHub: PosPrintHubService,
     private readonly mharmalPrinter: PosMharmalPrinterService,
   ) {}
 
@@ -220,8 +222,8 @@ export class PosReceiptPrintService {
   }
 
   /**
-   * Prints a receipt using the configured connection type, falling back to
-   * the browser print dialog when a network/USB printer is unavailable.
+   * Prints a receipt using the configured connection type.
+   * Only the "browser" type opens the system print dialog — other types must not fall back to it.
    */
   async printViaConnection(
     elements: PosReceiptTemplateElement[],
@@ -233,24 +235,27 @@ export class PosReceiptPrintService {
       const text = this.buildReceiptText(ctx);
       const r = await this.comms.printRawToNetworkPrinter(connection.host, connection.port || 9100, text);
       if (r?.success) return { success: true };
-      this.printFromSettings(elements, ctx, paperWidth);
-      return { success: false, message: r?.message ?? 'Network printer unavailable.', usedFallback: true };
+      return { success: false, message: r?.message ?? 'Network printer unavailable.' };
     }
 
     if (connection.connectionType === 'usb' && connection.usbVendorId && connection.usbProductId) {
       const text = this.buildReceiptText(ctx);
       const r = await this.usbPrinter.printText(connection.usbVendorId, connection.usbProductId, text);
       if (r.success) return { success: true };
-      this.printFromSettings(elements, ctx, paperWidth);
-      return { success: false, message: r.message ?? 'USB printer unavailable.', usedFallback: true };
+      return { success: false, message: r.message ?? 'USB printer unavailable.' };
     }
 
     if (connection.connectionType === 'bluetooth' && connection.btDeviceId) {
       const text = this.buildReceiptText(ctx);
       const r = await this.bluetoothPrinter.printText(connection.btDeviceId, text);
       if (r.success) return { success: true };
-      this.printFromSettings(elements, ctx, paperWidth);
-      return { success: false, message: r.message ?? 'Bluetooth printer unavailable.', usedFallback: true };
+      return { success: false, message: r.message ?? 'Bluetooth printer unavailable.' };
+    }
+
+    if (connection.connectionType === 'printhub') {
+      const r = await this.printHub.printReceipt(ctx, paperWidth);
+      if (r.success) return { success: true };
+      return { success: false, message: r.message ?? 'PrintHub printer unavailable.' };
     }
 
     if (connection.connectionType === 'mharmal') {
@@ -259,10 +264,10 @@ export class PosReceiptPrintService {
       const port = connection.port && connection.port > 0 ? connection.port : MHARMAL_DEFAULT_PORT;
       const r = await this.mharmalPrinter.printText(text, host, port, paperWidth);
       if (r.success) return { success: true, message: r.message };
-      this.printFromSettings(elements, ctx, paperWidth);
-      return { success: false, message: r.message ?? 'Mharmal Printer unavailable.', usedFallback: true };
+      return { success: false, message: r.message ?? 'Mharmal Printer unavailable.' };
     }
 
+    // Explicit browser / unknown → system print dialog
     this.printFromSettings(elements, ctx, paperWidth);
     return { success: true };
   }
@@ -286,12 +291,16 @@ export class PosReceiptPrintService {
     this.openPrintWindow(html);
   }
 
-  async printSaleReceipt(saleId: number): Promise<boolean> {
+  async printSaleReceipt(
+    saleId: number,
+  ): Promise<{ success: boolean; message?: string; connectionType?: PosPrinterConnectionType }> {
     const [settingsRes, saleRes] = await Promise.all([
       this.comms.getPrinterSettings(),
       this.pos.getTransactionDetail(saleId),
     ]);
-    if (!saleRes?.success || !saleRes.data) return false;
+    if (!saleRes?.success || !saleRes.data) {
+      return { success: false, message: 'Sale details unavailable for printing.' };
+    }
     const item = settingsRes?.item ?? {};
     const sale = saleRes.data;
     const elements = this.resolveTemplateElements(String(item['posReceiptTemplateJson'] ?? ''));
@@ -311,7 +320,10 @@ export class PosReceiptPrintService {
       cashier: sale.cashier,
       saleDate: new Date(sale.createdAt || sale.saleDate).toLocaleString('en-PH'),
     };
-    const connectionType = (item['posPrinterConnectionType'] as PosPrinterConnectionType) || 'browser';
+    const savedType = (item['posPrinterConnectionType'] as PosPrinterConnectionType) || 'browser';
+    // Prefer a live PrintHub session / local preference over a stale "browser" DB value
+    // (common when printer-settings save previously failed with entity-too-large).
+    const connectionType = this.resolveConnectionType(savedType);
     const rawPort = Number(item['posPrinterPort']);
     const defaultPort = connectionType === 'mharmal' ? MHARMAL_DEFAULT_PORT : 9100;
     const connection: PosPrinterConnection = {
@@ -322,8 +334,29 @@ export class PosReceiptPrintService {
       usbProductId: String(item['posPrinterUsbProductId'] ?? ''),
       btDeviceId: String(item['posPrinterBtDeviceId'] ?? ''),
     };
-    await this.printViaConnection(elements, ctx, paperWidth, connection);
-    return true;
+    const result = await this.printViaConnection(elements, ctx, paperWidth, connection);
+    return { ...result, connectionType };
+  }
+
+  /**
+   * If PrintHub is connected this session, always use it (no browser dialog).
+   * Also honor a local preference when DB still says "browser".
+   */
+  private resolveConnectionType(savedType: PosPrinterConnectionType): PosPrinterConnectionType {
+    if (this.printHub.isConnected()) {
+      return 'printhub';
+    }
+    try {
+      const preferred = localStorage.getItem('pos.printerConnectionType');
+      if (preferred === 'printhub' || preferred === 'bluetooth' || preferred === 'usb' || preferred === 'network' || preferred === 'mharmal' || preferred === 'browser') {
+        // Prefer saved DB value when it is already a non-browser type.
+        if (savedType && savedType !== 'browser') return savedType;
+        return preferred as PosPrinterConnectionType;
+      }
+    } catch {
+      /* ignore */
+    }
+    return savedType || 'browser';
   }
 
   /** Silently restore Bluetooth/USB/Mharmal printer connection after page load. */

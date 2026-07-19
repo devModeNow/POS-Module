@@ -48,7 +48,8 @@
             <option value="browser">Browser Print Dialog</option>
             <option value="network">Network (IP/Hostname)</option>
             <option value="usb">USB / Local device</option>
-            <option value="bluetooth">Bluetooth</option>
+            <option value="bluetooth">Bluetooth (BLE)</option>
+            <option value="printhub">PrintHub (Bluetooth)</option>
             <option value="mharmal">Android / Mharmal Printer</option>
           </select>
         </div>
@@ -155,13 +156,35 @@
             }
           </div>
         }
+
+        @if (connectionType === 'printhub') {
+          <div class="md:col-span-2">
+            <button type="button" (click)="connectPrintHub()" [disabled]="connectionStatus === 'testing'"
+              class="rounded-lg border px-4 py-2 text-sm font-semibold hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:hover:bg-gray-800">
+              {{ connectionStatus === 'testing' ? 'Connecting…' : (connectionStatus === 'connected' ? 'Reconnect PrintHub' : 'Connect PrintHub') }}
+            </button>
+            <p class="mt-2 text-xs text-gray-600 dark:text-gray-400">
+              @if (connectionStatus === 'connected' && btDeviceName) {
+                Connected: <span class="font-medium text-gray-800 dark:text-gray-200">{{ btDeviceName }}</span>
+              } @else if (!printHubSupported) {
+                Not supported in this browser. Use Chrome or Edge on HTTPS/localhost.
+              } @else {
+                Opens the browser Bluetooth picker (same flow as the Quasar POS-Demo). Reconnect after each full page reload.
+              }
+            </p>
+            @if (connectionMessage) {
+              <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ connectionMessage }}</p>
+            }
+          </div>
+        }
       </div>
 
       <p class="mt-3 text-xs text-gray-500 dark:text-gray-400">
         <strong>Browser Print</strong> opens the system print dialog so you can pick any printer installed on this device.
         <strong>Network</strong> sends the receipt directly to a thermal printer at <em>IP:9100</em> from the server.
         <strong>USB</strong> uses the built-in WebUSB bridge (Chrome/Edge) — no third-party app.
-        <strong>Bluetooth</strong> uses the built-in Web Bluetooth + ESC/POS encoder to print directly from this web app (Chrome/Edge on HTTPS/localhost). Saved printers reconnect automatically after reload.
+        <strong>Bluetooth (BLE)</strong> uses the built-in Web Bluetooth + ESC/POS encoder; saved printers reconnect automatically after reload.
+        <strong>PrintHub</strong> uses the <em>printhub</em> library (Web Bluetooth) with formatted ESC/POS writes — same approach as the POS-Demo. Session-based; reconnect after reload.
         <strong>Android / Mharmal</strong> sends ESC/POS over WebSocket to the Mharmal Printer app on this tablet (default <em>ws://127.0.0.1:22300</em>), which then prints to your Bluetooth/USB thermal printer.
       </p>
     </div>

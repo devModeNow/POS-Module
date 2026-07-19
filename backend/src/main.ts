@@ -1,5 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { ApiExceptionFilter } from './common/filters/api-exception.filter';
 import { ApiErrorResponseInterceptor } from './common/interceptors/api-error-response.interceptor';
@@ -12,7 +13,12 @@ async function bootstrap() {
   console.log('JWT_SECRET present:', !!process.env.JWT_SECRET);
   console.log('CORS_ORIGINS:', process.env.CORS_ORIGINS || 'http://localhost:4200');
 
-  const app = await NestFactory.create(AppModule);
+  // Disable default ~100kb parser so receipt templates with base64 images can save.
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    bodyParser: false,
+  });
+  app.useBodyParser('json', { limit: '10mb' });
+  app.useBodyParser('urlencoded', { limit: '10mb', extended: true });
   app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true }));
   app.useGlobalFilters(new ApiExceptionFilter());
   app.useGlobalInterceptors(new ApiErrorResponseInterceptor());

@@ -830,7 +830,15 @@ export class PosDashboardComponent implements OnInit {
         this.showCheckoutModal = false;
         this.checkoutSuccess = null;
         if (saleId) {
-          await this.receiptPrint.printSaleReceipt(saleId);
+          const printResult = await this.receiptPrint.printSaleReceipt(saleId);
+          if (!printResult.success) {
+            this.notify.warning(
+              'Receipt not printed',
+              printResult.message ?? 'Connect PrintHub (Bluetooth icon), then try again.',
+            );
+          } else if (printResult.connectionType === 'printhub') {
+            this.notify.success('Receipt printed', 'Sent to PrintHub thermal printer.');
+          }
         }
       });
     } catch {

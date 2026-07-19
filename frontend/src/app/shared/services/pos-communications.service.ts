@@ -46,7 +46,13 @@ export type PosReceiptTemplateElement = {
   bold?: boolean;
 };
 
-export type PosPrinterConnectionType = 'browser' | 'network' | 'usb' | 'bluetooth' | 'mharmal';
+export type PosPrinterConnectionType =
+  | 'browser'
+  | 'network'
+  | 'usb'
+  | 'bluetooth'
+  | 'printhub'
+  | 'mharmal';
 
 export type PosPrinterSettings = {
   posReceiptPaperWidth: string;

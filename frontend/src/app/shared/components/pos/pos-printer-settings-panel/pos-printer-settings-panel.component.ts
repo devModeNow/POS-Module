@@ -9,6 +9,7 @@ import {
 import { PosReceiptPrintService, ReceiptPrintContext } from '../../../services/pos-receipt-print.service';
 import { PosUsbPrinterService } from '../../../services/pos-usb-printer.service';
 import { PosBluetoothPrinterService } from '../../../services/pos-bluetooth-printer.service';
+import { PosPrintHubService } from '../../../services/pos-printhub.service';
 import {
   MHARMAL_DEFAULT_HOST,
   MHARMAL_DEFAULT_PORT,
@@ -75,6 +76,7 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
     private readonly receiptPrint: PosReceiptPrintService,
     private readonly usbPrinter: PosUsbPrinterService,
     private readonly bluetoothPrinter: PosBluetoothPrinterService,
+    private readonly printHub: PosPrintHubService,
     private readonly mharmalPrinter: PosMharmalPrinterService,
   ) {}
 
@@ -182,6 +184,18 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
       return;
     }
 
+    if (this.connectionType === 'printhub') {
+      if (this.printHub.isConnected()) {
+        this.btDeviceName = this.printHub.getDeviceLabel();
+        this.connectionStatus = 'connected';
+        this.connectionMessage = `Connected to ${this.btDeviceName}.`;
+      } else {
+        this.connectionStatus = 'idle';
+        this.connectionMessage = 'Click Connect PrintHub to pair your Bluetooth thermal printer.';
+      }
+      return;
+    }
+
     if (this.connectionType === 'mharmal') {
       this.connectionStatus = 'testing';
       this.connectionMessage = 'Connecting to Mharmal Printer…';
@@ -197,12 +211,32 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
     this.saving = true;
     this.error = '';
     try {
+      // Keep a local preference so checkout can use PrintHub even if the API save fails.
+      try {
+        localStorage.setItem('pos.printerConnectionType', this.connectionType);
+      } catch {
+        /* ignore */
+      }
+
+      // Strip oversized embedded images so the PUT does not hit body-size limits.
+      const templateForSave = this.templateElements.map((el) => {
+        if (
+          el.type === 'image' &&
+          typeof el.content === 'string' &&
+          el.content.startsWith('data:') &&
+          el.content.length > 80_000
+        ) {
+          return { ...el, content: '' };
+        }
+        return el;
+      });
+
       const r = await this.comms.savePrinterSettings({
         posPrinterName: this.printerName,
         posReceiptPaperWidth: this.paperWidth,
         posReceiptShowLogo: this.showLogo,
         posReceiptFooterText: this.footerText,
-        posReceiptTemplateJson: JSON.stringify(this.templateElements),
+        posReceiptTemplateJson: JSON.stringify(templateForSave),
         posPrinterConnectionType: this.connectionType,
         posPrinterHost: this.printerHost,
         posPrinterPort: this.printerPort,
@@ -274,6 +308,24 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
       return;
     }
 
+    if (this.connectionType === 'printhub') {
+      void this.receiptPrint
+        .printViaConnection(elements, ctx, this.paperWidth, {
+          connectionType: 'printhub',
+        })
+        .then((r) => {
+          if (!r.success) {
+            this.connectionStatus = 'failed';
+            this.connectionMessage = r.message ?? 'Print via PrintHub failed.';
+          } else {
+            this.btDeviceName = this.printHub.getDeviceLabel();
+            this.connectionStatus = 'connected';
+            this.connectionMessage = 'Test receipt sent via PrintHub.';
+          }
+        });
+      return;
+    }
+
     this.receiptPrint.printFromSettings(elements, ctx, this.paperWidth);
   }
 
@@ -283,6 +335,10 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
 
   get bluetoothSupported(): boolean {
     return this.bluetoothPrinter.isSupported();
+  }
+
+  get printHubSupported(): boolean {
+    return this.printHub.isSupported();
   }
 
   get mharmalSupported(): boolean {
@@ -414,6 +470,32 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
     this.btDeviceName = info.deviceName;
     this.connectionStatus = 'connected';
     this.connectionMessage = `Connected to ${info.deviceName}. Save settings to keep this printer.`;
+  }
+
+  async connectPrintHub(): Promise<void> {
+    if (!this.printHubSupported) {
+      this.connectionStatus = 'failed';
+      this.connectionMessage = 'Not supported in this browser. Use Chrome or Edge on HTTPS/localhost.';
+      return;
+    }
+    this.connectionStatus = 'testing';
+    this.connectionMessage = 'Waiting for Bluetooth device (PrintHub)…';
+    const r = await this.printHub.connect(this.paperWidth, 'bluetooth');
+    if (!r.success) {
+      this.connectionStatus = 'failed';
+      this.connectionMessage = r.message ?? 'PrintHub connection failed or was cancelled.';
+      return;
+    }
+    this.connectionType = 'printhub';
+    try {
+      localStorage.setItem('pos.printerConnectionType', 'printhub');
+    } catch {
+      /* ignore */
+    }
+    this.btDeviceName = r.deviceName || this.printHub.getDeviceLabel();
+    this.btDeviceId = 'printhub-session';
+    this.connectionStatus = 'connected';
+    this.connectionMessage = `${r.message ?? 'Connected.'} Click Save, then complete a sale — no browser print dialog.`;
   }
 
   get previewWidthClass(): string {

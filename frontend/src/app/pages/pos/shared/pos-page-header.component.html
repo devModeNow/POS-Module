@@ -16,6 +16,14 @@
     <div class="relative z-[130] flex shrink-0 items-center gap-1.5 pointer-events-auto">
       @if (isPosOrg && showPosTools) {
         <app-pos-notifications-bell [compact]="true" />
+        <button type="button" (click)="connectPrintHub()" [disabled]="printHubConnecting"
+          [title]="printHubConnected ? 'PrintHub connected — click to reconnect' : 'Connect PrintHub Bluetooth printer'"
+          class="touch-manipulation rounded-md border p-2.5 disabled:opacity-50"
+          [ngClass]="printHubConnected
+            ? 'border-emerald-500 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:border-emerald-400 dark:bg-emerald-500/10 dark:text-emerald-400'
+            : 'border-amber-400 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-500 dark:bg-amber-500/10 dark:text-amber-300'">
+          <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.5 3l3.5 3.5L13.5 10M10.5 21l-3.5-3.5L10.5 14M8 8l8 8M16 8l-8 8"/></svg>
+        </button>
         <button type="button" (click)="openPrinterSettings()" title="Printer settings"
           class="touch-manipulation rounded-md border border-gray-300 p-2.5 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
           <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
