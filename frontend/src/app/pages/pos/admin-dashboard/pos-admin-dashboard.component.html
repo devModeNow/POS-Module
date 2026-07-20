@@ -87,7 +87,7 @@
               } @else {
                 <apx-chart [series]="salesDonutSeries" [chart]="donutChartBase" [labels]="salesDonutLabels"
                   [colors]="chartColors" [plotOptions]="donutPlot" [dataLabels]="donutDataLabels"
-                  [legend]="{ position: 'bottom' }"></apx-chart>
+                  [legend]="donutLegend"></apx-chart>
               }
             }
             @if (id === 'chart-category') {
@@ -97,7 +97,7 @@
               } @else {
                 <apx-chart [series]="categoryDonutSeries" [chart]="donutChartBase" [labels]="categoryDonutLabels"
                   [colors]="chartColors" [plotOptions]="donutPlot" [dataLabels]="donutDataLabels"
-                  [legend]="{ position: 'bottom' }"></apx-chart>
+                  [legend]="donutLegend"></apx-chart>
               }
             }
             @if (id === 'chart-payment') {
@@ -107,7 +107,7 @@
               } @else {
                 <apx-chart [series]="paymentDonutSeries" [chart]="donutChartBase" [labels]="paymentDonutLabels"
                   [colors]="chartColors" [plotOptions]="donutPlot" [dataLabels]="donutDataLabels"
-                  [legend]="{ position: 'bottom' }"></apx-chart>
+                  [legend]="donutLegend"></apx-chart>
               }
             }
           </div>
@@ -445,6 +445,16 @@
                         </span>
                       </td>
                       <td class="px-4 py-2.5 text-right">
+                        <div class="inline-flex items-center justify-end gap-1.5">
+                          <button type="button" (click)="reprintSale(row)" [disabled]="reprintingSaleId === row.id"
+                            title="Re-print receipt"
+                            class="inline-flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+                            @if (reprintingSaleId === row.id) {
+                              <svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+                            } @else {
+                              <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"/></svg>
+                            }
+                          </button>
                         @if (row.paymentStatus === 'floating') {
                           <button type="button" (click)="updatePaymentStatus(row, 'settled')" [disabled]="updatingTransactionId === row.id"
                             title="Mark as settled"
@@ -466,6 +476,7 @@
                             }
                           </button>
                         }
+                        </div>
                       </td>
                     </tr>
                   } @empty {

@@ -18,6 +18,7 @@ import { RbacService } from '../../../shared/services/rbac.service';
 import { ActionBusyService } from '../../../shared/services/action-busy.service';
 import { GlobalActionLoaderComponent } from '../../../shared/components/common/global-action-loader/global-action-loader.component';
 import { PosReceiptPrintService } from '../../../shared/services/pos-receipt-print.service';
+import { PosCommunicationsService } from '../../../shared/services/pos-communications.service';
 import { PosPageHeaderComponent } from '../shared/pos-page-header.component';
 
 @Component({
@@ -72,6 +73,8 @@ export class PosDashboardComponent implements OnInit {
   selectedPaymentMethodId: number | null = null;
   amountReceived = 0;
   checkoutSuccess: { changeDue: number; totalAmount: number } | null = null;
+  cashDrawerEnabled = false;
+  useCashDrawerThisSale = true;
 
   confirmOpen = false;
   confirmTitle = '';
@@ -91,6 +94,7 @@ export class PosDashboardComponent implements OnInit {
     private readonly rbac: RbacService,
     private readonly actionBusy: ActionBusyService,
     private readonly receiptPrint: PosReceiptPrintService,
+    private readonly comms: PosCommunicationsService,
   ) {
     this.isCashierMode = this.rbac.isCashier();
   }
@@ -185,6 +189,19 @@ export class PosDashboardComponent implements OnInit {
     void this.loadDiscounts();
     void this.loadPaymentMethods();
     void this.loadCatalog();
+    void this.loadCashDrawerSettings();
+  }
+
+  async loadCashDrawerSettings(): Promise<void> {
+    try {
+      const r = await this.comms.getPrinterSettings();
+      const item = r?.item ?? {};
+      this.cashDrawerEnabled = String(item['posCashDrawerEnabled'] ?? 'false').toLowerCase() === 'true';
+      this.useCashDrawerThisSale = this.cashDrawerEnabled;
+    } catch {
+      this.cashDrawerEnabled = false;
+      this.useCashDrawerThisSale = false;
+    }
   }
 
   get selectedDiscount(): PosDiscount | null {
@@ -755,14 +772,16 @@ export class PosDashboardComponent implements OnInit {
     this.cartOpen = !this.cartOpen;
   }
 
-  openCheckoutModal(): void {
+  async openCheckoutModal(): Promise<void> {
     if (this.cart.length === 0) {
       this.notify.warning('Empty cart', 'Add products before checking out.');
       return;
     }
+    await this.loadCashDrawerSettings();
     this.selectedDiscountId = null;
     this.amountReceived = 0;
     this.checkoutSuccess = null;
+    this.useCashDrawerThisSale = this.cashDrawerEnabled;
     this.showCheckoutModal = true;
   }
 
@@ -830,7 +849,9 @@ export class PosDashboardComponent implements OnInit {
         this.showCheckoutModal = false;
         this.checkoutSuccess = null;
         if (saleId) {
-          const printResult = await this.receiptPrint.printSaleReceipt(saleId);
+          const printResult = await this.receiptPrint.printSaleReceipt(saleId, {
+            openCashDrawer: this.useCashDrawerThisSale,
+          });
           if (!printResult.success) {
             this.notify.warning(
               'Receipt not printed',

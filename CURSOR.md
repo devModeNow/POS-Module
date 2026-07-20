@@ -231,4 +231,28 @@
    - the company logo on the login is too small.
    - Make sure to fix all errors and bugs you encounter while working on this task.
    - Make sure to check all taskss under this continuation before setting it to done because in the past there are tasks that has not been done so be sure to check if its all done properly and without errors and bugs. 
+   //Continuation 3.9
+   - In both dashboard, when viewing Completed sales/My sales, add a re-print feature to re-print the receipt, make sure the printout will have a "Re-print Only" watermark.
+   - In cashier dashboard, when picking a product a modal popup with unit type will show right? Currently that modal popup will only close when the close icon is clicked. Now i want it to close when I click outside the modal.
+   - In printer output, reduse the space between the logo and storename.
+   - In printer output, make sure to have space between items and Total even how many items are listed.
+   - In print template editor and also in print output, change the items format into "Quantity - Item name - Unit type" and the price in right side.
+   - Seems like the format that is being saved in the Receipt template editor is not really taking effect. Make sure to print the saved format in the template because that should how it works.
+   - In cashier dashboard -> My sales pages, add a feature to see detailes of the a sale.
+   - Make sure to fix all errors and bugs you encounter while working on this task.
+   - Make sure to finish line-by-line, do not start working on next line unless its a pre-requisite to the present one.
+   - Make sure to check all taskss under this continuation before setting it to done because in the past there are tasks that has not been done so be sure to check if its all done properly and without errors and bugs. 
+   - Make sure update the Memory.md.
+   //Continuation 4.0
+   - In cashier dashboard, when re-printing a receipt, make sure to require a admin code which is the same code used for voiding.
+   - In posadmin dashboard, remove the popup upon login on connecting the printer since its not required for posadmin.
+   - in podadmin dashboard, separate the the Purchase Orders from Inventory page, create a page for Purchase Orders and add it to the sidebar nav and show the form in page not a side modal.
+   - In new Purchase Orders form, make sure to use smart search like when typing in the item field it will automatically show the already encoded product weather its 0 or still available as long as its already in the database, once picked it will autocatically populate the fields like the quantity variant and etc...
+   - In chat feature, make sure to not close the chat box when deleting a message.
+   - Add a feature in cashier dashboard where in I can have a choice to use a cash drawer.
+   - If cash drawer is existing, make sure to have a settings to configure it on when it will be opening like when I click complete sale before printing receipt the cash drawer will be opening.
+   - In posadmin dashboard, in the graphs, when I change the view to Donut graph view, the text values are not readable because its colored black, lets color the texts into white or dynamic depending on the donut color the texts color should contrast to make it readable.
+   - Make sure to finish line-by-line, do not start working on next line unless its a pre-requisite to the present one.
+   - Make sure to check all taskss under this continuation before setting it to done because in the past there are tasks that has not been done so be sure to check if its all done properly and without errors and bugs. 
+   - Make sure update the Memory.md.
 

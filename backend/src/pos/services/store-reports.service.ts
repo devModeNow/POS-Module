@@ -613,7 +613,7 @@ export class PosStoreReportsService {
         totalDiscount: string;
       }>(
         `SELECT COALESCE(SUM(st.total_amount), 0)::text AS "totalSales",
-                COUNT(*)::text AS "transactionCount",
+                COUNT(*) FILTER (WHERE st.amount_paid IS NOT NULL)::text AS "transactionCount",
                 COALESCE(SUM(st.discount_amount), 0)::text AS "totalDiscount"
          FROM tblsales_transactions st
          WHERE st.org_id = $1 AND st.created_by = $2
@@ -629,7 +629,7 @@ export class PosStoreReportsService {
       }>(
         `SELECT st.sale_date::text AS "saleDate",
                 COALESCE(SUM(st.total_amount), 0)::text AS "totalSales",
-                COUNT(*)::text AS "transactionCount"
+                COUNT(*) FILTER (WHERE st.amount_paid IS NOT NULL)::text AS "transactionCount"
          FROM tblsales_transactions st
          WHERE st.org_id = $1 AND st.created_by = $2
            AND COALESCE(st.is_voided, FALSE) = FALSE
@@ -648,13 +648,23 @@ export class PosStoreReportsService {
       }>(
         `SELECT st.id,
                 st.sale_date::text AS "saleDate",
-                st.total_amount::text AS "totalAmount",
+                (
+                  SELECT COALESCE(SUM(s2.total_amount), 0)
+                  FROM tblsales_transactions s2
+                  WHERE s2.org_id = st.org_id
+                    AND s2.created_by = st.created_by
+                    AND s2.sale_date = st.sale_date
+                    AND s2.created_at >= st.created_at - interval '10 seconds'
+                    AND s2.created_at <= st.created_at + interval '10 seconds'
+                    AND COALESCE(s2.is_voided, FALSE) = FALSE
+                )::text AS "totalAmount",
                 COALESCE(st.payment_status, 'settled') AS "paymentStatus"
          FROM tblsales_transactions st
          WHERE st.org_id = $1 AND st.created_by = $2
+           AND st.amount_paid IS NOT NULL
            AND COALESCE(st.is_voided, FALSE) = FALSE
            ${dateClause}
-         ORDER BY st.id DESC
+         ORDER BY st.created_at DESC
          LIMIT 20`,
         params,
       );

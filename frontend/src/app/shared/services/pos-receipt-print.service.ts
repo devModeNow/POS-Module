@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import {
+  PosCashDrawerOpenOn,
   PosCommunicationsService,
   PosPrinterConnectionType,
   PosReceiptTemplateElement,
@@ -11,9 +12,19 @@ import { PosPrintHubService } from './pos-printhub.service';
 import { PosMharmalPrinterService, MHARMAL_DEFAULT_PORT } from './pos-mharmal-printer.service';
 import { OrgService } from './org.service';
 import {
+  alignFromTemplateX,
   countTemplateBlockLines,
+  formatPaymentSummaryLine,
+  isPaymentSummaryBlock,
+  padReceiptLine,
+  parsePaymentPreviewParts,
+  prepareTemplateElementsForPrint,
+  receiptColumnCount,
+  splitMultilinePaymentBlocks,
+  sortTemplateElements,
   templateLogoBlankLines,
   templateSpacingBlankLines,
+  templateSpacingHeightPx,
 } from './pos-receipt-spacing';
 
 export type ReceiptPrintContext = {
@@ -30,6 +41,8 @@ export type ReceiptPrintContext = {
   paymentMethod?: string;
   cashier?: string;
   saleDate?: string;
+  /** When true, prints a "Re-print Only" watermark (My Sales / admin reprints). */
+  reprint?: boolean;
 };
 
 export type PosPrinterConnection = {
@@ -41,9 +54,15 @@ export type PosPrinterConnection = {
   btDeviceId?: string;
 };
 
+/** ESC/POS pulse to pin 2 — standard cash drawer kick. */
+export const CASH_DRAWER_ESC_PULSE = new Uint8Array([0x1b, 0x70, 0x00, 0x19, 0xfa]);
+
 // Re-export spacing helpers for callers that already import this module.
 export {
+  alignFromTemplateX,
   countTemplateBlockLines,
+  padReceiptLine,
+  receiptColumnCount,
   templateLogoBlankLines,
   templateSpacingBlankLines,
 } from './pos-receipt-spacing';
@@ -62,12 +81,13 @@ export class PosReceiptPrintService {
 
   defaultTemplateElements(): PosReceiptTemplateElement[] {
     return [
-      { id: 'hdr', type: 'text', content: '{{businessName}}', x: 50, y: 6, fontSize: 14, align: 'center', bold: true },
-      { id: 'addr', type: 'text', content: '{{businessAddress}}', x: 50, y: 16, fontSize: 10, align: 'center' },
-      { id: 'meta', type: 'text', content: '{{saleDate}}\nCashier: {{cashier}}\n{{paymentMethod}}', x: 50, y: 24, fontSize: 9, align: 'center' },
-      { id: 'items', type: 'text', content: '{{items}}', x: 5, y: 40, fontSize: 11, align: 'left' },
-      { id: 'total', type: 'text', content: 'Total: {{total}}', x: 5, y: 72, fontSize: 12, align: 'left', bold: true },
-      { id: 'paid', type: 'text', content: 'Paid: {{amountPaid}}\nChange: {{change}}', x: 5, y: 80, fontSize: 11, align: 'left' },
+      { id: 'hdr', type: 'text', content: '{{businessName}}', x: 50, y: 3, fontSize: 14, align: 'center', bold: true },
+      { id: 'addr', type: 'text', content: '{{businessAddress}}', x: 50, y: 8, fontSize: 10, align: 'center' },
+      { id: 'meta', type: 'text', content: '{{saleDate}}\nCashier: {{cashier}}\n{{paymentMethod}}', x: 50, y: 13, fontSize: 9, align: 'center' },
+      { id: 'items', type: 'text', content: '{{items}}', x: 5, y: 28, fontSize: 11, align: 'left' },
+      { id: 'total', type: 'text', content: 'Total: {{total}}', x: 8, y: 68, fontSize: 12, align: 'left', bold: true },
+      { id: 'paid', type: 'text', content: 'Paid: {{amountPaid}}', x: 8, y: 72, fontSize: 11, align: 'left' },
+      { id: 'change', type: 'text', content: 'Change: {{change}}', x: 8, y: 76, fontSize: 11, align: 'left' },
       { id: 'footer', type: 'text', content: '{{footer}}', x: 50, y: 92, fontSize: 10, align: 'center' },
     ];
   }
@@ -75,22 +95,15 @@ export class PosReceiptPrintService {
   resolveTemplateElements(json: string | null | undefined): PosReceiptTemplateElement[] {
     const parsed = this.comms.parseTemplate(json);
     const base = parsed.length ? parsed.map((e) => ({ ...e })) : this.defaultTemplateElements();
-    return this.normalizeTemplateForPrint(base);
+    // Editor shows saved positions; print path applies prepareTemplateElementsForPrint separately.
+    return this.normalizeTemplateForPrint(splitMultilinePaymentBlocks(base));
   }
 
   /**
-   * Ensure header/footer stay centered and cashier line is present for print.
+   * Ensure cashier line is present when missing; preserve saved align/content otherwise.
    */
   private normalizeTemplateForPrint(elements: PosReceiptTemplateElement[]): PosReceiptTemplateElement[] {
-    const normalized = elements.map((el) => {
-      const content = String(el.content ?? '');
-      const isHeader =
-        /\{\{\s*(businessName|storeName|companyName|businessAddress|saleDate|cashier|paymentMethod|footer)\s*\}\}/i.test(
-          content,
-        ) || /cashier\s*:/i.test(content);
-      if (!isHeader || el.type === 'image') return el;
-      return { ...el, align: 'center' as const };
-    });
+    const normalized = elements.map((e) => ({ ...e }));
 
     const joined = normalized.map((e) => e.content).join('\n');
     const hasCashier = /\{\{\s*cashier\s*\}\}/i.test(joined) || /cashier\s*:/i.test(joined);
@@ -110,16 +123,61 @@ export class PosReceiptPrintService {
     return normalized;
   }
 
+  formatItemLine(
+    item: { productName: string; variantName: string; quantitySold: number; unitType: string; totalAmount: number },
+    usePeso = true,
+    cols = 32,
+  ): string {
+    const name = (item.variantName || item.productName || 'Item').trim();
+    const qty = Number(item.quantitySold);
+    const qtyLabel = Number.isInteger(qty) ? String(qty) : qty.toFixed(2);
+    const unit = String(item.unitType || 'pc').trim() || 'pc';
+    const qtyUnit = `${qtyLabel}x ${unit}`;
+    const sym = usePeso ? '₱' : 'P';
+    const price = `${sym}${Number(item.totalAmount).toFixed(2)}`;
+    const sep = ' .... ';
+    const maxLeft = Math.max(8, cols - price.length - sep.length);
+    let left = `${qtyUnit} - ${name}`;
+    if (left.length > maxLeft) {
+      left = `${left.slice(0, Math.max(6, maxLeft - 3))}...`;
+    }
+    return `${left}${sep}${price}`;
+  }
+
   formatItemsLines(
     items: Array<{ productName: string; variantName: string; quantitySold: number; unitType: string; totalAmount: number }>,
+    usePeso = true,
+    paperWidth?: string,
   ): string {
-    return items
-      .map((item) => {
-        const name = item.variantName || item.productName;
-        const qty = `${item.quantitySold}${item.unitType ? ' ' + item.unitType : ''}`;
-        return `${name} x${qty} .... ₱${item.totalAmount.toFixed(2)}`;
-      })
-      .join('\n');
+    const cols = receiptColumnCount(paperWidth);
+    return items.map((item) => this.formatItemLine(item, usePeso, cols)).join('\n');
+  }
+
+  /** Resolve alignment from saved template (explicit align + canvas X position). */
+  resolveElementAlign(el: PosReceiptTemplateElement, rawContent?: string): 'left' | 'center' | 'right' {
+    if (el.align === 'left' || el.align === 'center' || el.align === 'right') {
+      return el.align;
+    }
+    const content = String(rawContent ?? el.content ?? '');
+    if (
+      /\{\{\s*(businessName|storeName|companyName|businessAddress|saleDate|cashier|paymentMethod|footer)\s*\}\}/i.test(
+        content,
+      ) ||
+      /cashier\s*:/i.test(content)
+    ) {
+      return 'center';
+    }
+    return alignFromTemplateX(el.x);
+  }
+
+  reprintWatermarkHtml(): string {
+    return `<div class="block center reprint-watermark" style="font-size:11px;font-weight:700;letter-spacing:0.05em;text-transform:uppercase;">Re-print Only</div>`;
+  }
+
+  reprintWatermarkText(cols = 32): string {
+    const label = 'RE-PRINT ONLY';
+    const pad = Math.max(0, Math.floor((cols - label.length) / 2));
+    return `${' '.repeat(pad)}${label}`;
   }
 
   renderTemplateText(content: string, ctx: ReceiptPrintContext): string {
@@ -156,11 +214,12 @@ export class PosReceiptPrintService {
       : '';
 
     // Flow layout (top → bottom) so printed height hugs content instead of a fixed blank page.
-    const sorted = [...elements].sort((a, b) => (a.y ?? 0) - (b.y ?? 0) || (a.x ?? 0) - (b.x ?? 0));
+    const sorted = sortTemplateElements(prepareTemplateElementsForPrint(elements));
     const logoGap = templateLogoBlankLines(sorted[0]?.y ?? 8);
+    const reprintBanner = ctx.reprint ? this.reprintWatermarkHtml() : '';
     const logoHtml = logo
-      ? `${logo}<div class="spacer" style="height:${logoGap * 12}px"></div>`
-      : '';
+      ? `${logo}<div class="spacer" style="height:${templateSpacingHeightPx(logoGap)}px"></div>${reprintBanner}`
+      : reprintBanner;
 
     let prevY = sorted[0]?.y ?? 0;
     let prevLines = 1;
@@ -168,24 +227,14 @@ export class PosReceiptPrintService {
     let first = true;
     for (const el of sorted) {
       const content = String(el.content ?? '');
-      const forceCenter =
-        /\{\{\s*(businessName|storeName|companyName|businessAddress|saleDate|cashier|paymentMethod|footer)\s*\}\}/i.test(
-          content,
-        ) || /cashier\s*:/i.test(content);
-      const align = forceCenter
-        ? 'center'
-        : el.align === 'left' || el.align === 'center' || el.align === 'right'
-          ? el.align
-          : (el.x ?? 0) >= 40
-            ? 'center'
-            : 'left';
+      const align = this.resolveElementAlign(el, content);
       const fontSize = el.fontSize ?? 12;
       const weight = el.bold || /\{\{\s*businessName\s*\}\}/i.test(content) ? '700' : '400';
 
       if (!first) {
-        const blanks = templateSpacingBlankLines(prevY, el.y ?? 0, prevLines, content);
+        const blanks = templateSpacingBlankLines(prevY, el.y ?? 0, prevLines);
         if (blanks > 0) {
-          bodyParts.push(`<div class="spacer" style="height:${blanks * 12}px"></div>`);
+          bodyParts.push(`<div class="spacer" style="height:${templateSpacingHeightPx(blanks)}px"></div>`);
         }
       }
 
@@ -195,17 +244,37 @@ export class PosReceiptPrintService {
           `<div class="block ${align}"><img src="${this.escapeAttr(el.content)}" alt="" style="width:${w}%;max-width:100%;height:auto;" /></div>`,
         );
         prevY = el.y ?? 0;
-        prevLines = 3;
+        prevLines = 2;
         first = false;
         continue;
       }
 
       const rendered = this.renderTemplateText(el.content, ctx).trim();
       if (!rendered) continue;
-      const text = this.escapeHtml(rendered).replace(/\n/g, '<br/>');
-      bodyParts.push(
-        `<div class="block ${align}" style="font-size:${fontSize}px;font-weight:${weight};">${text}</div>`,
-      );
+
+      if (isPaymentSummaryBlock(content)) {
+        const fontSize = el.fontSize ?? 12;
+        const weight = el.bold ? '700' : '400';
+        for (const line of rendered.split('\n')) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          const parts = parsePaymentPreviewParts(content, trimmed);
+          if (parts) {
+            bodyParts.push(
+              `<div class="payment-row" style="font-size:${fontSize}px;font-weight:${weight};"><span>${this.escapeHtml(parts.label)}</span><span>${this.escapeHtml(parts.amount)}</span></div>`,
+            );
+          } else {
+            bodyParts.push(
+              `<div class="block left" style="font-size:${fontSize}px;font-weight:${weight};line-height:1.1;">${this.escapeHtml(trimmed)}</div>`,
+            );
+          }
+        }
+      } else {
+        const text = this.escapeHtml(rendered).replace(/\n/g, '<br/>');
+        bodyParts.push(
+          `<div class="block ${align}" style="font-size:${fontSize}px;font-weight:${weight};line-height:1.1;">${text}</div>`,
+        );
+      }
       prevY = el.y ?? 0;
       prevLines = countTemplateBlockLines(rendered);
       first = false;
@@ -234,7 +303,7 @@ export class PosReceiptPrintService {
     width: ${widthPx}px;
     max-width: 100%;
     margin: 0;
-    padding: 2mm 3mm 4mm;
+    padding: 1mm 3mm 3mm;
     height: auto !important;
     min-height: 0 !important;
     overflow: visible;
@@ -243,7 +312,8 @@ export class PosReceiptPrintService {
     display: block;
     width: 100%;
     margin: 0;
-    line-height: 1.25;
+    padding: 0;
+    line-height: 1.1;
     word-break: break-word;
     white-space: pre-wrap;
   }
@@ -252,11 +322,22 @@ export class PosReceiptPrintService {
   .block.center { text-align: center; }
   .block.right { text-align: right; }
   .logo {
-    max-width: 60%;
-    max-height: 48px;
+    max-width: 55%;
+    max-height: 36px;
     height: auto;
     display: inline-block;
+    margin: 0 auto 1px;
   }
+  .payment-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+    line-height: 1.1;
+  }
+  .payment-row span:last-child { text-align: right; white-space: nowrap; }
   @media print {
     html, body {
       width: ${widthMm} !important;
@@ -319,18 +400,24 @@ export class PosReceiptPrintService {
     elements: PosReceiptTemplateElement[],
     ctx: ReceiptPrintContext,
   ): string {
-    const cols = (ctx.paperWidth || '80mm').includes('58') ? 32 : 42;
-    const sorted = [...(elements?.length ? elements : this.defaultTemplateElements())].sort(
-      (a, b) => (a.y ?? 0) - (b.y ?? 0) || (a.x ?? 0) - (b.x ?? 0),
+    const cols = receiptColumnCount(ctx.paperWidth);
+    const sorted = sortTemplateElements(
+      prepareTemplateElementsForPrint(
+        elements?.length ? elements : this.defaultTemplateElements(),
+      ),
     );
     const lines: string[] = [];
+    if (ctx.reprint) {
+      lines.push(this.reprintWatermarkText(cols));
+      lines.push('');
+    }
     let prevY = sorted[0]?.y ?? 0;
     let prevLines = 1;
     let first = true;
     for (const el of sorted) {
       if (el.type === 'image') {
         if (!first) {
-          const blanks = templateSpacingBlankLines(prevY, el.y ?? 0, prevLines, el.content);
+          const blanks = templateSpacingBlankLines(prevY, el.y ?? 0, prevLines);
           for (let i = 0; i < blanks; i++) lines.push('');
         }
         prevY = el.y ?? 0;
@@ -339,34 +426,31 @@ export class PosReceiptPrintService {
         continue;
       }
       const content = String(el.content ?? '');
-      const forceCenter =
-        /\{\{\s*(businessName|storeName|companyName|businessAddress|saleDate|cashier|paymentMethod|footer)\s*\}\}/i.test(
-          content,
-        ) || /cashier\s*:/i.test(content);
-      const align = forceCenter
-        ? 'center'
-        : el.align === 'left' || el.align === 'center' || el.align === 'right'
-          ? el.align
-          : (el.x ?? 0) >= 40
-            ? 'center'
-            : 'left';
+      const align = this.resolveElementAlign(el, content);
       const text = this.renderTemplateText(el.content, ctx).trim();
       if (!text) continue;
 
       if (!first) {
-        const blanks = templateSpacingBlankLines(prevY, el.y ?? 0, prevLines, content);
+        const blanks = templateSpacingBlankLines(prevY, el.y ?? 0, prevLines);
         for (let i = 0; i < blanks; i++) lines.push('');
       }
 
       let blockLines = 0;
+      const isPayment = isPaymentSummaryBlock(content);
       for (const line of text.split('\n')) {
         const trimmed = line.trim();
         if (!trimmed) continue;
         blockLines += 1;
-        if (align === 'center') {
-          const t = trimmed.length > cols ? trimmed.slice(0, cols) : trimmed;
-          const pad = Math.max(0, Math.floor((cols - t.length) / 2));
-          lines.push(`${' '.repeat(pad)}${t}`);
+        const sep = trimmed.lastIndexOf(' .... ');
+        if (sep >= 0 && align === 'left' && !isPayment) {
+          const left = trimmed.slice(0, sep).trim();
+          const right = trimmed.slice(sep + 6).trim();
+          const combined = `${left}${' '.repeat(Math.max(1, cols - left.length - right.length))}${right}`;
+          lines.push(combined.length > cols ? combined.slice(0, cols) : combined);
+        } else if (isPayment) {
+          lines.push(formatPaymentSummaryLine(trimmed, cols));
+        } else if (align === 'center' || align === 'right') {
+          lines.push(padReceiptLine(trimmed, cols, align));
         } else {
           lines.push(trimmed);
         }
@@ -382,6 +466,68 @@ export class PosReceiptPrintService {
    * Prints a receipt using the configured connection type.
    * Only the "browser" type opens the system print dialog — other types must not fall back to it.
    */
+  async openCashDrawer(
+    connection: PosPrinterConnection,
+    paperWidth: string,
+  ): Promise<{ success: boolean; message?: string }> {
+    if (connection.connectionType === 'browser') {
+      return { success: false, message: 'Cash drawer is not available with browser print.' };
+    }
+
+    if (connection.connectionType === 'network' && connection.host) {
+      const pulse = String.fromCharCode(...CASH_DRAWER_ESC_PULSE);
+      const r = await this.comms.printRawToNetworkPrinter(connection.host, connection.port || 9100, pulse);
+      if (r?.success) return { success: true };
+      return { success: false, message: r?.message ?? 'Network printer unavailable.' };
+    }
+
+    if (connection.connectionType === 'usb' && connection.usbVendorId && connection.usbProductId) {
+      const r = await this.usbPrinter.sendRawBytes(
+        connection.usbVendorId,
+        connection.usbProductId,
+        CASH_DRAWER_ESC_PULSE,
+      );
+      if (r.success) return { success: true };
+      return { success: false, message: r.message ?? 'USB printer unavailable.' };
+    }
+
+    if (connection.connectionType === 'bluetooth' && connection.btDeviceId) {
+      const r = await this.bluetoothPrinter.sendRawBytes(connection.btDeviceId, CASH_DRAWER_ESC_PULSE);
+      if (r.success) return { success: true };
+      return { success: false, message: r.message ?? 'Bluetooth printer unavailable.' };
+    }
+
+    if (connection.connectionType === 'printhub') {
+      await this.printHub.autoConnect(paperWidth);
+      if (!this.printHub.isConnected()) {
+        return { success: false, message: 'Printer not connected.' };
+      }
+      return this.printHub.openCashDrawer();
+    }
+
+    if (connection.connectionType === 'mharmal') {
+      const host = connection.host?.trim() || '127.0.0.1';
+      const port = connection.port && connection.port > 0 ? connection.port : MHARMAL_DEFAULT_PORT;
+      const pulse = String.fromCharCode(...CASH_DRAWER_ESC_PULSE);
+      const r = await this.comms.printRawToNetworkPrinter(host, port, pulse);
+      if (r?.success) return { success: true };
+      return { success: false, message: r?.message ?? 'Mharmal printer unavailable.' };
+    }
+
+    return { success: false, message: 'Cash drawer is not configured for this printer type.' };
+  }
+
+  parseCashDrawerSettings(item: Record<string, unknown>): {
+    enabled: boolean;
+    openOn: PosCashDrawerOpenOn;
+  } {
+    const enabled = String(item['posCashDrawerEnabled'] ?? 'false').toLowerCase() === 'true';
+    const raw = String(item['posCashDrawerOpenOn'] ?? 'before_receipt').trim() as PosCashDrawerOpenOn;
+    const openOn: PosCashDrawerOpenOn =
+      raw === 'after_receipt' || raw === 'manual_only' ? raw : 'before_receipt';
+    return { enabled, openOn };
+  }
+
   async printViaConnection(
     elements: PosReceiptTemplateElement[],
     ctx: ReceiptPrintContext,
@@ -410,8 +556,18 @@ export class PosReceiptPrintService {
     }
 
     if (connection.connectionType === 'printhub') {
+      await this.printHub.autoConnect(paperWidth);
+      if (!this.printHub.isConnected()) {
+        this.printHub.requestConnectPrompt();
+        return {
+          success: false,
+          message:
+            'Printer not connected. Tap Connect when prompted (or the Bluetooth icon), then reprint from My Sales.',
+        };
+      }
       const r = await this.printHub.printReceipt(ctx, paperWidth, elements);
       if (r.success) return { success: true };
+      this.printHub.requestConnectPrompt();
       return { success: false, message: r.message ?? 'PrintHub printer unavailable.' };
     }
 
@@ -450,6 +606,7 @@ export class PosReceiptPrintService {
 
   async printSaleReceipt(
     saleId: number,
+    options?: { reprint?: boolean; openCashDrawer?: boolean },
   ): Promise<{ success: boolean; message?: string; connectionType?: PosPrinterConnectionType }> {
     const [settingsRes, saleRes] = await Promise.all([
       this.comms.getPrinterSettings(),
@@ -475,13 +632,14 @@ export class PosReceiptPrintService {
       logoUrl: (item['businessLogoLight'] as string) || (item['businessLogoDark'] as string) || null,
       showLogo: String(item['posReceiptShowLogo'] ?? 'true').toLowerCase() !== 'false',
       paperWidth,
-      itemsText: this.formatItemsLines(sale.items ?? []),
+      itemsText: this.formatItemsLines(sale.items ?? [], true, paperWidth),
       total: `₱${Number(sale.totalAmount).toFixed(2)}`,
       amountPaid: sale.amountPaid != null ? `₱${Number(sale.amountPaid).toFixed(2)}` : '',
       change: sale.changeAmount != null ? `₱${Number(sale.changeAmount).toFixed(2)}` : '₱0.00',
       paymentMethod: String(sale.paymentMethod ?? '').trim(),
       cashier: cashierName,
       saleDate: new Date(sale.createdAt || sale.saleDate).toLocaleString('en-PH'),
+      reprint: options?.reprint === true,
     };
     const savedType = (item['posPrinterConnectionType'] as PosPrinterConnectionType) || 'printhub';
     // Prefer a live PrintHub session / local preference over a stale "browser" DB value
@@ -499,7 +657,20 @@ export class PosReceiptPrintService {
       usbProductId: String(item['posPrinterUsbProductId'] ?? ''),
       btDeviceId: String(item['posPrinterBtDeviceId'] ?? ''),
     };
+    const drawer = this.parseCashDrawerSettings(item);
+    const shouldOpenDrawer =
+      options?.openCashDrawer !== false && drawer.enabled && drawer.openOn !== 'manual_only';
+
+    if (shouldOpenDrawer && drawer.openOn === 'before_receipt') {
+      await this.openCashDrawer(connection, paperWidth);
+    }
+
     const result = await this.printViaConnection(elements, ctx, paperWidth, connection);
+
+    if (shouldOpenDrawer && drawer.openOn === 'after_receipt') {
+      await this.openCashDrawer(connection, paperWidth);
+    }
+
     return { ...result, connectionType };
   }
 

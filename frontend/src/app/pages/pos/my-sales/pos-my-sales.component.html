@@ -93,12 +93,13 @@
         }
       </div>
       <div class="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-800">
-        <table class="w-full min-w-[520px]">
+        <table class="w-full min-w-[680px]">
           <thead>
             <tr class="border-b border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900/50">
               <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Date</th>
               <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Amount</th>
               <th class="px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Status</th>
+              <th class="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -115,11 +116,30 @@
                     {{ statusLabel(row.paymentStatus) }}
                   </span>
                 </td>
+                <td class="px-4 py-3.5">
+                  <div class="flex items-center justify-end gap-2">
+                    <button type="button" (click)="openSaleDetail(row)" title="View sale details"
+                      class="inline-flex h-8 items-center rounded-md border border-gray-200 px-2.5 text-xs font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
+                      Details
+                    </button>
+                    <button type="button" (click)="promptReprintSale(row, $event)" [disabled]="reprintingSaleId === row.id || reprintAuthBusy" title="Re-print receipt"
+                      class="inline-flex h-8 items-center rounded-md bg-brand-500 px-2.5 text-xs font-medium text-white hover:bg-brand-600 disabled:opacity-50">
+                      @if (reprintingSaleId === row.id) {
+                        <svg class="h-4 w-4 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                          <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                          <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                        </svg>
+                      } @else {
+                        Re-print
+                      }
+                    </button>
+                  </div>
+                </td>
               </tr>
             } @empty {
               @if (!loading) {
                 <tr>
-                  <td colspan="3" class="px-4 py-12 text-center">
+                  <td colspan="4" class="px-4 py-12 text-center">
                     <p class="text-sm font-medium text-gray-600 dark:text-gray-300">No sales in this period</p>
                     <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Try widening the date range and refresh.</p>
                   </td>
@@ -132,3 +152,100 @@
     </section>
   </div>
 </div>
+
+@if (showDetailModal) {
+  <div class="fixed inset-0 z-[100000] flex items-end justify-center overflow-y-auto bg-gray-900/50 p-4 md:items-center" (click)="closeSaleDetail()">
+    <div class="my-auto w-full max-w-lg rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900 max-h-[95vh] overflow-y-auto" (click)="$event.stopPropagation()">
+      <div class="flex items-start justify-between gap-3">
+        <div>
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Sale Details</h3>
+          @if (saleDetail) {
+            <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">{{ saleDetail.saleDate | date:'medium' }}</p>
+          }
+        </div>
+        <button type="button" (click)="closeSaleDetail()" title="Close"
+          class="rounded-md p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">
+          <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
+      </div>
+
+      @if (detailLoading) {
+        <p class="mt-6 text-center text-sm text-gray-500">Loading sale details…</p>
+      } @else if (detailError) {
+        <p class="mt-6 text-center text-sm text-red-600 dark:text-red-400">{{ detailError }}</p>
+      } @else if (saleDetail) {
+        <dl class="mt-4 grid grid-cols-2 gap-3 text-sm">
+          <div><dt class="text-xs text-gray-500">Cashier</dt><dd class="font-medium text-gray-800 dark:text-gray-200">{{ saleDetail.cashier }}</dd></div>
+          <div><dt class="text-xs text-gray-500">Payment</dt><dd class="font-medium text-gray-800 dark:text-gray-200">{{ saleDetail.paymentMethod }}</dd></div>
+          <div><dt class="text-xs text-gray-500">Status</dt><dd><span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium" [ngClass]="statusClass(saleDetail.paymentStatus)">{{ statusLabel(saleDetail.paymentStatus) }}</span></dd></div>
+          <div><dt class="text-xs text-gray-500">Items</dt><dd class="font-medium text-gray-800 dark:text-gray-200">{{ saleDetail.itemCount }}</dd></div>
+        </dl>
+
+        <div class="mt-5 overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-800">
+          <table class="w-full min-w-[320px] text-sm">
+            <thead>
+              <tr class="border-b bg-gray-50 text-left text-xs text-gray-500 dark:border-gray-800 dark:bg-gray-900/50">
+                <th class="px-3 py-2">Item</th>
+                <th class="px-3 py-2 text-right">Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (item of saleDetail.items; track item.id) {
+                <tr class="border-b last:border-0 dark:border-gray-800/70">
+                  <td class="px-3 py-2 text-gray-700 dark:text-gray-300">{{ itemLabel(item) }}</td>
+                  <td class="px-3 py-2 text-right font-medium tabular-nums">{{ formatMoney(item.totalAmount) }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div class="mt-4 space-y-1 border-t border-gray-200 pt-4 text-sm dark:border-gray-800">
+          @if (saleDetail.discountAmount > 0) {
+            <div class="flex justify-between text-gray-600 dark:text-gray-400"><span>Discount</span><span>{{ formatMoney(saleDetail.discountAmount) }}</span></div>
+          }
+          <div class="flex justify-between font-semibold text-gray-900 dark:text-white"><span>Total</span><span>{{ formatMoney(saleDetail.totalAmount) }}</span></div>
+          <div class="flex justify-between text-gray-600 dark:text-gray-400"><span>Paid</span><span>{{ formatMoney(saleDetail.amountPaid) }}</span></div>
+          <div class="flex justify-between text-gray-600 dark:text-gray-400"><span>Change</span><span>{{ formatMoney(saleDetail.changeAmount) }}</span></div>
+        </div>
+
+        <div class="mt-5 flex justify-end gap-2">
+          <button type="button" (click)="promptReprintSale({ id: saleDetail.id, saleDate: saleDetail.saleDate, totalAmount: saleDetail.totalAmount, paymentStatus: saleDetail.paymentStatus })" [disabled]="reprintingSaleId === saleDetail.id || reprintAuthBusy"
+            class="inline-flex h-9 items-center rounded-md bg-brand-500 px-4 text-sm font-medium text-white hover:bg-brand-600 disabled:opacity-50">
+            Re-print receipt
+          </button>
+        </div>
+      }
+    </div>
+  </div>
+}
+
+@if (showReprintAuthModal && reprintTarget) {
+  <div class="fixed inset-0 z-[100000] flex items-center justify-center bg-gray-900/50 p-4" (click)="closeReprintAuthModal()">
+    <div class="w-full max-w-sm rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900" (click)="$event.stopPropagation()">
+      <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Authorize re-print</h3>
+      <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+        Enter the admin void code before re-printing this receipt.
+      </p>
+      <label class="mt-4 block">
+        <span class="mb-1 block text-sm font-medium text-gray-700 dark:text-gray-200">Admin void code</span>
+        <input
+          type="password"
+          [(ngModel)]="reprintAdminCode"
+          class="w-full rounded-md border px-3 py-2.5 dark:border-gray-700 dark:bg-gray-800"
+          (keydown.enter)="confirmReprintSale()"
+        />
+      </label>
+      <div class="mt-5 flex gap-3">
+        <button type="button" (click)="closeReprintAuthModal()" [disabled]="reprintAuthBusy" class="flex-1 rounded-md border py-2.5">
+          Cancel
+        </button>
+        <button type="button" (click)="confirmReprintSale()" [disabled]="reprintAuthBusy" class="flex-1 rounded-md bg-brand-500 py-2.5 font-semibold text-white disabled:opacity-50">
+          {{ reprintAuthBusy ? 'Authorizing...' : 'Authorize & Re-print' }}
+        </button>
+      </div>
+    </div>
+  </div>
+}

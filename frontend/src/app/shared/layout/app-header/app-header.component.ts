@@ -10,6 +10,7 @@ import { PosNotificationsBellComponent } from '../../components/pos/pos-notifica
 import { PosCommunicationsService } from '../../services/pos-communications.service';
 import { PosPrintHubService } from '../../services/pos-printhub.service';
 import { NotificationService } from '../../services/notification.service';
+import { ConfirmDialogComponent } from '../../components/ui/confirm-dialog/confirm-dialog.component';
 
 @Component({
   selector: 'app-header',
@@ -20,6 +21,7 @@ import { NotificationService } from '../../services/notification.service';
     UserDropdownComponent,
     BranchSwitcherComponent,
     PosNotificationsBellComponent,
+    ConfirmDialogComponent,
   ],
   templateUrl: './app-header.component.html',
 })
@@ -32,6 +34,7 @@ export class AppHeaderComponent {
   printerConnectionType = 'printhub';
   paperWidth = '58mm';
   printHubConnecting = false;
+  printerConnectPromptOpen = false;
 
   @ViewChild('searchInput') searchInput!: ElementRef<HTMLInputElement>;
 
@@ -46,7 +49,10 @@ export class AppHeaderComponent {
     this.hideSearch = rbac.isPosOrg();
     this.showPosNotifications = rbac.isPosOrg();
     if (this.showPosNotifications) {
-      void this.loadPrinterConnectionType().then(() => this.autoConnectPrintHub());
+      void this.loadPrinterConnectionType().then(async () => {
+        await this.autoConnectPrintHub();
+        this.maybeShowPrinterConnectPrompt();
+      });
     }
   }
 
@@ -88,6 +94,26 @@ export class AppHeaderComponent {
     if (!this.showPrintHubConnect) return;
     if (this.printHub.isConnected()) return;
     await this.printHub.autoConnect(this.paperWidth);
+  }
+
+  private maybeShowPrinterConnectPrompt(): void {
+    if (!this.showPrintHubConnect) return;
+    if (this.printHub.isConnected()) {
+      if (this.printHub.hasConnectPrompt()) this.printHub.consumeConnectPrompt();
+      return;
+    }
+    if (this.printHub.consumeConnectPrompt()) {
+      this.printerConnectPromptOpen = true;
+    }
+  }
+
+  dismissPrinterConnectPrompt(): void {
+    this.printerConnectPromptOpen = false;
+  }
+
+  async confirmPrinterConnectPrompt(): Promise<void> {
+    this.printerConnectPromptOpen = false;
+    await this.connectPrintHub();
   }
 
   async connectPrintHub(): Promise<void> {

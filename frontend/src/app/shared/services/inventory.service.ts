@@ -4,6 +4,7 @@ import { apiClient } from './api-client';
 export interface InventoryItem {
   id: number;
   partName: string;
+  productId?: number | null;
   category?: string | null;
   brand?: string | null;
   description?: string | null;

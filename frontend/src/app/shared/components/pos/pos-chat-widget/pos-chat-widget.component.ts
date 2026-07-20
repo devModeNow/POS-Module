@@ -307,6 +307,7 @@ export class PosChatWidgetComponent implements OnInit, OnDestroy {
       this.closeContextMenu();
     }
     if (this.lightboxUrl) return;
+    if (this.confirmOpen) return;
     if (!this.expanded || this.hidden) return;
     if (this.chatPanelRef?.nativeElement.contains(target)) return;
     if (this.fabBtnRef?.nativeElement.contains(target)) return;

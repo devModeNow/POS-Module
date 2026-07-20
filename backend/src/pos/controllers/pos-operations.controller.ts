@@ -81,6 +81,18 @@ export class PosOperationsController {
     });
   }
 
+  @Post('admin-code/authorize')
+  authorizeAdminCode(
+    @Body() body: { adminCode?: string; action?: string; saleId?: number },
+    @Req() req: AuthReq,
+  ) {
+    return this.voidSvc.authorizeAdminCode(posOrgId(req), posUserId(req), username(req), {
+      adminCode: body.adminCode ?? '',
+      action: body.action,
+      saleId: body.saleId,
+    });
+  }
+
   @Get('audit-trail')
   auditTrail(
     @Query('limit') limit: string,

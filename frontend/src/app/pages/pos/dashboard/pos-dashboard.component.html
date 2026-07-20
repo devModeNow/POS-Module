@@ -368,8 +368,8 @@
 
 <!-- Variant picker -->
 @if (showVariantModal && selectedProduct) {
-  <div class="fixed inset-0 z-[100000] flex items-end justify-center overflow-y-auto bg-gray-900/50 p-4 md:items-center">
-    <div class="my-auto w-full max-w-lg rounded-md bg-white p-6 shadow-2xl dark:bg-gray-900 max-h-[98vh] overflow-y-auto">
+  <div class="fixed inset-0 z-[100000] flex items-end justify-center overflow-y-auto bg-gray-900/50 p-4 md:items-center" (click)="closeVariantModal()">
+    <div class="my-auto w-full max-w-lg rounded-md bg-white p-6 shadow-2xl dark:bg-gray-900 max-h-[98vh] overflow-y-auto" (click)="$event.stopPropagation()">
       <div class="flex items-start justify-between">
         <div>
           <h3 class="text-2xl font-bold text-gray-900 dark:text-white">{{ selectedProduct.name }}</h3>
@@ -535,6 +535,12 @@
               ₱{{ formatCurrency(changeDue() >= 0 ? changeDue() : 0) }}
             </p>
           </div>
+          @if (cashDrawerEnabled) {
+            <label class="flex items-center gap-2 rounded-md border border-gray-200 px-4 py-3 text-sm dark:border-gray-700">
+              <input type="checkbox" [(ngModel)]="useCashDrawerThisSale" />
+              <span>Open cash drawer on this sale</span>
+            </label>
+          }
         </div>
         <div class="mt-6 flex gap-3">
           <button type="button" (click)="closeCheckoutModal()" [disabled]="isCheckingOut" class="flex-1 rounded-md border py-4">Cancel</button>

@@ -534,6 +534,11 @@ export class PosService {
     return r.data;
   }
 
+  async authorizeAdminCode(payload: { adminCode: string; action?: string; saleId?: number }) {
+    const r = await apiClient.post<{ success: boolean; message?: string }>('/api/pos/admin-code/authorize', payload);
+    return r.data;
+  }
+
   async getVoidCodes() {
     const r = await apiClient.get<{ success: boolean; message?: string; data?: Array<{ id: number; label: string; isActive: boolean }> }>(
       '/api/pos/void-codes',

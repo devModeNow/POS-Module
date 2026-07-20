@@ -4,7 +4,7 @@
   <div class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] xl:p-6">
     <!-- Tabs -->
     <div class="flex gap-1 border-b border-gray-200 dark:border-gray-800">
-      @for (tab of [['inventory','Inventory'],['purchase-orders','Purchase Orders'],['reports','Low Stock']] ; track tab[0]) {
+      @for (tab of [['inventory','Inventory'],['reports','Low Stock']] ; track tab[0]) {
         <button type="button" (click)="switchTab($any(tab[0]))"
           class="border-b-2 px-5 py-3 text-sm font-medium transition-colors"
           [ngClass]="activeTab === tab[0]
@@ -436,59 +436,6 @@
           </div>
         </div>
       }
-    }
-
-    <!-- ── Purchase Orders Tab ── -->
-    @if (activeTab === 'purchase-orders') {
-      <div class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div class="flex gap-2">
-          <select [(ngModel)]="poFilterStatus" (ngModelChange)="loadPO()"
-            class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300">
-            <option value="">All Statuses</option>
-            @for (s of ['draft','ordered','received','cancelled']; track s) { <option [value]="s">{{ s | titlecase }}</option> }
-          </select>
-          <input type="text" [(ngModel)]="poFilterSupplier" (ngModelChange)="loadPO()" placeholder="Filter by supplier..."
-            class="w-48 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" />
-        </div>
-        <button type="button" *appCan="{ menu: 'inventory', permission: 'canCreate' }" (click)="openCreatePO()" title="New purchase order"
-          class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-brand-500 text-white hover:bg-brand-600">
-          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
-        </button>
-      </div>
-      <div class="mt-4 overflow-x-auto">
-        <table class="w-full min-w-[700px]">
-          <thead>
-            <tr class="border-b border-gray-200 dark:border-gray-800">
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">PO #</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Supplier</th>
-              <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400">Items</th>
-              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Total Cost</th>
-              <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400">Status</th>
-              <th class="px-4 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            @if (isLoadingPO) {
-              <tr><td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">Loading...</td></tr>
-            } @else {
-              @for (po of purchaseOrders; track po.id) {
-                <tr class="border-b border-gray-100 hover:bg-gray-50/70 dark:border-gray-800/70 dark:hover:bg-gray-800/30">
-                  <td class="px-4 py-3 text-sm font-medium text-gray-800 dark:text-gray-200">{{ po.poNumber || '#' + po.id }}</td>
-                  <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{{ po.supplierName || '—' }}</td>
-                  <td class="px-4 py-3 text-center text-sm text-gray-600 dark:text-gray-400">{{ po.itemCount ?? 0 }}</td>
-                  <td class="px-4 py-3 text-right text-sm font-medium text-gray-800 dark:text-gray-200">₱{{ po.totalCost | number:'1.2-2' }}</td>
-                  <td class="px-4 py-3"><span class="rounded-full bg-gray-100 px-2.5 py-0.5 text-xs dark:bg-gray-800 dark:text-gray-300">{{ po.status }}</span></td>
-                  <td class="px-4 py-3 text-right">
-                    <app-button size="xs" variant="outline" (btnClick)="openPODetail(po)">View</app-button>
-                  </td>
-                </tr>
-              } @empty {
-                <tr><td colspan="6" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No purchase orders found.</td></tr>
-              }
-            }
-          </tbody>
-        </table>
-      </div>
     }
 
     <!-- ── Low Stock Tab ── -->

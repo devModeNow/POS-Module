@@ -96,6 +96,8 @@ export class PosTerminalController {
       posPrinterUsbProductName: dto.posPrinterUsbProductName,
       posPrinterBtDeviceId: dto.posPrinterBtDeviceId,
       posPrinterBtDeviceName: dto.posPrinterBtDeviceName,
+      posCashDrawerEnabled: dto.posCashDrawerEnabled,
+      posCashDrawerOpenOn: dto.posCashDrawerOpenOn,
     };
     return this.settingsService.updateBusinessProfile(allowed, orgId(req));
   }

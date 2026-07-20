@@ -32,6 +32,7 @@ export class PosPageHeaderComponent implements OnInit {
   cashierName = '';
   companyName = '';
   confirmOpen = false;
+  printerConnectPromptOpen = false;
   printerModalOpen = false;
   currentPath = '';
   printerConnectionType = 'printhub';
@@ -123,11 +124,14 @@ export class PosPageHeaderComponent implements OnInit {
     this.cashierName = this.rbac.getDisplayName();
     this.companyName = this.orgService.getContext().name ?? 'POS';
     void this.loadCompanyName();
-    void this.loadPrinterConnectionType().then(() => this.autoConnectPrintHub());
+    void this.loadPrinterConnectionType().then(() => {
+      void this.autoConnectPrintHub().then(() => this.maybeShowPrinterConnectPrompt());
+    });
     this.router.events
       .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
       .subscribe((e) => {
         this.currentPath = this.normalizePath(e.urlAfterRedirects || e.url);
+        this.maybeShowPrinterConnectPrompt();
       });
   }
 
@@ -154,6 +158,27 @@ export class PosPageHeaderComponent implements OnInit {
     if (!this.showPrintHubConnect) return;
     if (this.printHub.isConnected()) return;
     await this.printHub.autoConnect(this.paperWidth);
+  }
+
+  private maybeShowPrinterConnectPrompt(): void {
+    if (!this.showPrintHubConnect) return;
+    if (this.printHub.isConnected()) {
+      // Clear stale prompt if silent reconnect already succeeded.
+      if (this.printHub.hasConnectPrompt()) this.printHub.consumeConnectPrompt();
+      return;
+    }
+    if (this.printHub.consumeConnectPrompt()) {
+      this.printerConnectPromptOpen = true;
+    }
+  }
+
+  dismissPrinterConnectPrompt(): void {
+    this.printerConnectPromptOpen = false;
+  }
+
+  async confirmPrinterConnectPrompt(): Promise<void> {
+    this.printerConnectPromptOpen = false;
+    await this.connectPrintHub();
   }
 
   async connectPrintHub(): Promise<void> {

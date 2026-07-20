@@ -51,6 +51,8 @@ type OrgSettingsRow = {
   posPrinterUsbProductName: string | null;
   posPrinterBtDeviceId: string | null;
   posPrinterBtDeviceName: string | null;
+  posCashDrawerEnabled: string | null;
+  posCashDrawerOpenOn: string | null;
 };
 
 const EMPTY_SETTINGS: OrgSettingsRow = {
@@ -73,6 +75,7 @@ const EMPTY_SETTINGS: OrgSettingsRow = {
   posPrinterConnectionType: null, posPrinterHost: null, posPrinterPort: null,
   posPrinterUsbVendorId: null, posPrinterUsbProductId: null, posPrinterUsbProductName: null,
   posPrinterBtDeviceId: null, posPrinterBtDeviceName: null,
+  posCashDrawerEnabled: null, posCashDrawerOpenOn: null,
 };
 
 @Injectable()
@@ -127,7 +130,9 @@ export class SettingsService {
         ADD COLUMN IF NOT EXISTS pos_printer_usb_product_id TEXT,
         ADD COLUMN IF NOT EXISTS pos_printer_usb_product_name TEXT,
         ADD COLUMN IF NOT EXISTS pos_printer_bt_device_id TEXT,
-        ADD COLUMN IF NOT EXISTS pos_printer_bt_device_name TEXT
+        ADD COLUMN IF NOT EXISTS pos_printer_bt_device_name TEXT,
+        ADD COLUMN IF NOT EXISTS pos_cash_drawer_enabled BOOLEAN DEFAULT FALSE,
+        ADD COLUMN IF NOT EXISTS pos_cash_drawer_open_on TEXT DEFAULT 'before_receipt'
     `);
     this.schemaReady = true;
   }
@@ -198,7 +203,9 @@ export class SettingsService {
            s.pos_printer_usb_product_id     AS "posPrinterUsbProductId",
            s.pos_printer_usb_product_name   AS "posPrinterUsbProductName",
            s.pos_printer_bt_device_id       AS "posPrinterBtDeviceId",
-           s.pos_printer_bt_device_name     AS "posPrinterBtDeviceName"
+           s.pos_printer_bt_device_name     AS "posPrinterBtDeviceName",
+           CASE WHEN s.pos_cash_drawer_enabled IS TRUE THEN 'true' ELSE 'false' END AS "posCashDrawerEnabled",
+           COALESCE(NULLIF(TRIM(s.pos_cash_drawer_open_on), ''), 'before_receipt') AS "posCashDrawerOpenOn"
          FROM tblorg_settings s
          LEFT JOIN tblorganizations o ON o.id = s.org_id
          WHERE s.org_id = $1
@@ -226,6 +233,14 @@ export class SettingsService {
         const boolVal = String(dto.posReceiptShowLogo).trim().toLowerCase() === 'true';
         await this.db.query(
           `UPDATE tblorg_settings SET pos_receipt_show_logo = $1, updated_at = NOW() WHERE org_id = $2`,
+          [boolVal, resolvedOrgId],
+        );
+      }
+
+      if (dto.posCashDrawerEnabled !== undefined) {
+        const boolVal = String(dto.posCashDrawerEnabled).trim().toLowerCase() === 'true';
+        await this.db.query(
+          `UPDATE tblorg_settings SET pos_cash_drawer_enabled = $1, updated_at = NOW() WHERE org_id = $2`,
           [boolVal, resolvedOrgId],
         );
       }
@@ -274,6 +289,7 @@ export class SettingsService {
         posPrinterUsbProductName: 'pos_printer_usb_product_name',
         posPrinterBtDeviceId:     'pos_printer_bt_device_id',
         posPrinterBtDeviceName:   'pos_printer_bt_device_name',
+        posCashDrawerOpenOn:      'pos_cash_drawer_open_on',
       };
 
       const sets: string[] = [];

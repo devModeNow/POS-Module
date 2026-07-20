@@ -150,6 +150,38 @@ export class PosBluetoothPrinterService {
     }
   }
 
+  async sendRawBytes(deviceId: string, data: Uint8Array): Promise<{ success: boolean; message?: string }> {
+    const bt = bluetoothApi();
+    if (!bt) return { success: false, message: 'Web Bluetooth is not supported in this browser.' };
+    if (!deviceId) return { success: false, message: 'No Bluetooth printer selected.' };
+
+    try {
+      const device = await this.resolveDevice(bt, deviceId);
+      if (!device) {
+        return {
+          success: false,
+          message: 'Bluetooth printer not found. Click “Select Bluetooth printer” again.',
+        };
+      }
+
+      const char = await this.connectAndResolveWriteChar(device);
+      if (!char) {
+        return {
+          success: false,
+          message: 'Connected, but no writable Bluetooth characteristic was found.',
+        };
+      }
+
+      await this.writeInChunks(char, data);
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to send to Bluetooth printer.',
+      };
+    }
+  }
+
   private encodeReceipt(text: string): Uint8Array {
     try {
       const encoder = new ReceiptPrinterEncoder({ language: 'esc-pos' });

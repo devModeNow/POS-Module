@@ -4,7 +4,13 @@ import PrintHub from 'printhub';
 import type { PosReceiptTemplateElement } from './pos-communications.service';
 import type { ReceiptPrintContext } from './pos-receipt-print.service';
 import {
+  alignFromTemplateX,
   countTemplateBlockLines,
+  formatPaymentSummaryLine,
+  isPaymentSummaryBlock,
+  padReceiptLine,
+  prepareTemplateElementsForPrint,
+  sortTemplateElements,
   templateLogoBlankLines,
   templateSpacingBlankLines,
 } from './pos-receipt-spacing';
@@ -45,6 +51,7 @@ export class PosPrintHubService {
   private reconnecting = false;
   private activeDevice: BluetoothDeviceLike | null = null;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
+  private pendingConnectPrompt = false;
   private readonly connectedSubject = new BehaviorSubject<boolean>(false);
   readonly connected$ = this.connectedSubject.asObservable();
 
@@ -64,6 +71,25 @@ export class PosPrintHubService {
 
   getDeviceLabel(): string {
     return this.deviceLabel || this.readStoredName() || 'PrintHub printer';
+  }
+
+  /**
+   * After login (or failed sale print), ask UI to show a Connect button.
+   * Needed on tablets: Web Bluetooth picker requires a fresh user gesture,
+   * and the Sign In click is consumed by the login API await.
+   */
+  requestConnectPrompt(): void {
+    this.pendingConnectPrompt = true;
+  }
+
+  consumeConnectPrompt(): boolean {
+    if (!this.pendingConnectPrompt) return false;
+    this.pendingConnectPrompt = false;
+    return true;
+  }
+
+  hasConnectPrompt(): boolean {
+    return this.pendingConnectPrompt;
   }
 
   /**
@@ -273,14 +299,16 @@ export class PosPrintHubService {
     paperWidth = '58mm',
     elements?: PosReceiptTemplateElement[],
   ): Promise<{ success: boolean; message?: string }> {
+    // Always try silent reconnect first (tablets often drop GATT between sales).
     if (!this.isConnected() || !this.printer) {
       await this.trySilentReconnect(paperWidth);
     }
     if (!this.isConnected() || !this.printer) {
+      this.requestConnectPrompt();
       return {
         success: false,
         message:
-          'PrintHub is not connected. Tap the Bluetooth icon in the POS header (or Printer Settings → Connect PrintHub), then try again.',
+          'Printer not connected. Tap the Bluetooth icon (or Connect when prompted), choose your printer, then try again.',
       };
     }
 
@@ -302,6 +330,7 @@ export class PosPrintHubService {
         this.setConnected(false);
         this.printer = null;
         this.scheduleAutoReconnect(1000);
+        this.requestConnectPrompt();
         return {
           success: false,
           message: error instanceof Error ? error.message : 'Failed to print via PrintHub.',
@@ -331,11 +360,12 @@ export class PosPrintHubService {
           this.setConnected(false);
           this.printer = null;
           this.scheduleAutoReconnect(1500);
+          this.requestConnectPrompt();
           resolve({
             success: false,
             message:
               message ||
-              'PrintHub connection lost. Reconnecting automatically — or tap the Bluetooth icon.',
+              'PrintHub connection lost. Tap the Bluetooth icon to reconnect.',
           });
         },
       });
@@ -433,11 +463,12 @@ export class PosPrintHubService {
     elements: PosReceiptTemplateElement[],
   ): Promise<void> {
     const cols = this.columnCount();
-    const sorted = [...elements].sort(
-      (a, b) => (a.y ?? 0) - (b.y ?? 0) || (a.x ?? 0) - (b.x ?? 0),
-    );
+    const sorted = sortTemplateElements(prepareTemplateElementsForPrint(elements));
 
     await this.writeLogoIfEnabled(print, ctx, templateLogoBlankLines(sorted[0]?.y ?? 8));
+    if (ctx.reprint) {
+      await this.writeReprintWatermark(print);
+    }
 
     let wroteAnything = false;
     let prevY = sorted[0]?.y ?? 0;
@@ -449,14 +480,15 @@ export class PosPrintHubService {
         const src = String(el.content ?? '').trim();
         if (src) {
           if (!first) {
-            const blanks = templateSpacingBlankLines(prevY, el.y ?? 0, prevLines, el.content);
+            const blanks = templateSpacingBlankLines(prevY, el.y ?? 0, prevLines);
             if (blanks > 0) await print.writeLineBreak({ count: blanks });
           }
           try {
-            await print.putImageWithUrl(src, { align: 'center' });
+            // Avoid PrintHub putImageWithUrl — its bitmap threshold prints garbage on many BLE printers.
+            await this.safePrintLogo(print, src, 0);
             wroteAnything = true;
             prevY = el.y ?? 0;
-            prevLines = 3;
+            prevLines = 2;
             first = false;
           } catch {
             /* skip broken image */
@@ -468,58 +500,116 @@ export class PosPrintHubService {
       if (!raw) continue;
 
       if (!first) {
-        const blanks = templateSpacingBlankLines(prevY, el.y ?? 0, prevLines, el.content);
+        const blanks = templateSpacingBlankLines(prevY, el.y ?? 0, prevLines);
         if (blanks > 0) await print.writeLineBreak({ count: blanks });
       }
 
       wroteAnything = true;
-      const align = this.resolveAlign(el, el.content);
-      // Avoid double-width on header lines — many cheap BLE printers mishandle center + double.
-      const useDouble = align !== 'center' && (el.fontSize ?? 12) >= 14;
-      let blockLines = 0;
-      for (const line of raw.split('\n')) {
-        const trimmed = this.toThermalText(line).trim();
-        if (!trimmed) continue;
-        blockLines += 1;
-        const sep = trimmed.lastIndexOf(' .... ');
-        if (sep >= 0 && align === 'left') {
-          await print.writeTextWith2Column(
-            trimmed.slice(0, sep).trim(),
-            trimmed.slice(sep + 6).trim(),
-            { bold: !!el.bold, align: 'left' },
-          );
-        } else if (align === 'center') {
-          // Space-pad with LEFT align only. ESC center + pad double-shifts on many BLE printers.
-          const padded = this.centerPad(trimmed, cols);
-          await print.writeText(padded, {
-            bold:
-              !!el.bold ||
-              /\{\{\s*(businessName|storeName|companyName)\s*\}\}/i.test(el.content) ||
-              trimmed === this.toThermalText(ctx.businessName || ''),
-            align: 'left',
-            size: 'normal',
-          });
-        } else {
-          await print.writeText(trimmed, {
-            bold: !!el.bold,
-            align,
-            size: useDouble ? 'double' : 'normal',
-          });
-        }
-      }
+      prevLines = await this.writeTemplateTextBlock(print, raw, el, ctx, cols);
       prevY = el.y ?? 0;
-      prevLines = Math.max(1, blockLines || countTemplateBlockLines(raw));
       first = false;
     }
     if (!wroteAnything) {
       await this.writeReceipt(print, ctx, false);
       return;
     }
-    await print.writeLineBreak({ count: 3 });
+    // Small feed so paper can tear; vertical gaps between blocks come from template Y only.
+    await print.writeLineBreak({ count: 2 });
   }
 
-  /** Prefer explicit align; header placeholders always center. */
+  /** Print a template text block in one call when possible (tight line spacing). */
+  private async writeTemplateTextBlock(
+    print: PrintHubInstance,
+    raw: string,
+    el: PosReceiptTemplateElement,
+    ctx: ReceiptPrintContext,
+    cols: number,
+  ): Promise<number> {
+    const align = this.resolveAlign(el, el.content);
+    const useDouble = align !== 'center' && (el.fontSize ?? 12) >= 14;
+    const lines = raw
+      .split('\n')
+      .map((l) => this.toThermalText(l).trim())
+      .filter(Boolean);
+    if (!lines.length) return 1;
+
+    const isPayment = isPaymentSummaryBlock(el.content);
+    const hasItemColumns = lines.some(
+      (l) => l.lastIndexOf(' .... ') >= 0 && align === 'left' && !isPayment,
+    );
+
+    if (hasItemColumns) {
+      let blockLines = 0;
+      for (const line of lines) {
+        const sep = line.lastIndexOf(' .... ');
+        if (sep >= 0) {
+          await print.writeTextWith2Column(
+            line.slice(0, sep).trim(),
+            line.slice(sep + 6).trim(),
+            { bold: !!el.bold, align: 'left' },
+          );
+        } else {
+          await print.writeText(line, {
+            bold: !!el.bold,
+            align: 'left',
+            size: useDouble ? 'double' : 'normal',
+          });
+        }
+        blockLines += useDouble ? 2 : 1;
+      }
+      return Math.max(1, blockLines);
+    }
+
+    if (isPayment && lines.length >= 1) {
+      let blockLines = 0;
+      for (const line of lines) {
+        const m = line.match(/^(.+?:)\s*(.+)$/);
+        if (m) {
+          await print.writeTextWith2Column(m[1].trim(), m[2].trim(), {
+            bold: !!el.bold,
+            align: 'left',
+            size: useDouble ? 'double' : 'normal',
+          });
+        } else {
+          await print.writeText(line, {
+            bold: !!el.bold,
+            align: 'left',
+            size: useDouble ? 'double' : 'normal',
+          });
+        }
+        blockLines += useDouble ? 2 : 1;
+      }
+      return Math.max(1, blockLines);
+    }
+
+    const formatted = lines
+      .map((line) => {
+        if (isPayment) return this.toThermalText(formatPaymentSummaryLine(line, cols));
+        if (align === 'center' || align === 'right') return padReceiptLine(line, cols, align);
+        return line;
+      })
+      .join('\n');
+
+    const bold =
+      !!el.bold ||
+      (align === 'center' &&
+        /\{\{\s*(businessName|storeName|companyName)\s*\}\}/i.test(el.content)) ||
+      (align === 'center' && formatted.includes(this.toThermalText(ctx.businessName || '')));
+
+    await print.writeText(formatted, {
+      bold,
+      align: 'left',
+      size: useDouble ? 'double' : 'normal',
+    });
+
+    return Math.max(1, lines.length * (useDouble ? 2 : 1));
+  }
+
+  /** Prefer explicit saved align; fall back to canvas X and header heuristics. */
   private resolveAlign(el: PosReceiptTemplateElement, rawContent?: string): 'left' | 'center' | 'right' {
+    if (el.align === 'left' || el.align === 'center' || el.align === 'right') {
+      return el.align;
+    }
     const content = String(rawContent ?? el.content ?? '');
     if (
       /\{\{\s*(businessName|storeName|companyName|businessAddress|saleDate|cashier|paymentMethod|footer)\s*\}\}/i.test(
@@ -529,9 +619,15 @@ export class PosPrintHubService {
     ) {
       return 'center';
     }
-    if (el.align === 'left' || el.align === 'center' || el.align === 'right') return el.align;
-    if ((el.x ?? 0) >= 40) return 'center';
-    return 'left';
+    return alignFromTemplateX(el.x);
+  }
+
+  private async writeReprintWatermark(print: PrintHubInstance): Promise<void> {
+    const cols = this.columnCount();
+    const label = 'RE-PRINT ONLY';
+    const padded = this.centerPad(label, cols);
+    await print.writeText(padded, { bold: true, align: 'left', size: 'normal' });
+    await print.writeLineBreak({ count: 1 });
   }
 
   private columnCount(): number {
@@ -553,12 +649,125 @@ export class PosPrintHubService {
     if (ctx.showLogo === false) return;
     const logo = String(ctx.logoUrl ?? '').trim();
     if (!logo) return;
+    await this.safePrintLogo(print, logo, blankLinesAfter);
+  }
+
+  /**
+   * Print a logo as ESC/POS raster with a correct dark-pixel threshold.
+   * PrintHub's built-in putImageWithUrl treats any non-black RGB as ink (inverted /
+   * noisy) and often dumps binary as "random characters" on cheap BLE printers.
+   */
+  private async safePrintLogo(
+    print: PrintHubInstance,
+    logoUrl: string,
+    blankLinesAfter = 1,
+  ): Promise<void> {
+    const printChar = (print as PrintHubInstance & {
+      printChar?: { writeValue: (data: BufferSource) => Promise<void> };
+    }).printChar;
+    if (!printChar?.writeValue) return;
+
     try {
-      await print.putImageWithUrl(logo, { align: 'center' });
-      const gaps = Math.max(1, Math.min(5, blankLinesAfter));
-      await print.writeLineBreak({ count: gaps });
+      const img = await this.loadHtmlImage(logoUrl);
+      const maxDots = this.paperWidth.includes('80') ? 384 : 240;
+      const raster = this.buildMonoRasterEscPos(img, maxDots);
+      if (!raster.length) return;
+
+      await this.writeBleChunks(printChar, new Uint8Array([0x1b, 0x61, 0x01])); // center
+      await this.writeBleChunks(printChar, raster);
+      await this.writeBleChunks(printChar, new Uint8Array([0x1b, 0x61, 0x00])); // left
+      const gaps = Math.max(0, Math.min(5, blankLinesAfter));
+      if (gaps > 0) {
+        await print.writeLineBreak({ count: gaps });
+      }
     } catch {
-      /* logo optional — continue printing text */
+      /* skip logo — never leave partial binary in the print stream */
+    }
+  }
+
+  private loadHtmlImage(src: string): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      // data: URLs must not set crossOrigin; http(s) logos need CORS for canvas read.
+      if (/^https?:/i.test(src)) {
+        img.crossOrigin = 'anonymous';
+      }
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('Failed to load logo image'));
+      img.src = src;
+    });
+  }
+
+  /** GS v 0 raster; dark pixels = ink (fixes PrintHub inverted threshold). */
+  private buildMonoRasterEscPos(img: HTMLImageElement, maxWidthDots: number): Uint8Array {
+    const srcW = Math.max(1, img.naturalWidth || img.width || 1);
+    const srcH = Math.max(1, img.naturalHeight || img.height || 1);
+    let width = Math.min(maxWidthDots, srcW);
+    width = Math.max(8, Math.floor(width / 8) * 8);
+    const height = Math.max(1, Math.round((srcH * width) / srcW));
+    // Cap height so BLE transfers stay reliable on tablets.
+    const cappedH = Math.min(height, 80);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = cappedH;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return new Uint8Array();
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, cappedH);
+    ctx.drawImage(img, 0, 0, width, cappedH);
+
+    let data: Uint8ClampedArray;
+    try {
+      data = ctx.getImageData(0, 0, width, cappedH).data;
+    } catch {
+      // Tainted canvas (CORS) — skip logo rather than garbage-print.
+      return new Uint8Array();
+    }
+
+    const widthBytes = width / 8;
+    const out = new Uint8Array(8 + widthBytes * cappedH);
+    out[0] = 0x1d; // GS
+    out[1] = 0x76; // v
+    out[2] = 0x30; // 0
+    out[3] = 0x00; // normal
+    out[4] = widthBytes & 0xff;
+    out[5] = (widthBytes >> 8) & 0xff;
+    out[6] = cappedH & 0xff;
+    out[7] = (cappedH >> 8) & 0xff;
+
+    let o = 8;
+    for (let y = 0; y < cappedH; y++) {
+      for (let xByte = 0; xByte < widthBytes; xByte++) {
+        let byte = 0;
+        for (let bit = 0; bit < 8; bit++) {
+          const x = xByte * 8 + bit;
+          const i = (y * width + x) * 4;
+          const r = data[i] ?? 255;
+          const g = data[i + 1] ?? 255;
+          const b = data[i + 2] ?? 255;
+          const a = data[i + 3] ?? 255;
+          const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+          // Dark (or opaque dark) pixels become ink.
+          const ink = a > 32 && lum < 160;
+          if (ink) byte |= 0x80 >> bit;
+        }
+        out[o++] = byte;
+      }
+    }
+    return out;
+  }
+
+  private async writeBleChunks(
+    printChar: { writeValue: (data: BufferSource) => Promise<void> },
+    data: Uint8Array,
+  ): Promise<void> {
+    const chunkSize = 180; // safer MTU for many Android BLE printers
+    for (let offset = 0; offset < data.length; offset += chunkSize) {
+      const slice = data.slice(offset, offset + chunkSize);
+      await printChar.writeValue(slice);
+      // Brief yield so Android BLE stack can keep up.
+      await new Promise((r) => setTimeout(r, 20));
     }
   }
 
@@ -595,7 +804,7 @@ export class PosPrintHubService {
     };
 
     if (includeLogo) {
-      await this.writeLogoIfEnabled(print, ctx, 2);
+      await this.writeLogoIfEnabled(print, ctx, 0);
     }
 
     await writeCentered(store, true);
@@ -650,5 +859,31 @@ export class PosPrintHubService {
       .replace(/\u20B1/g, 'P')
       .replace(/₱/g, 'P')
       .replace(/\u00A0/g, ' ');
+  }
+
+  /** ESC/POS pulse to pin 2 — standard cash drawer kick. */
+  async openCashDrawer(): Promise<{ success: boolean; message?: string }> {
+    if (!this.isConnected()) {
+      const r = await this.autoConnect(this.paperWidth);
+      if (!r.success) {
+        return { success: false, message: r.message ?? 'Printer not connected.' };
+      }
+    }
+    const printChar = (this.printer as PrintHubInstance & {
+      printChar?: { writeValue: (data: BufferSource) => Promise<void> };
+    })?.printChar;
+    if (!printChar?.writeValue) {
+      return { success: false, message: 'Printer not ready for cash drawer.' };
+    }
+    try {
+      const pulse = new Uint8Array([0x1b, 0x70, 0x00, 0x19, 0xfa]);
+      await this.writeBleChunks(printChar, pulse);
+      return { success: true };
+    } catch (error) {
+      return {
+        success: false,
+        message: error instanceof Error ? error.message : 'Failed to open cash drawer.',
+      };
+    }
   }
 }

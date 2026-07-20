@@ -2,11 +2,13 @@ import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Input, OnInit, Output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import {
+  PosCashDrawerOpenOn,
   PosCommunicationsService,
   PosPrinterConnectionType,
   PosReceiptTemplateElement,
 } from '../../../services/pos-communications.service';
 import { PosReceiptPrintService, ReceiptPrintContext } from '../../../services/pos-receipt-print.service';
+import { alignFromTemplateX, parsePaymentPreviewParts } from '../../../services/pos-receipt-spacing';
 import { PosUsbPrinterService } from '../../../services/pos-usb-printer.service';
 import { PosPrintHubService } from '../../../services/pos-printhub.service';
 import { PosReceiptTemplateEditorComponent } from '../pos-receipt-template-editor/pos-receipt-template-editor.component';
@@ -20,6 +22,19 @@ type ConnectionStatus = 'idle' | 'testing' | 'connected' | 'failed';
   standalone: true,
   imports: [CommonModule, FormsModule, PosReceiptTemplateEditorComponent],
   templateUrl: './pos-printer-settings-panel.component.html',
+  styles: `
+    .receipt-preview-canvas {
+      background: repeating-linear-gradient(0deg, #fafafa, #fafafa 12px, #f3f4f6 12px, #f3f4f6 13px);
+    }
+    .payment-preview {
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+      width: 100%;
+      font-family: 'Courier New', Courier, monospace;
+    }
+    .payment-preview .payment-amount { text-align: right; white-space: nowrap; }
+  `,
 })
 export class PosPrinterSettingsPanelComponent implements OnInit {
   @Input() embedded = false;
@@ -46,6 +61,8 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
   usbProductName = '';
   btDeviceId = '';
   btDeviceName = '';
+  cashDrawerEnabled = false;
+  cashDrawerOpenOn: PosCashDrawerOpenOn = 'before_receipt';
   connectionStatus: ConnectionStatus = 'idle';
   connectionMessage = '';
 
@@ -95,6 +112,10 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
       this.usbProductName = String(item['posPrinterUsbProductName'] ?? '');
       this.btDeviceId = String(item['posPrinterBtDeviceId'] ?? '');
       this.btDeviceName = String(item['posPrinterBtDeviceName'] ?? '');
+      this.cashDrawerEnabled = String(item['posCashDrawerEnabled'] ?? 'false').toLowerCase() === 'true';
+      const openOn = String(item['posCashDrawerOpenOn'] ?? 'before_receipt').trim() as PosCashDrawerOpenOn;
+      this.cashDrawerOpenOn =
+        openOn === 'after_receipt' || openOn === 'manual_only' ? openOn : 'before_receipt';
       await this.restoreSavedConnection();
     } catch {
       this.error = 'Failed to load printer settings.';
@@ -190,7 +211,14 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
         ) {
           return { ...el, content: '' };
         }
-        return el;
+        if (el.type === 'text') {
+          const align =
+            el.align === 'left' || el.align === 'center' || el.align === 'right'
+              ? el.align
+              : alignFromTemplateX(el.x);
+          return { ...el, align };
+        }
+        return { ...el };
       });
 
       const r = await this.comms.savePrinterSettings({
@@ -207,6 +235,8 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
         posPrinterUsbProductName: this.usbProductName,
         posPrinterBtDeviceId: this.btDeviceId,
         posPrinterBtDeviceName: this.btDeviceName,
+        posCashDrawerEnabled: this.cashDrawerEnabled,
+        posCashDrawerOpenOn: this.cashDrawerOpenOn,
       });
       if (!r?.success) {
         this.error = r?.message ?? 'Failed to save printer settings.';
@@ -220,6 +250,10 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
         String(saved['posReceiptTemplateJson'] ?? JSON.stringify(templateForSave)),
       );
       this.showLogo = String(saved['posReceiptShowLogo'] ?? this.showLogo).toLowerCase() !== 'false';
+      this.cashDrawerEnabled = String(saved['posCashDrawerEnabled'] ?? this.cashDrawerEnabled).toLowerCase() === 'true';
+      const openOn = String(saved['posCashDrawerOpenOn'] ?? this.cashDrawerOpenOn).trim() as PosCashDrawerOpenOn;
+      this.cashDrawerOpenOn =
+        openOn === 'after_receipt' || openOn === 'manual_only' ? openOn : 'before_receipt';
       if (this.connectionStatus !== 'connected') {
         await this.restoreSavedConnection();
       } else if (!this.connectionMessage) {
@@ -243,7 +277,7 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
       logoUrl: this.logoUrl,
       showLogo: this.showLogo,
       paperWidth: this.paperWidth,
-      itemsText: 'Sample Item x1 pack .... ₱100.00\nSample Item 2 x2 .... ₱200.00',
+      itemsText: '2x pack - Sample item A .... ₱100.00\n1x pc - Long product name trunc... .... ₱200.00',
       total: '₱300.00',
       amountPaid: '₱500.00',
       change: '₱200.00',
@@ -283,6 +317,29 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
     }
 
     this.receiptPrint.printFromSettings(elements, ctx, this.paperWidth);
+  }
+
+  async testCashDrawer(): Promise<void> {
+    if (!this.cashDrawerEnabled) return;
+    const connectionType =
+      this.connectionType === 'bluetooth' || this.connectionType === 'mharmal' ? 'printhub' : this.connectionType;
+    const r = await this.receiptPrint.openCashDrawer(
+      {
+        connectionType,
+        host: this.printerHost,
+        port: Number(this.printerPort) || 9100,
+        usbVendorId: this.usbVendorId,
+        usbProductId: this.usbProductId,
+        btDeviceId: this.btDeviceId,
+      },
+      this.paperWidth,
+    );
+    if (!r.success) {
+      this.error = r.message ?? 'Cash drawer pulse failed.';
+    } else {
+      this.error = '';
+      this.connectionMessage = 'Cash drawer pulse sent.';
+    }
   }
 
   get usbSupported(): boolean {
@@ -395,16 +452,20 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
     return this.comms.templateElementStyle(el);
   }
 
+  paymentPreviewParts(el: PosReceiptTemplateElement): { label: string; amount: string } | null {
+    return parsePaymentPreviewParts(el.content, this.previewText(el));
+  }
+
   previewText(el: PosReceiptTemplateElement): string {
     const orgName = String(this.org.getContext().name ?? '').trim();
     return this.receiptPrint.renderTemplateText(el.content, {
       businessName: (this.businessName || '').trim() || orgName || 'Store',
       businessAddress: this.businessAddress,
       footer: this.footerText,
-      itemsText: 'Sample Item x1 .... ₱100',
-      total: '₱100.00',
-      amountPaid: '₱200.00',
-      change: '₱100.00',
+      itemsText: '2x pack - Sample item A .... ₱100.00\n1x pc - Long product name trunc... .... ₱200.00',
+      total: '₱300.00',
+      amountPaid: '₱500.00',
+      change: '₱200.00',
       paymentMethod: 'Cash',
       cashier: this.rbac.getDisplayName()?.trim() || 'Cashier',
       saleDate: new Date().toLocaleString('en-PH'),

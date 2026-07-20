@@ -62,7 +62,7 @@ export class SigninFormComponent {
         return;
       }
 
-      // Use the login click gesture to auto-connect PrintHub for POS users.
+      // Use the login click gesture to queue the printer prompt for cashier users only.
       await this.connectPrintHubOnLogin();
 
       await this.router.navigateByUrl(this.getPostLoginRoute());
@@ -86,26 +86,24 @@ export class SigninFormComponent {
   }
 
   /**
-   * After login: silent reconnect if previously paired; otherwise open the Bluetooth
-   * picker while the Sign In click gesture is still valid (Chrome/Edge requirement).
+   * After login: try silent reconnect. On tablets the Sign In click gesture is
+   * already consumed by the login API await, so we cannot open the Bluetooth
+   * picker here — queue a post-login Connect prompt instead.
    */
   private async connectPrintHubOnLogin(): Promise<void> {
     try {
-      if (!this.rbacService.isPosOrg()) return;
+      if (!this.rbacService.isCashier()) return;
 
       await this.receiptPrint.restoreSavedPrinterConnection();
       if (this.printHub.isConnected()) return;
 
-      // Prefer previously paired device; only open picker when none can be restored.
-      let paper = '58mm';
+      this.printHub.requestConnectPrompt();
+    } catch {
       try {
-        paper = localStorage.getItem('pos.receiptPaperWidth') || '58mm';
+        this.printHub.requestConnectPrompt();
       } catch {
         /* ignore */
       }
-      await this.printHub.connect(paper, 'bluetooth');
-    } catch {
-      /* non-blocking — user can connect from the header later */
     }
   }
 

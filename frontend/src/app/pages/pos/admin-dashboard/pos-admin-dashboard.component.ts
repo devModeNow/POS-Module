@@ -34,6 +34,10 @@ import { PosDashboardReport, PosSaleTransaction, PosService } from '../../../sha
 
 import { PosChatUiService } from '../../../shared/services/pos-chat-ui.service';
 
+import { PosReceiptPrintService } from '../../../shared/services/pos-receipt-print.service';
+
+import { NotificationService } from '../../../shared/services/notification.service';
+
 
 
 type KpiWidgetId =
@@ -298,6 +302,8 @@ export class PosAdminDashboardComponent implements OnInit {
 
   updatingTransactionId: number | null = null;
 
+  reprintingSaleId: number | null = null;
+
   kpiSearch = '';
 
   kpiFilterPaymentStatus: 'all' | 'settled' | 'floating' = 'all';
@@ -372,13 +378,46 @@ export class PosAdminDashboardComponent implements OnInit {
 
   readonly chartPlot: ApexPlotOptions = { bar: { borderRadius: 4, columnWidth: '55%' } };
 
-  readonly donutPlot: ApexPlotOptions = { pie: { donut: { size: '62%', labels: { show: true, name: { show: true }, value: { show: true }, total: { show: true, label: 'Total' } } } } };
+  readonly donutPlot: ApexPlotOptions = {
+    pie: {
+      donut: {
+        size: '62%',
+        labels: {
+          show: true,
+          name: { show: true, color: '#9ca3af', fontWeight: 500 },
+          value: { show: true, color: '#f9fafb', fontWeight: 700 },
+          total: { show: true, label: 'Total', color: '#d1d5db', fontWeight: 600 },
+        },
+      },
+    },
+  };
 
   readonly chartGrid: ApexGrid = { strokeDashArray: 4 };
 
   readonly chartDataLabels: ApexDataLabels = { enabled: false };
 
-  readonly donutDataLabels: ApexDataLabels = { enabled: true, formatter: (val: number) => `${Math.round(val)}%` };
+  readonly donutDataLabels: ApexDataLabels = {
+    enabled: true,
+    formatter: (val: number) => `${Math.round(val)}%`,
+    style: {
+      fontSize: '12px',
+      fontWeight: 700,
+      colors: ['#ffffff'],
+    },
+    dropShadow: {
+      enabled: true,
+      top: 1,
+      left: 1,
+      blur: 2,
+      color: '#000000',
+      opacity: 0.55,
+    },
+  };
+
+  readonly donutLegend = {
+    position: 'bottom' as const,
+    labels: { colors: '#9ca3af' },
+  };
 
   readonly chartStroke: ApexStroke = { show: true, width: 2, colors: ['transparent'] };
 
@@ -447,6 +486,10 @@ export class PosAdminDashboardComponent implements OnInit {
     private readonly actionBusy: ActionBusyService,
 
     private readonly chatUi: PosChatUiService,
+
+    private readonly receiptPrint: PosReceiptPrintService,
+
+    private readonly notify: NotificationService,
 
   ) {}
 
@@ -1045,6 +1088,40 @@ export class PosAdminDashboardComponent implements OnInit {
     } finally {
 
       this.updatingTransactionId = null;
+
+    }
+
+  }
+
+
+
+  async reprintSale(row: PosSaleTransaction): Promise<void> {
+
+    if (this.reprintingSaleId != null) return;
+
+    this.reprintingSaleId = row.id;
+
+    try {
+
+      const result = await this.receiptPrint.printSaleReceipt(row.id, { reprint: true });
+
+      if (!result.success) {
+
+        this.notify.warning('Re-print failed', result.message ?? 'Connect PrintHub (Bluetooth icon), then try again.');
+
+      } else {
+
+        this.notify.success('Re-print sent', 'Receipt printed with Re-print Only watermark.');
+
+      }
+
+    } catch {
+
+      this.notify.error('Re-print failed', 'Could not print receipt.');
+
+    } finally {
+
+      this.reprintingSaleId = null;
 
     }
 

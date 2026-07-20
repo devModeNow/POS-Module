@@ -2,6 +2,14 @@ import { CommonModule } from '@angular/common';
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { PosReceiptTemplateElement } from '../../../services/pos-communications.service';
+import { PosReceiptPrintService } from '../../../services/pos-receipt-print.service';
+import {
+  alignFromTemplateX,
+  isPaymentSummaryBlock,
+  parsePaymentPreviewParts,
+  receiptPreviewElementStyle,
+  xFromTemplateAlign,
+} from '../../../services/pos-receipt-spacing';
 
 @Component({
   selector: 'app-pos-receipt-template-editor',
@@ -25,6 +33,14 @@ import { PosReceiptTemplateElement } from '../../../services/pos-communications.
     }
     .template-element.selected { border-color: #465fff; background: rgba(70,95,255,0.08); z-index: 20; }
     .template-element img { display: block; max-width: 100%; pointer-events: none; }
+    .payment-preview {
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+      width: 100%;
+      font-family: 'Courier New', Courier, monospace;
+    }
+    .payment-preview .payment-amount { text-align: right; white-space: nowrap; }
   `,
 })
 export class PosReceiptTemplateEditorComponent {
@@ -32,7 +48,7 @@ export class PosReceiptTemplateEditorComponent {
   @Input() logoUrl: string | null = null;
   @Input() set elements(value: PosReceiptTemplateElement[]) {
     if (value?.length) {
-      this._elements = value.map((e) => ({ ...e }));
+      this._elements = value.map((e) => this.normalizeElement(e));
     } else if (!this._elements.length) {
       this._elements = this.defaultElements();
       queueMicrotask(() => this.emitChange());
@@ -43,20 +59,26 @@ export class PosReceiptTemplateEditorComponent {
   _elements: PosReceiptTemplateElement[] = [];
   selectedId: string | null = null;
   private draggingId: string | null = null;
+  private dragDidMove = false;
+
+  constructor(private readonly receiptPrint: PosReceiptPrintService) {}
 
   get canvasWidthClass(): string {
     return this.paperWidth === '58mm' ? 'max-w-[220px]' : 'max-w-[300px]';
   }
 
   defaultElements(): PosReceiptTemplateElement[] {
-    return [
-      { id: 'hdr', type: 'text', content: '{{businessName}}', x: 50, y: 8, fontSize: 14, align: 'center', bold: true },
-      { id: 'addr', type: 'text', content: '{{businessAddress}}', x: 50, y: 18, fontSize: 10, align: 'center' },
-      { id: 'meta', type: 'text', content: '{{saleDate}}\nCashier: {{cashier}}\n{{paymentMethod}}', x: 50, y: 28, fontSize: 9, align: 'center' },
-      { id: 'items', type: 'text', content: '{{items}}', x: 5, y: 42, fontSize: 11, align: 'left' },
-      { id: 'total', type: 'text', content: 'Total: {{total}}', x: 5, y: 75, fontSize: 12, align: 'left', bold: true },
-      { id: 'footer', type: 'text', content: '{{footer}}', x: 50, y: 90, fontSize: 10, align: 'center' },
-    ];
+    return this.receiptPrint.defaultTemplateElements().map((e) => ({ ...e }));
+  }
+
+  /** Ensure align is always set and matches saved intent. */
+  private normalizeElement(el: PosReceiptTemplateElement): PosReceiptTemplateElement {
+    const copy = { ...el };
+    const align = copy.align === 'left' || copy.align === 'center' || copy.align === 'right'
+      ? copy.align
+      : alignFromTemplateX(copy.x);
+    copy.align = align;
+    return copy;
   }
 
   emitChange(): void {
@@ -71,9 +93,24 @@ export class PosReceiptTemplateEditorComponent {
     return this._elements.find((e) => e.id === this.selectedId) ?? null;
   }
 
+  onAlignChange(el: PosReceiptTemplateElement, align: 'left' | 'center' | 'right'): void {
+    el.align = align;
+    el.x = xFromTemplateAlign(align);
+    this.emitChange();
+  }
+
+  resetToDefault(): void {
+    if (!confirm('Reset receipt template to the default layout? Unsaved changes will be lost until you click Save.')) {
+      return;
+    }
+    this._elements = this.defaultElements();
+    this.selectedId = null;
+    this.emitChange();
+  }
+
   nextFreePosition(): { x: number; y: number } {
     const used = new Set(this._elements.map((e) => `${e.x},${e.y}`));
-    for (let y = 10; y <= 90; y += 12) {
+    for (let y = 10; y <= 90; y += 8) {
       for (const x of [50, 10, 30, 70]) {
         if (!used.has(`${x},${y}`)) return { x, y };
       }
@@ -90,7 +127,7 @@ export class PosReceiptTemplateEditorComponent {
       x: pos.x,
       y: pos.y,
       fontSize: 12,
-      align: 'center',
+      align: alignFromTemplateX(pos.x),
     };
     this._elements = [...this._elements, el];
     this.selectedId = el.id;
@@ -127,18 +164,17 @@ export class PosReceiptTemplateEditorComponent {
     this.emitChange();
   }
 
+  isPaymentBlock(el: PosReceiptTemplateElement): boolean {
+    return el.type === 'text' && isPaymentSummaryBlock(el.content);
+  }
+
+  paymentPreviewParts(el: PosReceiptTemplateElement): { label: string; amount: string } | null {
+    return parsePaymentPreviewParts(el.content, this.previewContent(el));
+  }
+
   elementStyle(el: PosReceiptTemplateElement): Record<string, string> {
-    const transforms: string[] = [];
-    if (el.align === 'center') transforms.push('translateX(-50%)');
-    else if (el.align === 'right') transforms.push('translateX(-100%)');
     return {
-      left: `${el.x}%`,
-      top: `${el.y}%`,
-      transform: transforms.join(' ') || 'none',
-      fontSize: `${el.fontSize ?? 12}px`,
-      fontWeight: el.bold ? '700' : '400',
-      textAlign: el.align ?? 'left',
-      maxWidth: el.type === 'image' ? `${el.width ?? 40}%` : '90%',
+      ...receiptPreviewElementStyle(el),
       zIndex: this.selectedId === el.id ? '20' : '10',
     };
   }
@@ -148,22 +184,37 @@ export class PosReceiptTemplateEditorComponent {
     event.stopPropagation();
     this.selectedId = id;
     this.draggingId = id;
+    this.dragDidMove = false;
     const canvas = (event.currentTarget as HTMLElement).closest('.template-canvas') as HTMLElement;
     if (!canvas) return;
 
+    const startX = event.clientX;
+    const startY = event.clientY;
+
     const move = (e: PointerEvent) => {
+      if (Math.abs(e.clientX - startX) > 2 || Math.abs(e.clientY - startY) > 2) {
+        this.dragDidMove = true;
+      }
       const rect = canvas.getBoundingClientRect();
       const x = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
       const y = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
       const el = this._elements.find((item) => item.id === this.draggingId);
       if (el) {
-        el.x = Math.round(x * 10) / 10;
         el.y = Math.round(y * 10) / 10;
+        if (!this.isPaymentBlock(el)) {
+          el.x = Math.round(x * 10) / 10;
+        }
       }
     };
 
     const up = () => {
+      const el = this._elements.find((item) => item.id === this.draggingId);
+      // Only sync align from position after a real drag — not on click-to-select.
+      if (el && this.dragDidMove && !this.isPaymentBlock(el)) {
+        el.align = alignFromTemplateX(el.x);
+      }
       this.draggingId = null;
+      this.dragDidMove = false;
       this.emitChange();
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
@@ -182,7 +233,7 @@ export class PosReceiptTemplateEditorComponent {
       .replace(/\{\{\s*cashier\s*\}\}/gi, 'Jane Cashier')
       .replace(/\{\{\s*saleDate\s*\}\}/gi, new Date().toLocaleString('en-PH'))
       .replace(/\{\{\s*paymentMethod\s*\}\}/gi, 'Cash')
-      .replace(/\{\{\s*items\s*\}\}/gi, 'Item A x1 .... ₱100\nItem B x2 .... ₱200')
+      .replace(/\{\{\s*items\s*\}\}/gi, '2x pack - Item A .... ₱100.00\n1x pc - Very long product name trun... .... ₱200.00')
       .replace(/\{\{\s*total\s*\}\}/gi, '₱300.00')
       .replace(/\{\{\s*amountPaid\s*\}\}/gi, '₱500.00')
       .replace(/\{\{\s*change\s*\}\}/gi, '₱200.00')

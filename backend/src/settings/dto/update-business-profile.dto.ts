@@ -59,4 +59,6 @@ export class UpdateBusinessProfileDto {
   @Allow() posPrinterUsbProductName?: string | null;
   @Allow() posPrinterBtDeviceId?: string | null;
   @Allow() posPrinterBtDeviceName?: string | null;
+  @Allow() posCashDrawerEnabled?: string | boolean | null;
+  @Allow() posCashDrawerOpenOn?: string | null;
 }

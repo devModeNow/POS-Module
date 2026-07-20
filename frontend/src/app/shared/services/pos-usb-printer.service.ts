@@ -104,6 +104,41 @@ export class PosUsbPrinterService {
     }
   }
 
+  /** Send raw ESC/POS bytes (e.g. cash drawer pulse) to a USB thermal printer. */
+  async sendRawBytes(
+    vendorId: string,
+    productId: string,
+    data: Uint8Array,
+  ): Promise<{ success: boolean; message?: string }> {
+    const usb = usbApi();
+    if (!usb) return { success: false, message: 'WebUSB is not supported in this browser.' };
+    if (!vendorId || !productId) return { success: false, message: 'No USB printer selected.' };
+
+    try {
+      const device = await this.resolveDevice(usb, vendorId, productId);
+      if (!device) {
+        return { success: false, message: 'USB printer not connected. Click "Select USB printer" again.' };
+      }
+
+      if (!device.opened) await device.open();
+      if (!device.configuration) await device.selectConfiguration(1);
+
+      const iface = device.configuration?.interfaces.find((i) =>
+        i.alternates.some((a) => a.endpoints.some((e) => e.direction === 'out')),
+      );
+      const alt = iface?.alternates.find((a) => a.endpoints.some((e) => e.direction === 'out'));
+      const endpoint = alt?.endpoints.find((e) => e.direction === 'out');
+      if (!iface || !endpoint) return { success: false, message: 'No writable USB endpoint found on this device.' };
+
+      await device.claimInterface(iface.interfaceNumber);
+      const result = await device.transferOut(endpoint.endpointNumber, data as BufferSource);
+      if (result.status !== 'ok') return { success: false, message: `USB transfer failed (${result.status}).` };
+      return { success: true };
+    } catch (error) {
+      return { success: false, message: error instanceof Error ? error.message : 'Failed to send to USB printer.' };
+    }
+  }
+
   private async resolveDevice(usb: UsbLike, vendorId: string, productId: string): Promise<UsbDeviceLike | null> {
     const wantVendor = parseInt(vendorId, 16);
     const wantProduct = parseInt(productId, 16);

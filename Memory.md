@@ -54,7 +54,7 @@ Living notes for agents continuing this repo. Prefer this file over re-reading l
 - Backend `getBusinessProfile` joins org and uses `COALESCE(NULLIF(TRIM(business_name), ''), o.name)` so empty business name falls back to organization name.
 - Cashier line prints real name: `Cashier: {{cashier}}` from sale detail (`COALESCE(NULLIF(TRIM(fullname), ''), username)`).
 - Template placeholders: `{{businessName}}`, `{{storeName}}`, `{{companyName}}`, `{{cashier}}`, `{{saleDate}}`, `{{paymentMethod}}`, etc. (flexible whitespace in `{{ }}`).
-- `normalizeTemplateForPrint()` forces center on header placeholders and injects `Cashier: {{cashier}}` if missing.
+- `normalizeTemplateForPrint()` injects `Cashier: {{cashier}}` if missing; does **not** force-center saved align values.
 - **Centering fix:** do **not** combine ESC `align:'center'` with space-padding (double-shifts on many BLE printers). Use **space-pad + `align:'left'`** only (`centerPad` in `pos-printhub.service.ts`). Same pad approach in `buildReceiptTextFromTemplate` for network/USB plain text.
 - Match paper width (`58mm`→32 cols, `80mm`→42 cols); PrintHub `printReceipt` syncs `this.paperWidth` before writing.
 - When `printChar` already set, print directly — do not re-open PrintHub picker mid-print.
@@ -68,8 +68,8 @@ Living notes for agents continuing this repo. Prefer this file over re-reading l
   - Between items and total
   - Between paid/change and thank-you footer
   - Any other dragged gaps in the saved template
-- Always leave clear breathing room before the items section (minimum **2 blank lines** before `{{items}}`, on top of Y-based gaps).
-- Helpers in `pos-receipt-spacing.ts`: `templateSpacingBlankLines`, `templateLogoBlankLines`, `countTemplateBlockLines` (~4.5% canvas ≈ 1 line).
+- Vertical gaps are **dynamic from template Y only** (no forced min blanks before items/total). Tight stacks in the editor print tight; drag farther apart to add space.
+- Helpers in `pos-receipt-spacing.ts`: `templateSpacingBlankLines`, `templateLogoBlankLines`, `isItemsTemplateBlock`, `isTotalTemplateBlock`, `countTemplateBlockLines` (~4.5% canvas ≈ 1 line).
 - Applied in: PrintHub `writeReceiptFromTemplate`, HTML `buildReceiptHtml`, plain text `buildReceiptTextFromTemplate`.
 - Fallback non-template PrintHub layout also adds blank lines around items / total / footer.
 
@@ -84,8 +84,30 @@ Living notes for agents continuing this repo. Prefer this file over re-reading l
 - Printer settings panel: auto silent reconnect when type is PrintHub on load.
 - **On login (POS org):**
   - `AuthService.login` / `refreshSession` → `connectPrintHubAfterAuth()` → `restoreSavedPrinterConnection()`.
-  - `SigninFormComponent`: after successful login, await PrintHub connect **before navigate** so the Sign In click gesture can open the picker on first pair.
-- Browser rule: first pair needs a user gesture (login click or Bluetooth icon). After that, reconnect is silent.
+  - `SigninFormComponent`: after login tries silent reconnect; if not connected, `requestConnectPrompt()` (tablets lose the Sign In click gesture after the login API await, so the picker cannot open there).
+  - Cashier/admin headers show a **Connect receipt printer** dialog; tapping Connect opens the Bluetooth picker with a fresh gesture.
+- Sale/test print: always `autoConnect` before PrintHub print; if still disconnected, set connect prompt + clear warning toast.
+- **Logo garbage fix:** do not use PrintHub `putImageWithUrl` (broken threshold: any non-black RGB = ink → binary noise). Custom `safePrintLogo` / `buildMonoRasterEscPos` with luminance threshold + small BLE chunks (180 bytes).
+- Browser rule: first pair needs a user gesture (Connect prompt or Bluetooth icon). After that, reconnect is silent.
+
+### 3.9
+- **Re-print with watermark:** My Sales (cashier) and admin KPI transaction table have Re-print actions. `printSaleReceipt(id, { reprint: true })` sets `ReceiptPrintContext.reprint`; PrintHub, HTML, and plain-text paths print a centered **RE-PRINT ONLY** / **Re-print Only** banner.
+- **Variant modal backdrop:** Cashier product picker closes on outside click (`closeVariantModal` on overlay; `stopPropagation` on panel).
+- **Logo → store name spacing:** `templateLogoBlankLines()` follows first block Y (dynamic).
+- **Items → Total spacing:** dynamic from template Y only (no forced blank-line minimums).
+- **Items line format:** `2x pack - Item name...` with price right-aligned (` .... ` + 2-column thermal). Long names truncate with `...` by paper width.
+- **Saved template align:** Dragging blocks updates `align` from canvas X%; thermal print space-pads center/right lines (not ESC align). Explicit align dropdown is respected.
+- **My Sales sale details:** Details modal loads `getTransactionDetail` — items, payment, totals, re-print from modal.
+- **My Sales amounts:** Multi-item checkouts insert one `tblsales_transactions` row per line. Recent list and transaction count must group by checkout (header row `amount_paid IS NOT NULL` + 10s batch SUM), not raw line `total_amount`.
+
+### 4.0
+- **Re-print admin code:** My Sales re-print opens admin-code modal first; `POST /api/pos/admin-code/authorize` reuses void-code verification + audit.
+- **posadmin login printer popup:** Sign-in only calls `requestConnectPrompt()` for cashiers — not posadmin.
+- **Purchase Orders page:** `/users/purchase-orders` — in-page create form + list (not side modal). Sidebar under Inventory for POS org.
+- **PO smart search:** Item field searches encoded products (inventory + POS variants); pick autofills variant, unit, stock, cost.
+- **Chat delete:** Confirm dialog clicks no longer collapse the chat widget (`confirmOpen` guard in `onDocumentClick`).
+- **Cash drawer:** Printer settings → enable + timing (`before_receipt` default = open on complete sale before receipt). ESC/POS pulse via PrintHub / USB / network / Bluetooth. Checkout modal shows per-sale “Open cash drawer” when enabled. DB: `pos_cash_drawer_enabled`, `pos_cash_drawer_open_on`.
+- **Donut chart labels:** Admin dashboard donut slice labels use white text + drop shadow; center/legend use light gray for dark-theme readability.
 
 ## Key printer files
 - Panel: `frontend/.../pos-printer-settings-panel/*`
@@ -129,6 +151,7 @@ Living notes for agents continuing this repo. Prefer this file over re-reading l
 - Do not commit secrets; local printer WIP may conflict with remote PrintHub commits — stash carefully.
 - Cashier LAN access needs `ng serve --host 0.0.0.0`.
 - Do not remove `@Allow()` from business profile DTO or printer settings save will strip fields again.
+- `PUT /api/pos/printer-settings` in `terminal.controller.ts` whitelists allowed fields — add new printer/cash-drawer keys there or they never reach `settings.service`.
 - Nest whitelist + large base64 logos need 10mb body limit.
 - Do not import spacing helpers from `pos-printhub` through `pos-receipt-print` in a way that creates a cycle — use `pos-receipt-spacing.ts`.
 
@@ -141,3 +164,10 @@ Living notes for agents continuing this repo. Prefer this file over re-reading l
 6. Receive PO linked to a POS variant → variant stock increases on cashier terminal.
 7. Chat delete/clear + notification mark-all.
 8. Login shows uploaded company logo.
+9. My Sales → Details modal + Re-print (watermark on thermal).
+10. Admin KPI transactions → Re-print icon in Actions column.
+11. Saved template align/spacing → reprint matches editor layout (items format `Qty - Name - Unit`).
+12. Re-print from My Sales → admin void code required.
+13. Purchase Orders page → smart item search + in-page form.
+14. Cash drawer enabled → complete sale opens drawer before receipt (PrintHub/USB/network).
+15. Admin dashboard charts → donut view labels readable (white % on slices).

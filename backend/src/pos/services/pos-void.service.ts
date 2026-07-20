@@ -112,6 +112,28 @@ export class PosVoidService {
     return (r.rowCount ?? 0) > 0;
   }
 
+  async authorizeAdminCode(
+    orgId: number,
+    userId: number,
+    username: string,
+    dto: { adminCode: string; action?: string; saleId?: number },
+  ) {
+    await this.ensureSchema();
+    const codeOk = await this.verifyCode(orgId, dto.adminCode);
+    if (!codeOk) return { success: false, message: 'Invalid admin void code' };
+
+    await this.audit.log({
+      orgId,
+      userId,
+      username,
+      action: dto.action || 'pos.admin-code.verify',
+      entityType: dto.saleId ? 'sale' : 'admin_code',
+      entityId: dto.saleId ?? null,
+      details: { authorized: true },
+    });
+    return { success: true };
+  }
+
   async voidCartLine(
     orgId: number,
     userId: number,

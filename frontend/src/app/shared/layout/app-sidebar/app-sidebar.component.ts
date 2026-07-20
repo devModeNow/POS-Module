@@ -298,6 +298,18 @@ export class AppSidebarComponent {
       'pos-company-profile': '/users/pos-company-profile',
     };
     const path = routeMap[menuKey] ?? `/users/${menuKey}`;
+    if (menuKey === 'inventory' && this.isPosOrg) {
+      return {
+        name: label,
+        menuKey: menuKey as MenuKey,
+        path,
+        icon,
+        subItems: [
+          { name: 'Inventory', path: '/users/inventory' },
+          { name: 'Purchase Orders', path: '/users/purchase-orders' },
+        ],
+      };
+    }
     return { name: label, menuKey: menuKey as MenuKey, path, icon };
   }
 

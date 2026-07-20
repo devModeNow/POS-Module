@@ -89,3 +89,16 @@
     </div>
   </div>
 </header>
+
+@if (printerConnectPromptOpen) {
+  <app-confirm-dialog
+    [isOpen]="printerConnectPromptOpen"
+    title="Connect receipt printer"
+    message="Your Bluetooth printer is not connected yet. Tap Connect to choose a printer (required on tablets after login)."
+    variant="primary"
+    confirmLabel="Connect"
+    cancelLabel="Later"
+    (confirm)="confirmPrinterConnectPrompt()"
+    (cancel)="dismissPrinterConnectPrompt()"
+  />
+}

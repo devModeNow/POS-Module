@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { apiClient } from './api-client';
+import { receiptPreviewElementStyle } from './pos-receipt-spacing';
 
 export type PosChatUser = {
   id: number;
@@ -54,6 +55,8 @@ export type PosPrinterConnectionType =
   | 'printhub'
   | 'mharmal';
 
+export type PosCashDrawerOpenOn = 'before_receipt' | 'after_receipt' | 'manual_only';
+
 export type PosPrinterSettings = {
   posReceiptPaperWidth: string;
   posReceiptShowLogo: boolean;
@@ -68,6 +71,8 @@ export type PosPrinterSettings = {
   posPrinterUsbProductName: string;
   posPrinterBtDeviceId: string;
   posPrinterBtDeviceName: string;
+  posCashDrawerEnabled?: boolean;
+  posCashDrawerOpenOn?: PosCashDrawerOpenOn;
   businessName?: string | null;
   businessAddress?: string | null;
   businessLogoLight?: string | null;
@@ -199,6 +204,9 @@ export class PosCommunicationsService {
         posPrinterUsbProductName: payload.posPrinterUsbProductName,
         posPrinterBtDeviceId: payload.posPrinterBtDeviceId,
         posPrinterBtDeviceName: payload.posPrinterBtDeviceName,
+        posCashDrawerEnabled:
+          payload.posCashDrawerEnabled != null ? String(payload.posCashDrawerEnabled) : undefined,
+        posCashDrawerOpenOn: payload.posCashDrawerOpenOn,
       },
     );
     return r.data;
@@ -231,26 +239,14 @@ export class PosCommunicationsService {
   }
 
   templateElementStyle(el: PosReceiptTemplateElement): Record<string, string> {
-    const transforms: string[] = [];
-    if (el.align === 'center') transforms.push('translateX(-50%)');
-    else if (el.align === 'right') transforms.push('translateX(-100%)');
-    return {
-      position: 'absolute',
-      left: `${el.x}%`,
-      top: `${el.y}%`,
-      transform: transforms.join(' ') || 'none',
-      fontSize: `${el.fontSize ?? 12}px`,
-      fontWeight: el.bold ? '700' : '400',
-      textAlign: el.align ?? 'left',
-      maxWidth: el.type === 'image' ? `${el.width ?? 40}%` : '90%',
-    };
+    return receiptPreviewElementStyle(el);
   }
 
   previewTemplateText(content: string, ctx: { businessName?: string; businessAddress?: string; footer?: string }): string {
     return content
       .replace('{{businessName}}', ctx.businessName || 'Store')
       .replace('{{businessAddress}}', ctx.businessAddress || '')
-      .replace('{{items}}', 'Sample Item x1 .... ₱100')
+      .replace('{{items}}', '2x pack - Sample item .... ₱100.00')
       .replace('{{total}}', '₱100.00')
       .replace('{{footer}}', ctx.footer || 'Thank you!');
   }

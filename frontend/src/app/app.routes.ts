@@ -13,6 +13,7 @@ import { CustomersComponent } from './pages/customers/customers.component';
 import { QuotationsComponent } from './pages/quotations/quotations.component';
 import { JobOrdersComponent } from './pages/job-orders/job-orders.component';
 import { InventoryComponent } from './pages/inventory/inventory.component';
+import { PurchaseOrdersComponent } from './pages/purchase-orders/purchase-orders.component';
 import { ReportsComponent } from './pages/reports/reports.component';
 import { AccountingComponent } from './pages/accounting/accounting.component';
 import { FinanceComponent } from './pages/finance/finance.component';
@@ -106,6 +107,13 @@ export const routes: Routes = [
         canActivate: [rbacGuard],
         data: { menu: 'inventory', permission: 'canRead' },
         title: 'Inventory',
+      },
+      {
+        path: 'purchase-orders',
+        component: PurchaseOrdersComponent,
+        canActivate: [rbacGuard],
+        data: { menu: 'inventory', permission: 'canRead' },
+        title: 'Purchase Orders',
       },
       {
         path: 'reports',

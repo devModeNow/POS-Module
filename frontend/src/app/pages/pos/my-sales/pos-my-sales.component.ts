@@ -2,7 +2,35 @@ import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { PosService } from '../../../shared/services/pos.service';
+import { PosReceiptPrintService } from '../../../shared/services/pos-receipt-print.service';
+import { NotificationService } from '../../../shared/services/notification.service';
 import { PosPageHeaderComponent } from '../shared/pos-page-header.component';
+
+type SaleRow = { id: number; saleDate: string; totalAmount: number; paymentStatus: string };
+
+type SaleDetail = {
+  id: number;
+  saleDate: string;
+  createdAt: string;
+  cashier: string;
+  paymentMethod: string;
+  paymentStatus: string;
+  amountPaid: number | null;
+  changeAmount: number | null;
+  discountAmount: number;
+  totalAmount: number;
+  itemCount: number;
+  items: Array<{
+    id: number;
+    variantId: number;
+    productName: string;
+    variantName: string;
+    quantitySold: number;
+    unitType: string;
+    unitPrice: number;
+    totalAmount: number;
+  }>;
+};
 
 @Component({
   selector: 'app-pos-my-sales',
@@ -17,8 +45,18 @@ export class PosMySalesComponent implements OnInit {
   loading = false;
   error = '';
   summary: { totalSales: number; transactionCount: number; totalDiscount: number } | null = null;
-  recent: Array<{ id: number; saleDate: string; totalAmount: number; paymentStatus: string }> = [];
+  recent: SaleRow[] = [];
   lastUpdatedAt: Date | null = null;
+
+  reprintingSaleId: number | null = null;
+  showReprintAuthModal = false;
+  reprintTarget: SaleRow | null = null;
+  reprintAdminCode = '';
+  reprintAuthBusy = false;
+  showDetailModal = false;
+  detailLoading = false;
+  detailError = '';
+  saleDetail: SaleDetail | null = null;
 
   get periodLabel(): string {
     if (!this.from && !this.to) return 'All recorded sales';
@@ -43,6 +81,8 @@ export class PosMySalesComponent implements OnInit {
 
   constructor(
     private readonly pos: PosService,
+    private readonly receiptPrint: PosReceiptPrintService,
+    private readonly notify: NotificationService,
   ) {}
 
   ngOnInit(): void {
@@ -61,7 +101,7 @@ export class PosMySalesComponent implements OnInit {
         success: boolean;
         data?: {
           summary: { totalSales: number; transactionCount: number; totalDiscount: number };
-          recent: Array<{ id: number; saleDate: string; totalAmount: number; paymentStatus: string }>;
+          recent: SaleRow[];
         };
         message?: string;
       };
@@ -77,6 +117,115 @@ export class PosMySalesComponent implements OnInit {
     } finally {
       this.loading = false;
     }
+  }
+
+  async openSaleDetail(row: SaleRow): Promise<void> {
+    this.showDetailModal = true;
+    this.detailLoading = true;
+    this.detailError = '';
+    this.saleDetail = null;
+    try {
+      const r = await this.pos.getTransactionDetail(row.id);
+      if (!r.success || !r.data) {
+        this.detailError = r.message ?? 'Unable to load sale details.';
+        return;
+      }
+      this.saleDetail = r.data;
+    } finally {
+      this.detailLoading = false;
+    }
+  }
+
+  closeSaleDetail(): void {
+    this.showDetailModal = false;
+    this.saleDetail = null;
+    this.detailError = '';
+  }
+
+  promptReprintSale(row: SaleRow, event?: Event): void {
+    event?.stopPropagation();
+    if (this.reprintingSaleId != null || this.reprintAuthBusy) return;
+    this.reprintTarget = row;
+    this.reprintAdminCode = '';
+    this.showReprintAuthModal = true;
+  }
+
+  closeReprintAuthModal(): void {
+    if (this.reprintAuthBusy) return;
+    this.showReprintAuthModal = false;
+    this.reprintTarget = null;
+    this.reprintAdminCode = '';
+  }
+
+  async confirmReprintSale(): Promise<void> {
+    if (!this.reprintTarget) return;
+    if (!this.reprintAdminCode.trim()) {
+      this.notify.warning('Required', 'Enter the admin void code to re-print this receipt.');
+      return;
+    }
+
+    this.reprintAuthBusy = true;
+    try {
+      const auth = await this.pos.authorizeAdminCode({
+        adminCode: this.reprintAdminCode.trim(),
+        action: 'pos.sale.reprint.authorize',
+        saleId: this.reprintTarget.id,
+      });
+      if (!auth.success) {
+        this.notify.error('Authorization failed', auth.message ?? 'Invalid admin code.');
+        return;
+      }
+
+      const row = this.reprintTarget;
+      this.showReprintAuthModal = false;
+      this.reprintTarget = null;
+      this.reprintAdminCode = '';
+
+      if (this.reprintingSaleId != null) return;
+      this.reprintingSaleId = row.id;
+      const result = await this.receiptPrint.printSaleReceipt(row.id, { reprint: true });
+      if (!result.success) {
+        this.notify.warning('Re-print failed', result.message ?? 'Connect PrintHub (Bluetooth icon), then try again.');
+      } else {
+        this.notify.success('Re-print sent', 'Receipt printed with Re-print Only watermark.');
+      }
+    } catch {
+      this.notify.error('Re-print failed', 'Could not authorize or print receipt.');
+    } finally {
+      this.reprintAuthBusy = false;
+      this.reprintingSaleId = null;
+    }
+  }
+
+  async reprintSale(row: SaleRow, event?: Event): Promise<void> {
+    event?.stopPropagation();
+    if (this.reprintingSaleId != null) return;
+    this.reprintingSaleId = row.id;
+    try {
+      const result = await this.receiptPrint.printSaleReceipt(row.id, { reprint: true });
+      if (!result.success) {
+        this.notify.warning('Re-print failed', result.message ?? 'Connect PrintHub (Bluetooth icon), then try again.');
+      } else {
+        this.notify.success('Re-print sent', 'Receipt printed with Re-print Only watermark.');
+      }
+    } catch {
+      this.notify.error('Re-print failed', 'Could not print receipt.');
+    } finally {
+      this.reprintingSaleId = null;
+    }
+  }
+
+  itemLabel(item: SaleDetail['items'][number]): string {
+    const name = (item.variantName || item.productName || 'Item').trim();
+    const qty = Number(item.quantitySold);
+    const qtyLabel = Number.isInteger(qty) ? String(qty) : qty.toFixed(2);
+    const unit = String(item.unitType || 'pc').trim() || 'pc';
+    return `${qtyLabel} - ${name} - ${unit}`;
+  }
+
+  formatMoney(value: number | null | undefined): string {
+    if (value == null || Number.isNaN(Number(value))) return '—';
+    return `₱${Number(value).toFixed(2)}`;
   }
 
   statusLabel(status: string): string {
