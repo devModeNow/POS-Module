@@ -315,20 +315,70 @@ export class InventoryService {
 
   async search(q: string, orgId: number) {
     try {
-      const result = await this.db.query(
+      const term = `%${q.trim()}%`;
+
+      const legacyResult = await this.db.query(
         `SELECT id, part_name AS "partName", brand, category,
                 stock_qty AS "stockQty", cost_price AS "costPrice",
                 selling_price AS "sellingPrice", image_url AS "imageUrl"
          FROM tblinventory
          WHERE org_id = $1
            AND (LOWER(part_name) LIKE LOWER($2) OR LOWER(brand) LIKE LOWER($2))
-         ORDER BY part_name ASC LIMIT 20`,
-        [orgId, `%${q.trim()}%`]);
-      const data = result.rows.map((row: Record<string, unknown>) => ({
-        ...row,
+         ORDER BY part_name ASC LIMIT 15`,
+        [orgId, term]);
+
+      const posResult = await this.db.query(
+        `SELECT v.id AS "variantId", v.product_id AS "productId",
+                p.name AS "productName", v.variant_name AS "variantName",
+                p.brand, p.category,
+                v.stock_qty AS "stockQty", v.cost_price AS "costPrice",
+                v.selling_price AS "sellingPrice",
+                COALESCE(v.image_url, p.image_url) AS "imageUrl"
+         FROM tblinventory_variants v
+         INNER JOIN tblinventory_products p ON p.id = v.product_id
+         WHERE v.org_id = $1 AND v.is_active = TRUE AND p.is_active = TRUE
+           AND (LOWER(p.name) LIKE LOWER($2) OR LOWER(v.variant_name) LIKE LOWER($2) OR LOWER(COALESCE(p.brand,'')) LIKE LOWER($2))
+         ORDER BY p.name ASC, v.sort_order ASC LIMIT 15`,
+        [orgId, term]);
+
+      const legacyData = legacyResult.rows.map((row: Record<string, unknown>) => ({
+        id: row['id'],
+        partName: row['partName'],
+        brand: row['brand'] ?? null,
+        category: row['category'] ?? null,
+        stockQty: Number(row['stockQty'] ?? 0),
+        costPrice: Number(row['costPrice'] ?? 0),
+        sellingPrice: Number(row['sellingPrice'] ?? 0),
+        imageUrl: row['imageUrl'] ?? null,
         existsInInventory: true,
+        variantId: null,
+        productId: null,
+        source: 'legacy' as const,
       }));
-      return { success: true, data };
+
+      const posData = posResult.rows.map((row: Record<string, unknown>) => {
+        const productName = String(row['productName'] ?? '');
+        const variantName = String(row['variantName'] ?? '').trim();
+        const partName = variantName && variantName.toLowerCase() !== 'default'
+          ? `${productName} — ${variantName}`
+          : productName;
+        return {
+          id: 0,
+          partName,
+          brand: row['brand'] ?? null,
+          category: row['category'] ?? null,
+          stockQty: Number(row['stockQty'] ?? 0),
+          costPrice: Number(row['costPrice'] ?? 0),
+          sellingPrice: Number(row['sellingPrice'] ?? 0),
+          imageUrl: row['imageUrl'] ?? null,
+          existsInInventory: true,
+          variantId: Number(row['variantId']),
+          productId: Number(row['productId']),
+          source: 'pos' as const,
+        };
+      });
+
+      return { success: true, data: [...legacyData, ...posData].slice(0, 20) };
     } catch (e) {
       return { success: false, message: e instanceof Error ? e.message : 'Search failed' };
     }
@@ -350,6 +400,50 @@ export class InventoryService {
   }
 
   // ── Purchase Orders ───────────────────────────────────────────────────────
+
+  private async ensurePoSchema(): Promise<void> {
+    await this.db.query(`ALTER TABLE tblpo_items ADD COLUMN IF NOT EXISTS variant_id BIGINT`);
+  }
+
+  /**
+   * Creates a new product record for a PO line item that has neither an inventoryId
+   * nor a variantId. If the org already manages POS products/variants, the new
+   * product is created there so it becomes sellable at the register; otherwise it
+   * falls back to the legacy tblinventory table.
+   */
+  private async createNewPoProduct(
+    client: { query: DatabaseService['query'] },
+    orgId: number,
+    item: { itemName: string; brand?: string; category?: string; unitCost: number },
+  ): Promise<{ inventoryId: number | null; variantId: number | null }> {
+    const posCheck = await client.query<{ id: number }>(
+      `SELECT id FROM tblinventory_products WHERE org_id = $1 AND is_active = TRUE LIMIT 1`,
+      [orgId],
+    );
+
+    if (posCheck.rowCount > 0) {
+      const product = await client.query<{ id: number }>(
+        `INSERT INTO tblinventory_products (org_id, name, category, brand)
+         VALUES ($1,$2,$3,$4) RETURNING id`,
+        [orgId, item.itemName, item.category ?? null, item.brand ?? null],
+      );
+      const variant = await client.query<{ id: number }>(
+        `INSERT INTO tblinventory_variants
+           (org_id, product_id, variant_name, stock_qty, stock_warning, cost_price, selling_price)
+         VALUES ($1,$2,'Default',0,0,$3,0) RETURNING id`,
+        [orgId, product.rows[0].id, item.unitCost],
+      );
+      return { inventoryId: null, variantId: variant.rows[0].id };
+    }
+
+    const newProduct = await client.query<{ id: number }>(
+      `INSERT INTO tblinventory
+         (org_id, part_name, brand, category, stock_qty, stock_warning, cost_price, selling_price, updated_at)
+       VALUES ($1,$2,$3,$4,0,0,$5,0,NOW()) RETURNING id`,
+      [orgId, item.itemName, item.brand ?? null, item.category ?? null, item.unitCost],
+    );
+    return { inventoryId: newProduct.rows[0].id, variantId: null };
+  }
 
   async findAllPO(orgId: number, status?: string) {
     try {
@@ -411,6 +505,8 @@ export class InventoryService {
 
   async findOnePO(id: number, orgId: number) {
     try {
+      await this.ensurePoSchema();
+
       // Query PO header joined with supplier (includes org_id check)
       const po = await this.db.query(
         `SELECT p.id, p.po_number AS "poNumber",
@@ -429,19 +525,30 @@ export class InventoryService {
 
       if (po.rowCount === 0) return { success: false, message: 'Purchase order not found' };
 
-      // Query all PO items with product name
+      // Query all PO items with product name (legacy tblinventory or POS variant)
       const items = await this.db.query(
         `SELECT pi.id,
                 pi.inventory_id AS "inventoryId",
+                pi.variant_id AS "variantId",
                 pi.item_name AS "itemName",
-                COALESCE(i.part_name, pi.item_name) AS "productName",
-                COALESCE(i.brand, '') AS "brand",
-                COALESCE(i.category, '') AS "category",
+                COALESCE(
+                  i.part_name,
+                  CASE
+                    WHEN vp.name IS NOT NULL AND v.variant_name IS NOT NULL AND lower(v.variant_name) <> 'default'
+                      THEN vp.name || ' — ' || v.variant_name
+                    ELSE vp.name
+                  END,
+                  pi.item_name
+                ) AS "productName",
+                COALESCE(i.brand, vp.brand, '') AS "brand",
+                COALESCE(i.category, vp.category, '') AS "category",
                 pi.quantity,
                 pi.unit_cost AS "unitCost",
                 pi.total_cost AS "lineTotal"
          FROM tblpo_items pi
          LEFT JOIN tblinventory i ON i.id = pi.inventory_id
+         LEFT JOIN tblinventory_variants v ON v.id = pi.variant_id
+         LEFT JOIN tblinventory_products vp ON vp.id = v.product_id
          WHERE pi.purchase_id = $1 ORDER BY pi.id ASC`, [id]);
 
       // Calculate aggregates from items
@@ -456,6 +563,7 @@ export class InventoryService {
         return {
           id: row['id'],
           inventoryId: row['inventoryId'] ?? null,
+          variantId: row['variantId'] ?? null,
           itemName: row['itemName'] ?? row['productName'] ?? '',
           productName: row['productName'],
           brand: row['brand'] ?? '',
@@ -502,6 +610,7 @@ export class InventoryService {
     comments?: string;
     items?: Array<{
       inventoryId?: number;
+      variantId?: number;
       itemName?: string;
       brand?: string;
       category?: string;
@@ -526,6 +635,7 @@ export class InventoryService {
     }
 
     try {
+      await this.ensurePoSchema();
       let poId: number;
       let poNumber: string;
 
@@ -568,31 +678,28 @@ export class InventoryService {
         // Insert PO items, handling new products
         for (const item of dto.items!) {
           let inventoryId = item.inventoryId ?? null;
+          let variantId = item.variantId ?? null;
 
-          // If no inventoryId but itemName/brand/category provided, create new inventory record
-          if (!inventoryId && item.itemName) {
-            const newProduct = await client.query<{ id: number }>(
-              `INSERT INTO tblinventory
-                 (org_id, part_name, brand, category, stock_qty, stock_warning, cost_price, selling_price, updated_at)
-               VALUES ($1,$2,$3,$4,0,0,$5,0,NOW()) RETURNING id`,
-              [
-                orgId,
-                item.itemName,
-                item.brand ?? null,
-                item.category ?? null,
-                item.unitCost,
-              ],
-            );
-            inventoryId = newProduct.rows[0].id;
+          // If neither an existing inventoryId nor variantId was given, create a new product
+          if (!inventoryId && !variantId && item.itemName) {
+            const created = await this.createNewPoProduct(client, orgId, {
+              itemName: item.itemName,
+              brand: item.brand,
+              category: item.category,
+              unitCost: item.unitCost,
+            });
+            inventoryId = created.inventoryId;
+            variantId = created.variantId;
           }
 
           const totalCost = item.quantity * item.unitCost;
           await client.query(
-            `INSERT INTO tblpo_items (purchase_id, inventory_id, item_name, quantity, unit_cost, total_cost)
-             VALUES ($1,$2,$3,$4,$5,$6)`,
+            `INSERT INTO tblpo_items (purchase_id, inventory_id, variant_id, item_name, quantity, unit_cost, total_cost)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)`,
             [
               poId,
               inventoryId,
+              variantId,
               item.itemName ?? '',
               item.quantity,
               item.unitCost,
@@ -620,8 +727,10 @@ export class InventoryService {
     }
   }
 
-  async updatePO(id: number, orgId: number, dto: { comments?: string; items?: Array<{ id?: number; inventoryId?: number | null; itemName: string; brand?: string; category?: string; quantity: number; unitCost: number }> }) {
+  async updatePO(id: number, orgId: number, dto: { comments?: string; items?: Array<{ id?: number; inventoryId?: number | null; variantId?: number | null; itemName: string; brand?: string; category?: string; quantity: number; unitCost: number }> }) {
     try {
+      await this.ensurePoSchema();
+
       // Verify PO exists, belongs to org, and is in draft status
       const poCheck = await this.db.query<{ status: string }>(
         `SELECT status FROM tblpurchases WHERE id = $1 AND org_id = $2 LIMIT 1`,
@@ -651,20 +760,23 @@ export class InventoryService {
             totalAmount += totalCost;
 
             let inventoryId = item.inventoryId ?? null;
-            // Create new product if no inventoryId but itemName provided
-            if (!inventoryId && item.itemName) {
-              const newProduct = await client.query<{ id: number }>(
-                `INSERT INTO tblinventory (org_id, part_name, brand, category, stock_qty, stock_warning, cost_price, selling_price, updated_at)
-                 VALUES ($1,$2,$3,$4,0,0,$5,0,NOW()) RETURNING id`,
-                [orgId, item.itemName, item.brand ?? null, item.category ?? null, item.unitCost],
-              );
-              inventoryId = newProduct.rows[0].id;
+            let variantId = item.variantId ?? null;
+            // Create new product if neither inventoryId nor variantId provided
+            if (!inventoryId && !variantId && item.itemName) {
+              const created = await this.createNewPoProduct(client, orgId, {
+                itemName: item.itemName,
+                brand: item.brand,
+                category: item.category,
+                unitCost: item.unitCost,
+              });
+              inventoryId = created.inventoryId;
+              variantId = created.variantId;
             }
 
             await client.query(
-              `INSERT INTO tblpo_items (purchase_id, inventory_id, item_name, quantity, unit_cost, total_cost)
-               VALUES ($1,$2,$3,$4,$5,$6)`,
-              [id, inventoryId, item.itemName, item.quantity, item.unitCost, totalCost],
+              `INSERT INTO tblpo_items (purchase_id, inventory_id, variant_id, item_name, quantity, unit_cost, total_cost)
+               VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+              [id, inventoryId, variantId, item.itemName, item.quantity, item.unitCost, totalCost],
             );
           }
 
@@ -684,6 +796,8 @@ export class InventoryService {
 
   async receivePO(id: number, orgId: number) {
     try {
+      await this.ensurePoSchema();
+
       // Check PO exists and belongs to org
       const poResult = await this.db.query<{ status: string }>(
         `SELECT status FROM tblpurchases WHERE id = $1 AND org_id = $2 LIMIT 1`,
@@ -701,16 +815,15 @@ export class InventoryService {
 
       // Execute stock updates and status change within a single transaction
       await this.db.withTransaction(async (client) => {
-        // Get all PO items with their inventory_id and quantity
-        const items = await client.query<{ inventory_id: number | null; quantity: number }>(
-          `SELECT pi.inventory_id, pi.quantity FROM tblpo_items pi WHERE pi.purchase_id = $1`,
+        // Get all PO items with their inventory_id/variant_id and quantity
+        const items = await client.query<{ inventory_id: number | null; variant_id: number | null; quantity: number }>(
+          `SELECT pi.inventory_id, pi.variant_id, pi.quantity FROM tblpo_items pi WHERE pi.purchase_id = $1`,
           [id],
         );
 
-        // For each item with a non-null inventory_id, increase stock_qty (scoped to org for defense-in-depth)
         for (const item of items.rows) {
+          // Legacy inventory: increase stock_qty (scoped to org for defense-in-depth)
           if (item.inventory_id) {
-            // Get current stock before
             const before = await client.query<{ stock_qty: number }>(
               `SELECT stock_qty FROM tblinventory WHERE id = $1`, [item.inventory_id]);
             const qtyBefore = Number(before.rows[0]?.stock_qty ?? 0);
@@ -727,6 +840,14 @@ export class InventoryService {
                  (org_id, inventory_id, adjustment_type, qty_before, qty_after, qty_change, reference_type, reference_id, notes)
                VALUES ($1, $2, 'po_receive', $3, $4, $5, 'purchase_order', $6, $7)`,
               [orgId, item.inventory_id, qtyBefore, qtyAfter, item.quantity, id, `PO received`],
+            );
+          }
+
+          // POS variant: increase stock_qty so it becomes available to the register
+          if (item.variant_id) {
+            await client.query(
+              `UPDATE tblinventory_variants SET stock_qty = stock_qty + $1, updated_at = NOW() WHERE id = $2 AND org_id = $3`,
+              [item.quantity, item.variant_id, orgId],
             );
           }
         }

@@ -20,11 +20,17 @@ interface PublicOrg {
   styles: ``
 })
 export class AuthPageLayoutComponent implements OnInit {
-  private readonly defaultLogoLight = '/images/fwdslogo.png';
-  private readonly defaultLogoDark  = '/images/fwdslogo-dark.png';
+  /** Neutral placeholder when no company logo is uploaded yet (not a different brand). */
+  private readonly emptyLogo = 'data:image/svg+xml,' + encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="320" height="80" viewBox="0 0 320 80">
+      <rect width="320" height="80" fill="transparent"/>
+      <text x="160" y="48" text-anchor="middle" font-family="Arial,sans-serif" font-size="22" fill="#64748b">Company Logo</text>
+    </svg>`,
+  );
 
-  logoLightSrc = this.defaultLogoLight;
-  logoDarkSrc  = this.defaultLogoDark;
+  logoLightSrc = this.emptyLogo;
+  logoDarkSrc = this.emptyLogo;
+  hasCompanyLogo = false;
 
   orgs: PublicOrg[] = [];
 
@@ -41,11 +47,21 @@ export class AuthPageLayoutComponent implements OnInit {
   private async loadBranding(): Promise<void> {
     try {
       const settings = await this.businessSettingsService.getPublicBusinessProfile();
-      this.logoLightSrc = settings?.businessLogoLight || settings?.businessLogo || this.defaultLogoLight;
-      this.logoDarkSrc  = settings?.businessLogoDark  || settings?.businessLogo || this.defaultLogoDark;
+      const light = String(settings?.businessLogoLight || settings?.businessLogo || '').trim();
+      const dark = String(settings?.businessLogoDark || settings?.businessLogo || '').trim();
+      if (light || dark) {
+        this.hasCompanyLogo = true;
+        this.logoLightSrc = light || dark;
+        this.logoDarkSrc = dark || light;
+      } else {
+        this.hasCompanyLogo = false;
+        this.logoLightSrc = this.emptyLogo;
+        this.logoDarkSrc = this.emptyLogo;
+      }
     } catch {
-      this.logoLightSrc = this.defaultLogoLight;
-      this.logoDarkSrc  = this.defaultLogoDark;
+      this.hasCompanyLogo = false;
+      this.logoLightSrc = this.emptyLogo;
+      this.logoDarkSrc = this.emptyLogo;
     }
   }
 

@@ -298,6 +298,30 @@ export class PosAdminDashboardComponent implements OnInit {
 
   updatingTransactionId: number | null = null;
 
+  kpiSearch = '';
+
+  kpiFilterPaymentStatus: 'all' | 'settled' | 'floating' = 'all';
+
+  kpiPageSize = 25;
+
+  kpiPage = 0;
+
+  kpiTotal = 0;
+
+  readonly kpiPageSizeOptions = [10, 25, 50];
+
+  staffSearch = '';
+
+  staffPage = 0;
+
+  readonly staffPageSize = 10;
+
+  lowStockModalSearch = '';
+
+  lowStockModalPage = 0;
+
+  readonly lowStockModalPageSize = 10;
+
 
 
   salesChartSeries: ApexAxisChartSeries = [];
@@ -656,6 +680,22 @@ export class PosAdminDashboardComponent implements OnInit {
 
     this.detailTransactions = [];
 
+    this.kpiTotal = 0;
+
+    this.kpiSearch = '';
+
+    this.kpiFilterPaymentStatus = 'all';
+
+    this.kpiPage = 0;
+
+    this.staffSearch = '';
+
+    this.staffPage = 0;
+
+    this.lowStockModalSearch = '';
+
+    this.lowStockModalPage = 0;
+
 
 
     if (id === 'kpi-staff' || id === 'kpi-low-stock') {
@@ -668,29 +708,7 @@ export class PosAdminDashboardComponent implements OnInit {
 
 
 
-    this.detailLoading = true;
-
-    try {
-
-      const { from, to } = this.periodRange();
-
-      let paymentStatus: string | undefined;
-
-      if (id === 'kpi-settled') paymentStatus = 'settled';
-
-      if (id === 'kpi-floating') paymentStatus = 'floating';
-
-
-
-      const r = await this.pos.getSaleTransactions(from, to, paymentStatus, 100, 0);
-
-      this.detailTransactions = r.success ? (r.data ?? []) : [];
-
-    } finally {
-
-      this.detailLoading = false;
-
-    }
+    await this.loadKpiTransactions();
 
   }
 
@@ -703,6 +721,268 @@ export class PosAdminDashboardComponent implements OnInit {
     this.detailKpiId = null;
 
     this.detailTransactions = [];
+
+  }
+
+
+
+  async loadKpiTransactions(): Promise<void> {
+
+    if (!this.isTransactionKpi) return;
+
+    this.detailLoading = true;
+
+    try {
+
+      const { from, to } = this.periodRange();
+
+      const paymentStatus = this.effectiveKpiPaymentStatus();
+
+      const offset = this.kpiPage * this.kpiPageSize;
+
+      const r = await this.pos.getSaleTransactions(from, to, paymentStatus, this.kpiPageSize, offset);
+
+      this.detailTransactions = r.success ? (r.data ?? []) : [];
+
+      this.kpiTotal = r.success ? (r.total ?? this.detailTransactions.length) : 0;
+
+    } finally {
+
+      this.detailLoading = false;
+
+    }
+
+  }
+
+
+
+  get filteredDetailTransactions(): PosSaleTransaction[] {
+
+    const q = this.kpiSearch.trim().toLowerCase();
+
+    if (!q) return this.detailTransactions;
+
+    return this.detailTransactions.filter((row) =>
+      (row.cashier || '').toLowerCase().includes(q) ||
+      (row.paymentMethod || '').toLowerCase().includes(q) ||
+      String(row.id).includes(q),
+    );
+
+  }
+
+
+
+  get kpiTotalPages(): number {
+
+    return Math.max(1, Math.ceil(this.kpiTotal / this.kpiPageSize));
+
+  }
+
+
+
+  get kpiPageInfo(): string {
+
+    if (this.kpiTotal === 0) return 'No results';
+
+    const start = this.kpiPage * this.kpiPageSize + 1;
+
+    const end = Math.min(this.kpiTotal, this.kpiPage * this.kpiPageSize + this.detailTransactions.length);
+
+    return `${start}–${end} of ${this.kpiTotal}`;
+
+  }
+
+
+
+  get kpiHasPrevPage(): boolean {
+
+    return this.kpiPage > 0;
+
+  }
+
+
+
+  get kpiHasNextPage(): boolean {
+
+    return (this.kpiPage + 1) * this.kpiPageSize < this.kpiTotal;
+
+  }
+
+
+
+  onKpiPageSizeChange(): void {
+
+    this.kpiPage = 0;
+
+    void this.loadKpiTransactions();
+
+  }
+
+
+
+  onKpiPaymentFilterChange(): void {
+
+    this.kpiPage = 0;
+
+    void this.loadKpiTransactions();
+
+  }
+
+
+
+  kpiPrevPage(): void {
+
+    if (!this.kpiHasPrevPage) return;
+
+    this.kpiPage--;
+
+    void this.loadKpiTransactions();
+
+  }
+
+
+
+  kpiNextPage(): void {
+
+    if (!this.kpiHasNextPage) return;
+
+    this.kpiPage++;
+
+    void this.loadKpiTransactions();
+
+  }
+
+
+
+  get showKpiPaymentFilter(): boolean {
+
+    return this.detailKpiId === 'kpi-total' || this.detailKpiId === 'kpi-transactions' || this.detailKpiId === 'kpi-discounts';
+
+  }
+
+
+
+  get filteredOnDutyStaff(): typeof this.onDutyStaff {
+
+    const q = this.staffSearch.trim().toLowerCase();
+
+    if (!q) return this.onDutyStaff;
+
+    return this.onDutyStaff.filter((row) =>
+      row.fullname.toLowerCase().includes(q) || (row.roleName || '').toLowerCase().includes(q),
+    );
+
+  }
+
+
+
+  get pagedOnDutyStaff(): typeof this.onDutyStaff {
+
+    const start = this.staffPage * this.staffPageSize;
+
+    return this.filteredOnDutyStaff.slice(start, start + this.staffPageSize);
+
+  }
+
+
+
+  get staffTotalPages(): number {
+
+    return Math.max(1, Math.ceil(this.filteredOnDutyStaff.length / this.staffPageSize));
+
+  }
+
+
+
+  onStaffSearchChange(): void {
+
+    this.staffPage = 0;
+
+  }
+
+
+
+  staffPrevPage(): void {
+
+    if (this.staffPage > 0) this.staffPage--;
+
+  }
+
+
+
+  staffNextPage(): void {
+
+    if (this.staffPage + 1 < this.staffTotalPages) this.staffPage++;
+
+  }
+
+
+
+  get filteredLowStockModal(): typeof this.lowStock {
+
+    const q = this.lowStockModalSearch.trim().toLowerCase();
+
+    if (!q) return this.lowStock;
+
+    return this.lowStock.filter((row) =>
+      row.partName.toLowerCase().includes(q) || (row.category || '').toLowerCase().includes(q),
+    );
+
+  }
+
+
+
+  get pagedLowStockModal(): typeof this.lowStock {
+
+    const start = this.lowStockModalPage * this.lowStockModalPageSize;
+
+    return this.filteredLowStockModal.slice(start, start + this.lowStockModalPageSize);
+
+  }
+
+
+
+  get lowStockModalTotalPages(): number {
+
+    return Math.max(1, Math.ceil(this.filteredLowStockModal.length / this.lowStockModalPageSize));
+
+  }
+
+
+
+  onLowStockModalSearchChange(): void {
+
+    this.lowStockModalPage = 0;
+
+  }
+
+
+
+  lowStockModalPrevPage(): void {
+
+    if (this.lowStockModalPage > 0) this.lowStockModalPage--;
+
+  }
+
+
+
+  lowStockModalNextPage(): void {
+
+    if (this.lowStockModalPage + 1 < this.lowStockModalTotalPages) this.lowStockModalPage++;
+
+  }
+
+
+
+  private effectiveKpiPaymentStatus(): string | undefined {
+
+    if (this.detailKpiId === 'kpi-settled') return 'settled';
+
+    if (this.detailKpiId === 'kpi-floating') return 'floating';
+
+    if (this.kpiFilterPaymentStatus === 'all') return undefined;
+
+    return this.kpiFilterPaymentStatus;
 
   }
 
@@ -756,17 +1036,7 @@ export class PosAdminDashboardComponent implements OnInit {
 
         if (this.detailModalOpen && this.isTransactionKpi) {
 
-          const { from, to } = this.periodRange();
-
-          let paymentStatus: string | undefined;
-
-          if (this.detailKpiId === 'kpi-settled') paymentStatus = 'settled';
-
-          if (this.detailKpiId === 'kpi-floating') paymentStatus = 'floating';
-
-          const tx = await this.pos.getSaleTransactions(from, to, paymentStatus, 100, 0);
-
-          this.detailTransactions = tx.success ? (tx.data ?? []) : [];
+          await this.loadKpiTransactions();
 
         }
 

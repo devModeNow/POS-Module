@@ -12,7 +12,12 @@
 
   <div class="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_220px]">
     <div class="flex justify-center rounded-lg border border-gray-200 bg-gray-100 p-4 dark:border-gray-700 dark:bg-gray-950">
-      <div class="template-canvas w-full rounded border border-gray-300 bg-white dark:border-gray-700" [ngClass]="canvasWidthClass">
+      <div class="template-canvas relative w-full rounded border border-gray-300 bg-white dark:border-gray-700" [ngClass]="canvasWidthClass">
+        @if (logoUrl) {
+          <div class="pointer-events-none absolute left-0 right-0 top-1 z-10 flex justify-center">
+            <img [src]="logoUrl" alt="Company logo" class="max-h-10 max-w-[60%] object-contain opacity-90" />
+          </div>
+        }
         @for (el of _elements; track el.id) {
           <div class="template-element"
             [class.selected]="selectedId === el.id"
@@ -52,7 +57,7 @@
             class="w-full rounded border px-2 py-1 text-xs dark:border-gray-700 dark:bg-gray-800" />
         }
         <p class="mt-3 text-[10px] text-gray-400">Drag elements on the canvas to reposition.</p>
-        <p class="mt-1 text-[10px] text-gray-400" ngNonBindable>Placeholders: {{businessName}}, {{businessAddress}}, {{items}}, {{total}}, {{footer}}</p>
+        <p class="mt-1 text-[10px] text-gray-400" ngNonBindable>Placeholders: {{businessName}}, {{businessAddress}}, {{cashier}}, {{saleDate}}, {{paymentMethod}}, {{items}}, {{total}}, {{footer}}</p>
       </div>
     }
   </div>

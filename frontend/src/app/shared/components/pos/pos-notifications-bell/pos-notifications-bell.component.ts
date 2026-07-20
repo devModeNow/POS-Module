@@ -42,6 +42,7 @@ export class PosNotificationsBellComponent implements OnInit, OnDestroy {
 
   isOpen = false;
   loading = false;
+  markingAll = false;
   unreadCount = 0;
   items: PosNotification[] = [];
   readFilter: 'all' | 'unread' | 'read' = 'all';
@@ -219,6 +220,18 @@ export class PosNotificationsBellComponent implements OnInit, OnDestroy {
       this.loading = false;
       this.panelView?.detectChanges();
       this.syncPanelPosition();
+    }
+  }
+
+  async markAllRead(): Promise<void> {
+    if (this.unreadCount === 0 || this.markingAll) return;
+    this.markingAll = true;
+    try {
+      await this.comms.markNotificationsRead();
+      await Promise.all([this.refreshUnread(), this.loadItems()]);
+    } finally {
+      this.markingAll = false;
+      this.panelView?.detectChanges();
     }
   }
 

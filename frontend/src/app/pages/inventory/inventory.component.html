@@ -103,12 +103,21 @@
         </div>
         <div class="flex gap-2">
           @if (!isPosOrg) {
-            <app-button *appCan="{ menu: 'inventory', permission: 'canCreate' }" size="sm" variant="outline" (btnClick)="showImportModal = true">Import CSV</app-button>
+            <button type="button" *appCan="{ menu: 'inventory', permission: 'canCreate' }" (click)="showImportModal = true" title="Import CSV"
+              class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+              <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
+            </button>
             <app-button *appCan="{ menu: 'inventory', permission: 'canCreate' }" size="sm" (btnClick)="openCreateItem()">Add Item</app-button>
           }
           @if (isPosOrg) {
-            <app-button *appCan="{ menu: 'inventory', permission: 'canRead' }" size="sm" variant="outline" (btnClick)="exportPosInventory()">Export</app-button>
-            <app-button *appCan="{ menu: 'inventory', permission: 'canCreate' }" size="sm" variant="outline" (btnClick)="openPosImportModal()">Import</app-button>
+            <button type="button" *appCan="{ menu: 'inventory', permission: 'canRead' }" (click)="exportPosInventory()" title="Export"
+              class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+              <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M16 8l-4-4-4 4M12 4v12"/></svg>
+            </button>
+            <button type="button" *appCan="{ menu: 'inventory', permission: 'canCreate' }" (click)="openPosImportModal()" title="Import"
+              class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+              <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2M7 10l5 5 5-5M12 15V3"/></svg>
+            </button>
           }
           @if (isPosOrg && !isDeletedView) {
             <button type="button" *appCan="{ menu: 'inventory', permission: 'canCreate' }" (click)="openCreateItem()" title="Add product"
@@ -441,7 +450,10 @@
           <input type="text" [(ngModel)]="poFilterSupplier" (ngModelChange)="loadPO()" placeholder="Filter by supplier..."
             class="w-48 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-300" />
         </div>
-        <app-button *appCan="{ menu: 'inventory', permission: 'canCreate' }" size="sm" (btnClick)="openCreatePO()">New PO</app-button>
+        <button type="button" *appCan="{ menu: 'inventory', permission: 'canCreate' }" (click)="openCreatePO()" title="New purchase order"
+          class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-brand-500 text-white hover:bg-brand-600">
+          <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+        </button>
       </div>
       <div class="mt-4 overflow-x-auto">
         <table class="w-full min-w-[700px]">
@@ -484,7 +496,14 @@
       <div class="mt-5">
         <div class="mb-4 flex items-center justify-between">
           <h4 class="text-sm font-semibold text-gray-700 dark:text-gray-200">Low Stock Items</h4>
-          <app-button size="sm" variant="outline" (btnClick)="loadLowStock()">Refresh</app-button>
+          <button type="button" (click)="loadLowStock()" [disabled]="isLoadingLowStock" title="Refresh"
+            class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800">
+            @if (isLoadingLowStock) {
+              <svg class="h-4 w-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>
+            } @else {
+              <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            }
+          </button>
         </div>
         @if (isLoadingLowStock) {
           <p class="text-sm text-gray-500 dark:text-gray-400">Loading...</p>
@@ -853,7 +872,7 @@
                   class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
                 @if (poItemSearchResults[i]?.length) {
                   <div class="absolute left-0 top-full z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
-                    @for (product of poItemSearchResults[i]; track product.id) {
+                    @for (product of poItemSearchResults[i]; track $index) {
                       <button type="button" (click)="selectPOItemProduct(i, product)"
                         class="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
                         <span class="text-gray-800 dark:text-gray-200">{{ product.partName }}</span>

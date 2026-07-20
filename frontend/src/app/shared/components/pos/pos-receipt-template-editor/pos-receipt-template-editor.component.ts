@@ -52,7 +52,8 @@ export class PosReceiptTemplateEditorComponent {
     return [
       { id: 'hdr', type: 'text', content: '{{businessName}}', x: 50, y: 8, fontSize: 14, align: 'center', bold: true },
       { id: 'addr', type: 'text', content: '{{businessAddress}}', x: 50, y: 18, fontSize: 10, align: 'center' },
-      { id: 'items', type: 'text', content: '{{items}}', x: 5, y: 35, fontSize: 11, align: 'left' },
+      { id: 'meta', type: 'text', content: '{{saleDate}}\nCashier: {{cashier}}\n{{paymentMethod}}', x: 50, y: 28, fontSize: 9, align: 'center' },
+      { id: 'items', type: 'text', content: '{{items}}', x: 5, y: 42, fontSize: 11, align: 'left' },
       { id: 'total', type: 'text', content: 'Total: {{total}}', x: 5, y: 75, fontSize: 12, align: 'left', bold: true },
       { id: 'footer', type: 'text', content: '{{footer}}', x: 50, y: 90, fontSize: 10, align: 'center' },
     ];
@@ -174,10 +175,17 @@ export class PosReceiptTemplateEditorComponent {
 
   previewContent(el: PosReceiptTemplateElement): string {
     return el.content
-      .replace('{{businessName}}', 'Your Store')
-      .replace('{{businessAddress}}', '123 Main St')
-      .replace('{{items}}', 'Item A x1 .... ₱100\nItem B x2 .... ₱200')
-      .replace('{{total}}', '₱300.00')
-      .replace('{{footer}}', 'Thank you!');
+      .replace(/\{\{\s*businessName\s*\}\}/gi, 'Your Store')
+      .replace(/\{\{\s*storeName\s*\}\}/gi, 'Your Store')
+      .replace(/\{\{\s*companyName\s*\}\}/gi, 'Your Store')
+      .replace(/\{\{\s*businessAddress\s*\}\}/gi, '123 Main St')
+      .replace(/\{\{\s*cashier\s*\}\}/gi, 'Jane Cashier')
+      .replace(/\{\{\s*saleDate\s*\}\}/gi, new Date().toLocaleString('en-PH'))
+      .replace(/\{\{\s*paymentMethod\s*\}\}/gi, 'Cash')
+      .replace(/\{\{\s*items\s*\}\}/gi, 'Item A x1 .... ₱100\nItem B x2 .... ₱200')
+      .replace(/\{\{\s*total\s*\}\}/gi, '₱300.00')
+      .replace(/\{\{\s*amountPaid\s*\}\}/gi, '₱500.00')
+      .replace(/\{\{\s*change\s*\}\}/gi, '₱200.00')
+      .replace(/\{\{\s*footer\s*\}\}/gi, 'Thank you!');
   }
 }

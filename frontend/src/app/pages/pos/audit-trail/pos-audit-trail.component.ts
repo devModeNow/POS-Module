@@ -6,6 +6,8 @@ import { PageBreadcrumbComponent } from '../../../shared/components/common/page-
 
 type AuditRow = {
   id: number;
+  orgId?: number | null;
+  userId?: number | null;
   username: string | null;
   action: string;
   entityType: string | null;
@@ -27,6 +29,8 @@ export class PosAuditTrailComponent implements OnInit {
   error = '';
   logs: AuditRow[] = [];
   lastUpdatedLabel = '';
+  selectedLog: AuditRow | null = null;
+  detailModalOpen = false;
 
   constructor(
     private readonly pos: PosService,
@@ -51,6 +55,25 @@ export class PosAuditTrailComponent implements OnInit {
       parts.push(`Reason: ${d['reason']}`);
     }
     return parts.length ? parts.join(' · ') : '—';
+  }
+
+  openDetail(row: AuditRow): void {
+    this.selectedLog = row;
+    this.detailModalOpen = true;
+  }
+
+  closeDetail(): void {
+    this.detailModalOpen = false;
+    this.selectedLog = null;
+  }
+
+  prettyDetails(row: AuditRow | null): string {
+    if (!row?.details) return '—';
+    try {
+      return JSON.stringify(row.details, null, 2);
+    } catch {
+      return String(row.details);
+    }
   }
 
   async load(): Promise<void> {

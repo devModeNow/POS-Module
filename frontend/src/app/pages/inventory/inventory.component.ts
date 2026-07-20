@@ -1599,6 +1599,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
     if (this.poItemSearchTimers[index]) clearTimeout(this.poItemSearchTimers[index]);
     // Clear selection if user is typing again
     this.poItems[index].inventoryId = null;
+    this.poItems[index].variantId = null;
     if (q.length < 2) { this.poItemSearchResults[index] = []; return; }
     this.poItemSearchTimers[index] = setTimeout(() => void this.searchPOItem(index, q), 300);
   }
@@ -1613,7 +1614,13 @@ export class InventoryComponent implements OnInit, OnDestroy {
   }
 
   selectPOItemProduct(index: number, product: InventoryItem): void {
-    this.poItems[index].inventoryId = product.id;
+    if (product.variantId) {
+      this.poItems[index].variantId = product.variantId;
+      this.poItems[index].inventoryId = null;
+    } else {
+      this.poItems[index].inventoryId = product.id;
+      this.poItems[index].variantId = null;
+    }
     this.poItems[index].itemName = product.partName;
     this.poItems[index].brand = product.brand ?? '';
     this.poItems[index].category = product.category ?? '';
@@ -1650,6 +1657,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
             unitCost: Number(i.unitCost) || 0,
           };
           if (i.inventoryId) item.inventoryId = Number(i.inventoryId);
+          if (i.variantId) item.variantId = Number(i.variantId);
           if (i.brand?.trim()) item.brand = i.brand.trim();
           if (i.category?.trim()) item.category = i.category.trim();
           return item;
@@ -1683,6 +1691,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
         items: po.items.map((i) => ({
           id: i.id,
           inventoryId: i.inventoryId ?? undefined,
+          variantId: i.variantId ?? undefined,
           itemName: i.itemName || (i as any).productName || '',
           brand: i.brand || undefined,
           category: i.category || undefined,
@@ -2155,5 +2164,5 @@ export class InventoryComponent implements OnInit, OnDestroy {
     return { supplierId: null as number | null, comments: '', orderDate: today, expectedDate: today };
   }
   private poItemUid = 0;
-  private emptyPOItem(): PurchaseOrderItem & { _uid: number } { return { _uid: ++this.poItemUid, itemName: '', brand: '', category: '', quantity: 1, unitCost: 0, inventoryId: null }; }
+  private emptyPOItem(): PurchaseOrderItem & { _uid: number } { return { _uid: ++this.poItemUid, itemName: '', brand: '', category: '', quantity: 1, unitCost: 0, inventoryId: null, variantId: null }; }
 }

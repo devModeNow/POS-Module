@@ -28,10 +28,13 @@ import {
 import { PosChatUiService } from '../../../services/pos-chat-ui.service';
 import { PosService } from '../../../services/pos.service';
 import { RbacService } from '../../../services/rbac.service';
+import { ConfirmDialogComponent } from '../../ui/confirm-dialog/confirm-dialog.component';
 
 const HIDDEN_KEY = 'pos-chat-hidden';
 const HEARTBEAT_MS = 2 * 60 * 1000;
 const USERS_POLL_MS = 15 * 1000;
+const MESSAGE_POLL_MS = 9 * 1000;
+const LONG_PRESS_MS = 500;
 
 
 
@@ -41,7 +44,7 @@ const USERS_POLL_MS = 15 * 1000;
 
   standalone: true,
 
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, ConfirmDialogComponent],
 
   templateUrl: './pos-chat-widget.component.html',
 
@@ -128,6 +131,19 @@ export class PosChatWidgetComponent implements OnInit, OnDestroy {
   selectedImagePreview: string | null = null;
   lightboxUrl: string | null = null;
 
+  contextMenuMessage: PosChatMessage | null = null;
+  contextMenuX = 0;
+  contextMenuY = 0;
+
+  confirmOpen = false;
+  confirmTitle = 'Confirm';
+  confirmMessage = '';
+  confirmLabel = 'Confirm';
+  confirmVariant: 'primary' | 'danger' = 'danger';
+  private confirmAction: (() => Promise<void>) | null = null;
+
+  private longPressTimer?: ReturnType<typeof setTimeout>;
+
 
 
   @ViewChild('chatPanel') chatPanelRef?: ElementRef<HTMLElement>;
@@ -174,11 +190,13 @@ export class PosChatWidgetComponent implements OnInit, OnDestroy {
 
     void this.reloadThread(true);
 
-    this.pollTimer = setInterval(() => void this.reloadThread(false), 5000);
+    this.pollTimer = setInterval(() => {
+      if (this.shouldPollMessages()) void this.reloadThread(false);
+    }, MESSAGE_POLL_MS);
 
     this.usersPollTimer = setInterval(() => {
 
-      if (this.expanded || this.privateRecipientId) void this.loadUsers();
+      if (this.expanded || this.privateRecipientId) void this.loadUsers(true);
 
     }, USERS_POLL_MS);
 
@@ -195,6 +213,8 @@ export class PosChatWidgetComponent implements OnInit, OnDestroy {
     if (this.usersPollTimer) clearInterval(this.usersPollTimer);
 
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+
+    this.cancelLongPress();
 
     this.openSub?.unsubscribe();
 
@@ -220,10 +240,28 @@ export class PosChatWidgetComponent implements OnInit, OnDestroy {
 
     if (r?.success && (this.expanded || this.privateRecipientId)) {
 
-      void this.loadUsers();
+      void this.loadUsers(true);
 
     }
 
+  }
+
+
+
+  private hasActivePrivateChat(): boolean {
+    return this.chatMode === 'private' && !!this.privateRecipientId;
+  }
+
+  private shouldPollMessages(): boolean {
+    if (typeof document !== 'undefined' && document.hidden) return false;
+    return this.expanded || this.hasActivePrivateChat();
+  }
+
+  @HostListener('document:visibilitychange')
+  onVisibilityChange(): void {
+    if (typeof document !== 'undefined' && !document.hidden && this.shouldPollMessages()) {
+      void this.reloadThread(false);
+    }
   }
 
 
@@ -265,6 +303,9 @@ export class PosChatWidgetComponent implements OnInit, OnDestroy {
   @HostListener('document:mousedown', ['$event'])
   onDocumentClick(event: MouseEvent): void {
     const target = event.target as HTMLElement;
+    if (this.contextMenuMessage && !target.closest?.('.chat-context-menu')) {
+      this.closeContextMenu();
+    }
     if (this.lightboxUrl) return;
     if (!this.expanded || this.hidden) return;
     if (this.chatPanelRef?.nativeElement.contains(target)) return;
@@ -274,6 +315,10 @@ export class PosChatWidgetComponent implements OnInit, OnDestroy {
 
   @HostListener('document:keydown.escape')
   onEscape(): void {
+    if (this.contextMenuMessage) {
+      this.closeContextMenu();
+      return;
+    }
     if (this.lightboxUrl) {
       this.closeLightbox();
     }
@@ -441,9 +486,9 @@ export class PosChatWidgetComponent implements OnInit, OnDestroy {
 
 
 
-  async loadUsers(): Promise<void> {
+  async loadUsers(silent = false): Promise<void> {
 
-    this.usersLoading = true;
+    if (!silent) this.usersLoading = true;
 
     try {
 
@@ -465,7 +510,7 @@ export class PosChatWidgetComponent implements OnInit, OnDestroy {
 
     } finally {
 
-      this.usersLoading = false;
+      if (!silent) this.usersLoading = false;
 
     }
 
@@ -571,6 +616,8 @@ export class PosChatWidgetComponent implements OnInit, OnDestroy {
 
     }
 
+    let appended = false;
+
     try {
 
       const r = await this.comms.listChatMessages(
@@ -589,6 +636,8 @@ export class PosChatWidgetComponent implements OnInit, OnDestroy {
 
         this.messages = batch;
 
+        appended = batch.length > 0;
+
       } else if (batch.length) {
 
         const existingIds = new Set(this.messages.map((m) => m.id));
@@ -598,6 +647,8 @@ export class PosChatWidgetComponent implements OnInit, OnDestroy {
         if (fresh.length) {
 
           this.messages = [...this.messages, ...fresh];
+
+          appended = true;
 
         }
 
@@ -609,7 +660,13 @@ export class PosChatWidgetComponent implements OnInit, OnDestroy {
 
       }
 
-      this.scrollMessagesToBottom();
+      // Only autoscroll when the thread actually grew, so a background poll
+      // with no new messages doesn't yank the user's scroll position.
+      if (appended) {
+
+        this.scrollMessagesToBottom();
+
+      }
 
     } finally {
 
@@ -806,6 +863,122 @@ export class PosChatWidgetComponent implements OnInit, OnDestroy {
 
     return Number(msg.senderId) === uid;
 
+  }
+
+
+
+  canDeleteMessage(msg: PosChatMessage): boolean {
+    return this.isOwnMessage(msg) || !this.rbac.isCashier();
+  }
+
+  onMessageContextMenu(event: MouseEvent, msg: PosChatMessage): void {
+    if (!this.canDeleteMessage(msg)) return;
+    event.preventDefault();
+    this.openContextMenu(event.clientX, event.clientY, msg);
+  }
+
+  onMessageTouchStart(event: TouchEvent, msg: PosChatMessage): void {
+    if (!this.canDeleteMessage(msg)) return;
+    const touch = event.touches[0];
+    const x = touch?.clientX ?? 0;
+    const y = touch?.clientY ?? 0;
+    if (this.longPressTimer) clearTimeout(this.longPressTimer);
+    this.longPressTimer = setTimeout(() => this.openContextMenu(x, y, msg), LONG_PRESS_MS);
+  }
+
+  cancelLongPress(): void {
+    if (this.longPressTimer) {
+      clearTimeout(this.longPressTimer);
+      this.longPressTimer = undefined;
+    }
+  }
+
+  private openContextMenu(x: number, y: number, msg: PosChatMessage): void {
+    const menuWidth = 150;
+    const menuHeight = 44;
+    const margin = 8;
+    this.contextMenuMessage = msg;
+    this.contextMenuX = Math.max(margin, Math.min(x, window.innerWidth - menuWidth - margin));
+    this.contextMenuY = Math.max(margin, Math.min(y, window.innerHeight - menuHeight - margin));
+  }
+
+  closeContextMenu(): void {
+    this.contextMenuMessage = null;
+  }
+
+  async deleteContextMenuMessage(): Promise<void> {
+    const msg = this.contextMenuMessage;
+    this.closeContextMenu();
+    if (!msg) return;
+    this.openConfirm({
+      title: 'Delete message',
+      message: 'Delete this message? This cannot be undone.',
+      confirmLabel: 'Delete',
+      variant: 'danger',
+      action: async () => {
+        const r = await this.comms.deleteChatMessage(msg.id);
+        if (r?.success) {
+          this.messages = this.messages.filter((m) => m.id !== msg.id);
+        } else {
+          this.sendError = r?.message ?? 'Failed to delete message';
+        }
+      },
+    });
+  }
+
+  get canClearChat(): boolean {
+    if (this.chatMode === 'private') return !!this.privateRecipientId && !this.showPrivateUserPicker;
+    return true;
+  }
+
+  async clearChat(): Promise<void> {
+    if (!this.canClearChat) return;
+    const label =
+      this.chatMode === 'private'
+        ? `your conversation with ${this.privateRecipientName || 'this person'}`
+        : 'the entire team chat for everyone';
+    this.openConfirm({
+      title: 'Clear chat',
+      message: `Clear ${label}? This cannot be undone.`,
+      confirmLabel: 'Clear chat',
+      variant: 'danger',
+      action: async () => {
+        const r = await this.comms.clearChat(this.chatMode, this.privateRecipientId ?? undefined);
+        if (r?.success) {
+          this.messages = [];
+          this.lastMessageId = 0;
+        } else {
+          this.sendError = r?.message ?? 'Failed to clear chat';
+        }
+      },
+    });
+  }
+
+  private openConfirm(opts: {
+    title: string;
+    message: string;
+    confirmLabel: string;
+    variant: 'primary' | 'danger';
+    action: () => Promise<void>;
+  }): void {
+    this.confirmTitle = opts.title;
+    this.confirmMessage = opts.message;
+    this.confirmLabel = opts.confirmLabel;
+    this.confirmVariant = opts.variant;
+    this.confirmAction = opts.action;
+    this.confirmOpen = true;
+  }
+
+  async onConfirmAccepted(): Promise<void> {
+    const action = this.confirmAction;
+    this.confirmOpen = false;
+    this.confirmAction = null;
+    if (action) await action();
+  }
+
+  onConfirmCancelled(): void {
+    this.confirmOpen = false;
+    this.confirmAction = null;
   }
 
 

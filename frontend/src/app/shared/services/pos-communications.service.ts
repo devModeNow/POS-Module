@@ -136,6 +136,23 @@ export class PosCommunicationsService {
     return r.data;
   }
 
+  async deleteChatMessage(id: number) {
+    const r = await apiClient.delete<{ success: boolean; message?: string }>(
+      `/api/pos/communications/chat/messages/${id}`,
+    );
+    return r.data;
+  }
+
+  async clearChat(mode: 'team' | 'private' = 'team', recipientId?: number) {
+    const body: Record<string, unknown> = { mode };
+    if (mode === 'private' && recipientId) body['recipientId'] = recipientId;
+    const r = await apiClient.post<{ success: boolean; message?: string }>(
+      '/api/pos/communications/chat/clear',
+      body,
+    );
+    return r.data;
+  }
+
   async listNotifications() {
     const r = await apiClient.get<{ success: boolean; data?: PosNotification[]; message?: string }>(
       '/api/pos/communications/notifications',

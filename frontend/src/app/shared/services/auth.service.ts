@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, Injector } from '@angular/core';
 import { apiClient } from './api-client';
 import {
   clearAccessToken,
@@ -32,6 +32,7 @@ export class AuthService {
   constructor(
     private readonly rbacService: RbacService,
     private readonly orgService: OrgService,
+    private readonly injector: Injector,
   ) {}
 
   async login(username: string, password: string, persist = false): Promise<LoginResponse> {
@@ -41,6 +42,7 @@ export class AuthService {
       setSessionTokens(response.data.accessToken, response.data.refreshToken, persist);
       this.syncOrgContext();
       void this.rbacService.syncEffectivePermissions();
+      void this.connectPrintHubAfterAuth();
     }
 
     return response.data;
@@ -64,6 +66,7 @@ export class AuthService {
       setSessionTokens(response.data.accessToken, response.data.refreshToken, isSessionPersistent());
       await this.rbacService.syncEffectivePermissions();
       this.syncOrgContext();
+      void this.connectPrintHubAfterAuth();
     }
 
     return response.data;
@@ -76,5 +79,20 @@ export class AuthService {
       code: this.rbacService.getOrgCode(),
       name: this.rbacService.getOrgName(),
     });
+  }
+
+  /**
+   * POS orgs: restore/auto-connect PrintHub Bluetooth after login or session refresh.
+   * Lazy-injects print services to avoid eager circular deps.
+   */
+  private async connectPrintHubAfterAuth(): Promise<void> {
+    try {
+      if (!this.rbacService.isPosOrg() && !this.orgService.isPosOrg()) return;
+      const { PosReceiptPrintService } = await import('./pos-receipt-print.service');
+      const receiptPrint = this.injector.get(PosReceiptPrintService);
+      await receiptPrint.restoreSavedPrinterConnection();
+    } catch {
+      /* printer optional at login — layout watchdog will retry */
+    }
   }
 }

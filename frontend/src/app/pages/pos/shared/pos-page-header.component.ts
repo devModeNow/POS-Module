@@ -34,7 +34,7 @@ export class PosPageHeaderComponent implements OnInit {
   confirmOpen = false;
   printerModalOpen = false;
   currentPath = '';
-  printerConnectionType = 'browser';
+  printerConnectionType = 'printhub';
   paperWidth = '58mm';
   printHubConnecting = false;
   readonly isCashierMode: boolean;
@@ -64,7 +64,8 @@ export class PosPageHeaderComponent implements OnInit {
     if (!this.isPosOrg || !this.showPosTools) return false;
     if (this.printerConnectionType === 'printhub') return true;
     try {
-      return localStorage.getItem('pos.printerConnectionType') === 'printhub';
+      return localStorage.getItem('pos.printerConnectionType') === 'printhub'
+        || !!localStorage.getItem('pos.printhub.btDeviceId');
     } catch {
       return false;
     }
@@ -122,7 +123,7 @@ export class PosPageHeaderComponent implements OnInit {
     this.cashierName = this.rbac.getDisplayName();
     this.companyName = this.orgService.getContext().name ?? 'POS';
     void this.loadCompanyName();
-    void this.loadPrinterConnectionType();
+    void this.loadPrinterConnectionType().then(() => this.autoConnectPrintHub());
     this.router.events
       .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
       .subscribe((e) => {
@@ -134,18 +135,33 @@ export class PosPageHeaderComponent implements OnInit {
     try {
       const r = await this.comms.getPrinterSettings();
       const item = r?.item ?? {};
-      this.printerConnectionType = String(item['posPrinterConnectionType'] ?? 'browser');
+      let type = String(item['posPrinterConnectionType'] ?? 'printhub');
+      if (type === 'bluetooth' || type === 'mharmal' || !type) type = 'printhub';
+      try {
+        if (localStorage.getItem('pos.printerConnectionType') === 'printhub') type = 'printhub';
+        if (localStorage.getItem('pos.printhub.btDeviceId')) type = 'printhub';
+      } catch {
+        /* ignore */
+      }
+      this.printerConnectionType = type;
       this.paperWidth = String(item['posReceiptPaperWidth'] ?? '58mm');
     } catch {
-      this.printerConnectionType = 'browser';
+      this.printerConnectionType = 'printhub';
     }
+  }
+
+  private async autoConnectPrintHub(): Promise<void> {
+    if (!this.showPrintHubConnect) return;
+    if (this.printHub.isConnected()) return;
+    await this.printHub.autoConnect(this.paperWidth);
   }
 
   async connectPrintHub(): Promise<void> {
     if (this.printHubConnecting) return;
     this.printHubConnecting = true;
     try {
-      const r = await this.printHub.connect(this.paperWidth, 'bluetooth');
+      // Always open the Bluetooth picker so users can switch printers.
+      const r = await this.printHub.connect(this.paperWidth, 'bluetooth', { forcePicker: true });
       if (r.success) {
         try {
           localStorage.setItem('pos.printerConnectionType', 'printhub');

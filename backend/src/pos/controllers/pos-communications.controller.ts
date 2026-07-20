@@ -1,7 +1,9 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  Param,
   Patch,
   Post,
   Query,
@@ -16,6 +18,7 @@ import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { PosChatService } from '../services/pos-chat.service';
 import { PosNotificationsService } from '../services/pos-notifications.service';
 import {
+  isPosCashier,
   posOrgId,
   posUserId,
   receivesPosAdminNotifications,
@@ -94,6 +97,18 @@ export class PosCommunicationsController {
       }
     }
     return result;
+  }
+
+  @Delete('chat/messages/:id')
+  deleteChatMessage(@Param('id') id: string, @Req() req: AuthReq) {
+    return this.chatService.deleteMessage(posOrgId(req), posUserId(req), !isPosCashier(req), Number(id));
+  }
+
+  @Post('chat/clear')
+  clearChat(@Body() body: { mode?: string; recipientId?: string | number }, @Req() req: AuthReq) {
+    const mode = body?.mode === 'private' ? 'private' : 'team';
+    const recipientId = body?.recipientId ? Number(body.recipientId) : undefined;
+    return this.chatService.clearChat(posOrgId(req), posUserId(req), mode, recipientId);
   }
 
   @Get('notifications')

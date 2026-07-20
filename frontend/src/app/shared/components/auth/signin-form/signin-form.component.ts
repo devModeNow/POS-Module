@@ -1,4 +1,3 @@
-
 import { Component } from '@angular/core';
 import { LabelComponent } from '../../form/label/label.component';
 import { CheckboxComponent } from '../../form/input/checkbox.component';
@@ -9,6 +8,8 @@ import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AuthService } from '../../../services/auth.service';
 import { RbacService } from '../../../services/rbac.service';
+import { PosPrintHubService } from '../../../services/pos-printhub.service';
+import { PosReceiptPrintService } from '../../../services/pos-receipt-print.service';
 import axios from 'axios';
 
 @Component({
@@ -29,6 +30,8 @@ export class SigninFormComponent {
     private readonly authService: AuthService,
     private readonly rbacService: RbacService,
     private readonly router: Router,
+    private readonly printHub: PosPrintHubService,
+    private readonly receiptPrint: PosReceiptPrintService,
   ) {}
 
   showPassword = false;
@@ -59,6 +62,9 @@ export class SigninFormComponent {
         return;
       }
 
+      // Use the login click gesture to auto-connect PrintHub for POS users.
+      await this.connectPrintHubOnLogin();
+
       await this.router.navigateByUrl(this.getPostLoginRoute());
     } catch (error) {
       if (axios.isAxiosError(error)) {
@@ -76,6 +82,30 @@ export class SigninFormComponent {
       }
     } finally {
       this.isSubmitting = false;
+    }
+  }
+
+  /**
+   * After login: silent reconnect if previously paired; otherwise open the Bluetooth
+   * picker while the Sign In click gesture is still valid (Chrome/Edge requirement).
+   */
+  private async connectPrintHubOnLogin(): Promise<void> {
+    try {
+      if (!this.rbacService.isPosOrg()) return;
+
+      await this.receiptPrint.restoreSavedPrinterConnection();
+      if (this.printHub.isConnected()) return;
+
+      // Prefer previously paired device; only open picker when none can be restored.
+      let paper = '58mm';
+      try {
+        paper = localStorage.getItem('pos.receiptPaperWidth') || '58mm';
+      } catch {
+        /* ignore */
+      }
+      await this.printHub.connect(paper, 'bluetooth');
+    } catch {
+      /* non-blocking — user can connect from the header later */
     }
   }
 

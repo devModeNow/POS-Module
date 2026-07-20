@@ -205,4 +205,30 @@
    - In posadmin dashboard -> reports, the refresh button size looks off in size, its bigger, make sure to make it in uniform size like other elements, also just an refresh icon to it and remove the text "refresh" same thing in the main dashboard refresh button.
    - Make sure to fix all errors and bugs you encounter while working on this task.
    - Make sure to check all taskss under this continuation before setting it to done because in the past there are tasks that has not been done so be sure to check if its all done properly and without errors and bugs.
+   //Continuation 3.7
+   - In both dashboard, make the print settings being able to save because currently when you save it, it will reset again once page is loaded so be sure to retain its saved settings.
+   - In both dashboard, the receipt template editor is not saving, when I am printing it is showing different layout.
+   - In posadmin dashboard, when you click the cards there will popup right? Now I want those popups to have pagination and filters so when many data shows it will be manageable to view.
+   - Fix the messaging feature, its loading like every 10 seconds.
+   - In the messaging feature, add a delete message feature, I want it to activate when the message itself is right clicked, and when in tablet mode or touchscreen device it should be activated when the message is long pressed.
+   - In the messaging feature, add a "Clear Chat" feature.
+   - In all dashboard, update all text buttons into just icons, make sure that all icons will be using is the right and accurate icon also add a tooltip so that they will know what is the function of that icon.
+   - In both dashboard printer settings, remove other Printer connection type in the dropdown, just remain the "PrintHub (Bluetooth) - make it default","Network","USB Local" and "Browse Dialog".
+   - In posadmin -> Settings -> Audit Trail, make each logs clickable to show its more detailed info about a log.
+   - In posadmin, add the PrintHub connection connector and indicator like the one in tha cashier dashboard, make sure that when its save it will retain its status as saved even the page is reloaded.
+   - In all dashboard, in the notification popup, add a "Mark all as read" feature.
+   - In posadmin dashboard -> Inventory - Purchase Order, make sure to connected it to inventory since its the other way on adding product stocks.
+   - In login page, when you first open it will show a different logo, make sure to just show the logo saved and uploaded in the company profile settings.
+   - In all dashboard printer template settings, make it default to show the company logo, just add a hide,unhide checkbox.
+   - Create a Memory.md file and save all you memory logs or things you/we already did so that next time or If other agent will read all the things we've done it will more easier and it will prevent using too many tokens when learning.
+   - Make sure to fix all errors and bugs you encounter while working on this task.
+   - Make sure to check all taskss under this continuation before setting it to done because in the past there are tasks that has not been done so be sure to check if its all done properly and without errors and bugs. 
+   //Continuation 3.8
+   - In the chat feature, when deleting a message, when confirming before deleting, use a more modern way of alert, because as of now I see its just a simple js alert which is not appealing.
+   - In both dashboard, add a feature that can be run in the background that checks if a printer is paired, If not run a code in the background that pair and connect to the printer automatically.
+   - In printer template, the logo shows but in print output the logo is not showing and the text in the header which is store name and text below it are not centered which is centered in the template.
+   - the mark all as read is missing in the notification popup.
+   - the company logo on the login is too small.
+   - Make sure to fix all errors and bugs you encounter while working on this task.
+   - Make sure to check all taskss under this continuation before setting it to done because in the past there are tasks that has not been done so be sure to check if its all done properly and without errors and bugs. 
 

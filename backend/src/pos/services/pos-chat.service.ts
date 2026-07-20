@@ -70,6 +70,10 @@ export class PosChatService {
         ADD COLUMN IF NOT EXISTS attachment_type TEXT
     `);
     await this.db.query(`
+      ALTER TABLE public.tblpos_chat_messages
+        ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ
+    `);
+    await this.db.query(`
       CREATE TABLE IF NOT EXISTS public.tblpos_staff_presence (
         user_id    BIGINT NOT NULL,
         org_id     BIGINT NOT NULL,
@@ -196,6 +200,7 @@ export class PosChatService {
            ${this.roleJoinSql}
            WHERE m.org_id = $1
              AND m.id > $4
+             AND m.deleted_at IS NULL
              AND (
                (m.sender_id = $2 AND m.recipient_id = $3)
                OR (m.sender_id = $3 AND m.recipient_id = $2)
@@ -235,6 +240,7 @@ export class PosChatService {
          WHERE m.org_id = $1
            AND m.id > $2
            AND m.recipient_id IS NULL
+           AND m.deleted_at IS NULL
          ORDER BY m.id ASC
          LIMIT $3`,
         [orgId, sinceId, limit],
@@ -318,6 +324,69 @@ export class PosChatService {
       return { success: true, data: full ?? inserted, recipientId: peer };
     } catch (e) {
       return { success: false, message: e instanceof Error ? e.message : 'Failed to send message' };
+    }
+  }
+
+  async deleteMessage(orgId: number, userId: number, isAdmin: boolean, messageId: number) {
+    if (!orgId || !userId) {
+      return { success: false, message: 'Invalid session' };
+    }
+    const id = Number(messageId) || 0;
+    if (!id) return { success: false, message: 'Invalid message id' };
+    try {
+      await this.ensureSchema();
+      const existing = await this.db.query<{ senderId: number }>(
+        `SELECT sender_id AS "senderId"
+         FROM tblpos_chat_messages
+         WHERE id = $1 AND org_id = $2 AND deleted_at IS NULL`,
+        [id, orgId],
+      );
+      const row = existing.rows[0];
+      if (!row) return { success: false, message: 'Message not found' };
+      if (!isAdmin && Number(row.senderId) !== Number(userId)) {
+        return { success: false, message: 'You can only delete your own messages' };
+      }
+      await this.db.query(
+        `UPDATE tblpos_chat_messages SET deleted_at = NOW() WHERE id = $1 AND org_id = $2`,
+        [id, orgId],
+      );
+      return { success: true };
+    } catch (e) {
+      return { success: false, message: e instanceof Error ? e.message : 'Failed to delete message' };
+    }
+  }
+
+  async clearChat(orgId: number, userId: number, mode: 'team' | 'private', recipientId?: number) {
+    if (!orgId || !userId) {
+      return { success: false, message: 'Invalid session' };
+    }
+    try {
+      await this.ensureSchema();
+      if (mode === 'private') {
+        const peer = Number(recipientId) || 0;
+        if (!peer) return { success: false, message: 'Select a user for private chat' };
+        await this.db.query(
+          `UPDATE tblpos_chat_messages
+           SET deleted_at = NOW()
+           WHERE org_id = $1
+             AND deleted_at IS NULL
+             AND (
+               (sender_id = $2 AND recipient_id = $3)
+               OR (sender_id = $3 AND recipient_id = $2)
+             )`,
+          [orgId, userId, peer],
+        );
+        return { success: true };
+      }
+      await this.db.query(
+        `UPDATE tblpos_chat_messages
+         SET deleted_at = NOW()
+         WHERE org_id = $1 AND recipient_id IS NULL AND deleted_at IS NULL`,
+        [orgId],
+      );
+      return { success: true };
+    } catch (e) {
+      return { success: false, message: e instanceof Error ? e.message : 'Failed to clear chat' };
     }
   }
 }

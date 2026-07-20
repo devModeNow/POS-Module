@@ -5,6 +5,10 @@ export class PurchaseOrderItemDto {
   @IsInt()
   inventoryId?: number;
 
+  @IsOptional()
+  @IsInt()
+  variantId?: number;
+
   @IsNotEmpty({ message: 'Item name is required' })
   @IsString()
   itemName: string;

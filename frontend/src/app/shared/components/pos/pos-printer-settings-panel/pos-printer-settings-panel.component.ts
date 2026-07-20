@@ -8,15 +8,10 @@ import {
 } from '../../../services/pos-communications.service';
 import { PosReceiptPrintService, ReceiptPrintContext } from '../../../services/pos-receipt-print.service';
 import { PosUsbPrinterService } from '../../../services/pos-usb-printer.service';
-import { PosBluetoothPrinterService } from '../../../services/pos-bluetooth-printer.service';
 import { PosPrintHubService } from '../../../services/pos-printhub.service';
-import {
-  MHARMAL_DEFAULT_HOST,
-  MHARMAL_DEFAULT_PORT,
-  MharmalPayloadFormat,
-  PosMharmalPrinterService,
-} from '../../../services/pos-mharmal-printer.service';
 import { PosReceiptTemplateEditorComponent } from '../pos-receipt-template-editor/pos-receipt-template-editor.component';
+import { OrgService } from '../../../services/org.service';
+import { RbacService } from '../../../services/rbac.service';
 
 type ConnectionStatus = 'idle' | 'testing' | 'connected' | 'failed';
 
@@ -43,7 +38,7 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
   logoUrl: string | null = null;
   templateElements: PosReceiptTemplateElement[] = [];
 
-  connectionType: PosPrinterConnectionType = 'browser';
+  connectionType: PosPrinterConnectionType = 'printhub';
   printerHost = '';
   printerPort = '9100';
   usbVendorId = '';
@@ -51,7 +46,6 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
   usbProductName = '';
   btDeviceId = '';
   btDeviceName = '';
-  mharmalPayloadFormat: MharmalPayloadFormat = 'image-datauri';
   connectionStatus: ConnectionStatus = 'idle';
   connectionMessage = '';
 
@@ -63,21 +57,13 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
     'Custom / Network Printer',
   ];
 
-  readonly mharmalPayloadOptions: Array<{ value: MharmalPayloadFormat; label: string }> = [
-    { value: 'image-datauri', label: 'PNG image (data URI) — recommended' },
-    { value: 'image-base64', label: 'PNG image (raw Base64)' },
-    { value: 'image-binary', label: 'PNG image (binary frame)' },
-    { value: 'escpos-binary', label: 'Raw ESC/POS bytes' },
-    { value: 'json-image', label: 'JSON { type, data }' },
-  ];
-
   constructor(
     private readonly comms: PosCommunicationsService,
     private readonly receiptPrint: PosReceiptPrintService,
     private readonly usbPrinter: PosUsbPrinterService,
-    private readonly bluetoothPrinter: PosBluetoothPrinterService,
     private readonly printHub: PosPrintHubService,
-    private readonly mharmalPrinter: PosMharmalPrinterService,
+    private readonly org: OrgService,
+    private readonly rbac: RbacService,
   ) {}
 
   ngOnInit(): void {
@@ -94,25 +80,21 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
       this.paperWidth = String(item['posReceiptPaperWidth'] ?? '80mm');
       this.showLogo = String(item['posReceiptShowLogo'] ?? 'true').toLowerCase() !== 'false';
       this.footerText = String(item['posReceiptFooterText'] ?? '');
-      this.businessName = String(item['businessName'] ?? '');
+      const orgName = String(this.org.getContext().name ?? '').trim();
+      this.businessName = String(item['businessName'] ?? '').trim() || orgName;
       this.businessAddress = String(item['businessAddress'] ?? '');
       this.logoUrl = (item['businessLogoLight'] as string) || (item['businessLogoDark'] as string) || null;
       this.templateElements = this.receiptPrint.resolveTemplateElements(String(item['posReceiptTemplateJson'] ?? ''));
-      this.connectionType = (String(item['posPrinterConnectionType'] ?? 'browser') as PosPrinterConnectionType) || 'browser';
+      const rawType = String(item['posPrinterConnectionType'] ?? 'printhub') as PosPrinterConnectionType;
+      this.connectionType =
+        rawType === 'bluetooth' || rawType === 'mharmal' || !rawType ? 'printhub' : rawType;
       this.printerHost = String(item['posPrinterHost'] ?? '');
       this.printerPort = String(item['posPrinterPort'] ?? '9100');
-      if (this.connectionType === 'mharmal') {
-        if (!this.printerHost.trim()) this.printerHost = MHARMAL_DEFAULT_HOST;
-        if (!this.printerPort.trim() || this.printerPort === '9100') {
-          this.printerPort = String(MHARMAL_DEFAULT_PORT);
-        }
-      }
       this.usbVendorId = String(item['posPrinterUsbVendorId'] ?? '');
       this.usbProductId = String(item['posPrinterUsbProductId'] ?? '');
       this.usbProductName = String(item['posPrinterUsbProductName'] ?? '');
       this.btDeviceId = String(item['posPrinterBtDeviceId'] ?? '');
       this.btDeviceName = String(item['posPrinterBtDeviceName'] ?? '');
-      this.mharmalPayloadFormat = this.mharmalPrinter.getPayloadFormat();
       await this.restoreSavedConnection();
     } catch {
       this.error = 'Failed to load printer settings.';
@@ -123,7 +105,6 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
     }
   }
 
-  /** Keep previously saved printer linked after reload (no re-pair required). */
   private async restoreSavedConnection(): Promise<void> {
     this.connectionStatus = 'idle';
     this.connectionMessage = '';
@@ -167,43 +148,25 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
       return;
     }
 
-    if (this.connectionType === 'bluetooth' && this.btDeviceId) {
-      this.connectionStatus = 'testing';
-      this.connectionMessage = 'Reconnecting saved Bluetooth printer…';
-      const info = await this.bluetoothPrinter.restoreConnection(this.btDeviceId);
-      if (info) {
-        this.btDeviceName = info.deviceName || this.btDeviceName;
-        this.btDeviceId = info.deviceId;
-        this.connectionStatus = 'connected';
-        this.connectionMessage = `Reconnected to ${this.btDeviceName}.`;
-      } else {
-        this.connectionStatus = 'failed';
-        this.connectionMessage =
-          'Saved Bluetooth printer not in range or permission was reset. Select it again.';
-      }
-      return;
-    }
-
     if (this.connectionType === 'printhub') {
       if (this.printHub.isConnected()) {
         this.btDeviceName = this.printHub.getDeviceLabel();
         this.connectionStatus = 'connected';
         this.connectionMessage = `Connected to ${this.btDeviceName}.`;
       } else {
-        this.connectionStatus = 'idle';
-        this.connectionMessage = 'Click Connect PrintHub to pair your Bluetooth thermal printer.';
+        this.connectionStatus = 'testing';
+        this.connectionMessage = 'Connecting to Bluetooth printer…';
+        const r = await this.printHub.autoConnect(this.paperWidth);
+        if (r.success) {
+          this.btDeviceName = this.printHub.getDeviceLabel();
+          this.connectionStatus = 'connected';
+          this.connectionMessage = `Connected to ${this.btDeviceName}.`;
+        } else {
+          this.connectionStatus = 'idle';
+          this.connectionMessage =
+            'Printer will reconnect automatically if previously paired. Otherwise click Connect PrintHub once.';
+        }
       }
-      return;
-    }
-
-    if (this.connectionType === 'mharmal') {
-      this.connectionStatus = 'testing';
-      this.connectionMessage = 'Connecting to Mharmal Printer…';
-      const host = this.printerHost.trim() || MHARMAL_DEFAULT_HOST;
-      const port = Number(this.printerPort) || MHARMAL_DEFAULT_PORT;
-      const r = await this.mharmalPrinter.restoreConnection(host, port);
-      this.connectionStatus = r.success ? 'connected' : 'failed';
-      this.connectionMessage = r.message ?? (r.success ? 'Connected to Mharmal.' : 'Mharmal unreachable.');
     }
   }
 
@@ -211,20 +174,19 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
     this.saving = true;
     this.error = '';
     try {
-      // Keep a local preference so checkout can use PrintHub even if the API save fails.
       try {
         localStorage.setItem('pos.printerConnectionType', this.connectionType);
       } catch {
         /* ignore */
       }
 
-      // Strip oversized embedded images so the PUT does not hit body-size limits.
+      // Body limit is 10mb — keep template images (only strip absurdly large ones).
       const templateForSave = this.templateElements.map((el) => {
         if (
           el.type === 'image' &&
           typeof el.content === 'string' &&
           el.content.startsWith('data:') &&
-          el.content.length > 80_000
+          el.content.length > 2_500_000
         ) {
           return { ...el, content: '' };
         }
@@ -250,7 +212,14 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
         this.error = r?.message ?? 'Failed to save printer settings.';
         return;
       }
-      // Keep connection active after save — do not reset to idle
+      const saved = r.item ?? {};
+      this.connectionType =
+        (String(saved['posPrinterConnectionType'] ?? this.connectionType) as PosPrinterConnectionType) ||
+        this.connectionType;
+      this.templateElements = this.receiptPrint.resolveTemplateElements(
+        String(saved['posReceiptTemplateJson'] ?? JSON.stringify(templateForSave)),
+      );
+      this.showLogo = String(saved['posReceiptShowLogo'] ?? this.showLogo).toLowerCase() !== 'false';
       if (this.connectionStatus !== 'connected') {
         await this.restoreSavedConnection();
       } else if (!this.connectionMessage) {
@@ -265,8 +234,10 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
   }
 
   printPreview(): void {
+    const orgName = String(this.org.getContext().name ?? '').trim();
+    const cashierName = this.rbac.getDisplayName()?.trim() || 'Cashier';
     const ctx: ReceiptPrintContext = {
-      businessName: this.businessName,
+      businessName: (this.businessName || '').trim() || orgName || 'Store',
       businessAddress: this.businessAddress,
       footer: this.footerText || 'Thank you!',
       logoUrl: this.logoUrl,
@@ -277,42 +248,16 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
       amountPaid: '₱500.00',
       change: '₱200.00',
       paymentMethod: 'Cash',
-      cashier: 'Cashier',
+      cashier: cashierName,
       saleDate: new Date().toLocaleString('en-PH'),
     };
     const elements = this.templateElements.length
       ? this.templateElements
       : this.receiptPrint.defaultTemplateElements();
 
-    if (this.connectionType === 'mharmal') {
-      const host = this.printerHost.trim() || MHARMAL_DEFAULT_HOST;
-      const port = Number(this.printerPort) || MHARMAL_DEFAULT_PORT;
-      this.mharmalPrinter.setPayloadFormat(this.mharmalPayloadFormat);
-      void this.receiptPrint
-        .printViaConnection(elements, ctx, this.paperWidth, {
-          connectionType: 'mharmal',
-          host,
-          port,
-        })
-        .then((r) => {
-          if (!r.success) {
-            this.connectionStatus = 'failed';
-            this.connectionMessage = r.message ?? 'Print via Mharmal failed.';
-          } else {
-            this.connectionStatus = 'connected';
-            this.connectionMessage =
-              r.message ??
-              'Test receipt sent. If nothing prints, try another Payload format below.';
-          }
-        });
-      return;
-    }
-
     if (this.connectionType === 'printhub') {
       void this.receiptPrint
-        .printViaConnection(elements, ctx, this.paperWidth, {
-          connectionType: 'printhub',
-        })
+        .printViaConnection(elements, ctx, this.paperWidth, { connectionType: 'printhub' })
         .then((r) => {
           if (!r.success) {
             this.connectionStatus = 'failed';
@@ -326,6 +271,17 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
       return;
     }
 
+    if (this.connectionType === 'network' || this.connectionType === 'usb') {
+      void this.receiptPrint.printViaConnection(elements, ctx, this.paperWidth, {
+        connectionType: this.connectionType,
+        host: this.printerHost,
+        port: Number(this.printerPort) || 9100,
+        usbVendorId: this.usbVendorId,
+        usbProductId: this.usbProductId,
+      });
+      return;
+    }
+
     this.receiptPrint.printFromSettings(elements, ctx, this.paperWidth);
   }
 
@@ -333,16 +289,8 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
     return this.usbPrinter.isSupported();
   }
 
-  get bluetoothSupported(): boolean {
-    return this.bluetoothPrinter.isSupported();
-  }
-
   get printHubSupported(): boolean {
     return this.printHub.isSupported();
-  }
-
-  get mharmalSupported(): boolean {
-    return this.mharmalPrinter.isSupported();
   }
 
   get connectionStatusLabel(): string {
@@ -366,29 +314,12 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
   onConnectionTypeChange(): void {
     this.connectionStatus = 'idle';
     this.connectionMessage = '';
-    if (this.connectionType === 'mharmal') {
-      if (!this.printerHost.trim()) {
-        this.printerHost = MHARMAL_DEFAULT_HOST;
-      }
-      if (!this.printerPort.trim() || this.printerPort === '9100') {
-        this.printerPort = String(MHARMAL_DEFAULT_PORT);
-      }
-    } else if (this.connectionType === 'network') {
-      if (this.printerPort === String(MHARMAL_DEFAULT_PORT)) {
-        this.printerPort = '9100';
-      }
-      if (this.printerHost === MHARMAL_DEFAULT_HOST || this.printerHost === 'localhost') {
-        this.printerHost = '';
-      }
+    if (this.connectionType === 'network' && (!this.printerPort.trim() || this.printerPort === '22300')) {
+      this.printerPort = '9100';
     }
   }
 
   async testConnection(): Promise<void> {
-    if (this.connectionType === 'mharmal') {
-      await this.testMharmalConnection();
-      return;
-    }
-
     if (!this.printerHost.trim()) {
       this.connectionStatus = 'failed';
       this.connectionMessage = 'Enter a host/IP address first.';
@@ -403,34 +334,6 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
     } catch {
       this.connectionStatus = 'failed';
       this.connectionMessage = 'Failed to reach the printer.';
-    }
-  }
-
-  onMharmalPayloadFormatChange(): void {
-    this.mharmalPrinter.setPayloadFormat(this.mharmalPayloadFormat);
-    this.connectionMessage = `Payload format set to ${this.mharmalPayloadFormat}. Try Print preview.`;
-  }
-
-  async testMharmalConnection(): Promise<void> {
-    if (!this.mharmalSupported) {
-      this.connectionStatus = 'failed';
-      this.connectionMessage = 'WebSocket is not available in this browser.';
-      return;
-    }
-    this.connectionStatus = 'testing';
-    this.connectionMessage = 'Connecting to Mharmal Printer…';
-    const host = this.printerHost.trim() || MHARMAL_DEFAULT_HOST;
-    const port = Number(this.printerPort) || MHARMAL_DEFAULT_PORT;
-    this.printerHost = host;
-    this.printerPort = String(port);
-    this.mharmalPrinter.setPayloadFormat(this.mharmalPayloadFormat);
-    try {
-      const r = await this.mharmalPrinter.testConnection(host, port);
-      this.connectionStatus = r.success ? 'connected' : 'failed';
-      this.connectionMessage = r.message ?? (r.success ? 'Connected.' : 'Could not connect.');
-    } catch {
-      this.connectionStatus = 'failed';
-      this.connectionMessage = 'Failed to reach Mharmal Printer.';
     }
   }
 
@@ -452,26 +355,6 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
     this.connectionMessage = `Selected ${info.productName}.`;
   }
 
-  async selectBluetoothPrinter(): Promise<void> {
-    if (!this.bluetoothSupported) {
-      this.connectionStatus = 'failed';
-      this.connectionMessage = 'Not supported in this browser. Use Chrome or Edge on HTTPS/localhost.';
-      return;
-    }
-    this.connectionStatus = 'testing';
-    this.connectionMessage = 'Waiting for Bluetooth device…';
-    const info = await this.bluetoothPrinter.requestDevice();
-    if (!info) {
-      this.connectionStatus = 'failed';
-      this.connectionMessage = 'No Bluetooth printer selected, or pairing was cancelled.';
-      return;
-    }
-    this.btDeviceId = info.deviceId;
-    this.btDeviceName = info.deviceName;
-    this.connectionStatus = 'connected';
-    this.connectionMessage = `Connected to ${info.deviceName}. Save settings to keep this printer.`;
-  }
-
   async connectPrintHub(): Promise<void> {
     if (!this.printHubSupported) {
       this.connectionStatus = 'failed';
@@ -480,7 +363,7 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
     }
     this.connectionStatus = 'testing';
     this.connectionMessage = 'Waiting for Bluetooth device (PrintHub)…';
-    const r = await this.printHub.connect(this.paperWidth, 'bluetooth');
+    const r = await this.printHub.connect(this.paperWidth, 'bluetooth', { forcePicker: true });
     if (!r.success) {
       this.connectionStatus = 'failed';
       this.connectionMessage = r.message ?? 'PrintHub connection failed or was cancelled.';
@@ -513,8 +396,9 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
   }
 
   previewText(el: PosReceiptTemplateElement): string {
+    const orgName = String(this.org.getContext().name ?? '').trim();
     return this.receiptPrint.renderTemplateText(el.content, {
-      businessName: this.businessName,
+      businessName: (this.businessName || '').trim() || orgName || 'Store',
       businessAddress: this.businessAddress,
       footer: this.footerText,
       itemsText: 'Sample Item x1 .... ₱100',
@@ -522,7 +406,7 @@ export class PosPrinterSettingsPanelComponent implements OnInit {
       amountPaid: '₱200.00',
       change: '₱100.00',
       paymentMethod: 'Cash',
-      cashier: 'Cashier',
+      cashier: this.rbac.getDisplayName()?.trim() || 'Cashier',
       saleDate: new Date().toLocaleString('en-PH'),
     });
   }

@@ -14,9 +14,21 @@
 <ng-template #panelTpl>
   <div #panelRoot class="pos-notifications-panel flex flex-col rounded-2xl border border-gray-200 bg-white p-3 shadow-xl dark:border-gray-800 dark:bg-gray-900"
     (click)="$event.stopPropagation()">
-    <div class="mb-3 flex shrink-0 items-center justify-between border-b border-gray-100 pb-3 dark:border-gray-800">
+    <div class="mb-3 flex shrink-0 items-center justify-between gap-2 border-b border-gray-100 pb-3 dark:border-gray-800">
       <h5 class="text-sm font-semibold text-gray-800 dark:text-gray-200">Notifications</h5>
-      <button type="button" (click)="close()" class="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-300">✕</button>
+      <div class="flex items-center gap-1.5">
+        <button type="button" (click)="markAllRead()" [disabled]="unreadCount === 0 || markingAll"
+          title="Mark all as read"
+          class="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-[11px] font-semibold text-gray-600 transition hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-40 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800 dark:hover:text-white">
+          <svg class="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13l4 4L23 7" opacity="0.55"/>
+          </svg>
+          {{ markingAll ? 'Marking…' : 'Mark all read' }}
+        </button>
+        <button type="button" (click)="close()" title="Close"
+          class="rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-800 dark:hover:text-gray-300">✕</button>
+      </div>
     </div>
 
     <div class="mb-2 flex shrink-0 flex-wrap gap-1">

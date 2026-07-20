@@ -17,11 +17,14 @@ export interface InventoryItem {
   unitType?: string | null;
   marginPercent?: number | null;
   updatedAt?: string | null;
+  variantId?: number | null;
+  source?: string;
 }
 
 export interface PurchaseOrderItem {
   id?: number;
   inventoryId?: number | null;
+  variantId?: number | null;
   itemName: string;
   productName?: string | null;
   brand?: string | null;
@@ -31,6 +34,7 @@ export interface PurchaseOrderItem {
   totalCost?: number;
   lineTotal?: number;
   partName?: string | null;
+  source?: string;
 }
 
 export interface PurchaseOrder {

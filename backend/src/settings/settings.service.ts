@@ -120,7 +120,7 @@ export class SettingsService {
         ADD COLUMN IF NOT EXISTS pos_receipt_footer_text TEXT,
         ADD COLUMN IF NOT EXISTS pos_printer_name TEXT,
         ADD COLUMN IF NOT EXISTS pos_receipt_template_json TEXT,
-        ADD COLUMN IF NOT EXISTS pos_printer_connection_type TEXT DEFAULT 'browser',
+        ADD COLUMN IF NOT EXISTS pos_printer_connection_type TEXT DEFAULT 'printhub',
         ADD COLUMN IF NOT EXISTS pos_printer_host TEXT,
         ADD COLUMN IF NOT EXISTS pos_printer_port TEXT DEFAULT '9100',
         ADD COLUMN IF NOT EXISTS pos_printer_usb_vendor_id TEXT,
@@ -155,7 +155,7 @@ export class SettingsService {
            s.org_id::text                   AS "orgId",
            s.website_tab_name               AS "websiteTabName",
            s.routing_tab_name               AS "routingTabName",
-           s.business_name                  AS "businessName",
+           COALESCE(NULLIF(TRIM(s.business_name), ''), o.name) AS "businessName",
            s.business_address               AS "businessAddress",
            s.business_contact               AS "businessContact",
            s.business_email                 AS "businessEmail",
@@ -200,6 +200,7 @@ export class SettingsService {
            s.pos_printer_bt_device_id       AS "posPrinterBtDeviceId",
            s.pos_printer_bt_device_name     AS "posPrinterBtDeviceName"
          FROM tblorg_settings s
+         LEFT JOIN tblorganizations o ON o.id = s.org_id
          WHERE s.org_id = $1
          LIMIT 1`,
         [resolvedOrgId],
@@ -322,6 +323,27 @@ export class SettingsService {
     const mimeType = String(file.mimetype ?? 'application/octet-stream').trim();
     const dataUrl = `data:${mimeType};base64,${(file.buffer as Buffer).toString('base64')}`;
 
-    return this.updateBusinessProfile({ [key]: dataUrl } as UpdateBusinessProfileDto, orgId);
+    const updated = await this.updateBusinessProfile({ [key]: dataUrl } as UpdateBusinessProfileDto, orgId);
+
+    // Keep org tile logos on the login page in sync with company profile uploads.
+    if (
+      (key === 'businessLogoLight' || key === 'businessLogoDark') &&
+      updated &&
+      (updated as { success?: boolean }).success !== false
+    ) {
+      try {
+        const resolvedOrgId = await this.resolveOrgId(orgId);
+        if (resolvedOrgId) {
+          await this.db.query(
+            `UPDATE tblorganizations SET logo_url = $1 WHERE id = $2`,
+            [dataUrl, resolvedOrgId],
+          );
+        }
+      } catch {
+        /* non-fatal */
+      }
+    }
+
+    return updated;
   }
 }

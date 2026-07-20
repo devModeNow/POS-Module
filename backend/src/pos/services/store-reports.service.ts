@@ -294,7 +294,7 @@ export class PosStoreReportsService {
         cashier: string;
         paymentMethod: string;
       }>(
-        `SELECT COALESCE(to_jsonb(u)->>'fullname', u.username, 'Unknown') AS cashier,
+        `SELECT COALESCE(NULLIF(TRIM(COALESCE(to_jsonb(u)->>'fullname', '')), ''), u.username, 'Unknown') AS cashier,
                 COALESCE(pm.name, 'Cash') AS "paymentMethod"
          FROM (SELECT 1) AS _one
          LEFT JOIN tblusers u ON u.id = $1

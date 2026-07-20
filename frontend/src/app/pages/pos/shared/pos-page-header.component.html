@@ -17,7 +17,7 @@
       @if (isPosOrg && showPosTools) {
         <app-pos-notifications-bell [compact]="true" />
         <button type="button" (click)="connectPrintHub()" [disabled]="printHubConnecting"
-          [title]="printHubConnected ? 'PrintHub connected — click to reconnect' : 'Connect PrintHub Bluetooth printer'"
+          [title]="printHubConnected ? 'PrintHub connected — click to choose another printer' : 'Connect PrintHub Bluetooth printer'"
           class="touch-manipulation rounded-md border p-2.5 disabled:opacity-50"
           [ngClass]="printHubConnected
             ? 'border-emerald-500 bg-emerald-50 text-emerald-600 hover:bg-emerald-100 dark:border-emerald-400 dark:bg-emerald-500/10 dark:text-emerald-400'

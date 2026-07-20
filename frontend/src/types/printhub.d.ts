@@ -14,6 +14,10 @@ declare module 'printhub' {
       text: string,
       options?: { bold?: boolean; underline?: boolean; align?: string; size?: string },
     ): Promise<void>;
+    putImageWithUrl(
+      url: string,
+      options?: { align?: string; onFailed?: (message: string) => void },
+    ): Promise<void>;
     connectToPrint(options: {
       onReady: (printer: PrintHub) => void;
       onFailed: (message: string) => void;

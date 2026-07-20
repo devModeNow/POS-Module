@@ -32,6 +32,12 @@ export class AppLayoutComponent implements OnInit, OnDestroy {
   readonly showPosChat: boolean;
   isPosDashboardRoute = false;
   private routeSub?: Subscription;
+  private printerWatchTimer?: ReturnType<typeof setInterval>;
+  private readonly onVisibility = () => {
+    if (document.visibilityState === 'visible' && this.showPosChat) {
+      void this.receiptPrint.ensurePrinterConnectedInBackground();
+    }
+  };
 
   constructor(
     public sidebarService: SidebarService,
@@ -52,13 +58,30 @@ export class AppLayoutComponent implements OnInit, OnDestroy {
       .pipe(filter((e): e is NavigationEnd => e instanceof NavigationEnd))
       .subscribe((e) => this.syncPosDashboardRoute(e.urlAfterRedirects));
     if (this.showPosChat) {
+      // Connect as soon as POS layout loads, then keep watching.
       void this.receiptPrint.restoreSavedPrinterConnection();
+      void this.receiptPrint.ensurePrinterConnectedInBackground();
+      this.printerWatchTimer = setInterval(
+        () => void this.receiptPrint.ensurePrinterConnectedInBackground(),
+        8_000,
+      );
+      document.addEventListener('visibilitychange', this.onVisibility);
+      window.addEventListener('focus', this.onWindowFocus);
     }
   }
 
   ngOnDestroy(): void {
     this.routeSub?.unsubscribe();
+    if (this.printerWatchTimer) clearInterval(this.printerWatchTimer);
+    document.removeEventListener('visibilitychange', this.onVisibility);
+    window.removeEventListener('focus', this.onWindowFocus);
   }
+
+  private readonly onWindowFocus = () => {
+    if (this.showPosChat) {
+      void this.receiptPrint.ensurePrinterConnectedInBackground();
+    }
+  };
 
   private syncPosDashboardRoute(url: string): void {
     this.isPosDashboardRoute = /\/users\/pos-(dashboard|terminal|my-sales|staff|audit-trail|company-profile)(\/|$|\?)/.test(url);
