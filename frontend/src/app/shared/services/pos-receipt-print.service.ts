@@ -124,29 +124,43 @@ export class PosReceiptPrintService {
   }
 
   formatItemLine(
-    item: { productName: string; variantName: string; quantitySold: number; unitType: string; totalAmount: number },
-    usePeso = true,
+    item: {
+      productName: string;
+      variantName: string;
+      quantitySold: number;
+      unitType: string;
+      totalAmount: number;
+      unitPrice?: number;
+    },
+    usePeso = false,
     cols = 32,
   ): string {
     const name = (item.variantName || item.productName || 'Item').trim();
     const qty = Number(item.quantitySold);
     const qtyLabel = Number.isInteger(qty) ? String(qty) : qty.toFixed(2);
-    const unit = String(item.unitType || 'pc').trim() || 'pc';
-    const qtyUnit = `${qtyLabel}x ${unit}`;
-    const sym = usePeso ? '₱' : 'P';
-    const price = `${sym}${Number(item.totalAmount).toFixed(2)}`;
+    const total = Number(item.totalAmount).toFixed(2);
+    const unitPrice = Number(item.unitPrice ?? (qty > 0 ? item.totalAmount / qty : item.totalAmount)).toFixed(2);
     const sep = ' .... ';
-    const maxLeft = Math.max(8, cols - price.length - sep.length);
-    let left = `${qtyUnit} - ${name}`;
-    if (left.length > maxLeft) {
-      left = `${left.slice(0, Math.max(6, maxLeft - 3))}...`;
+    const maxName = Math.max(8, cols - total.length - sep.length);
+    let namePart = name;
+    if (namePart.length > maxName) {
+      namePart = `${namePart.slice(0, Math.max(6, maxName - 3))}...`;
     }
-    return `${left}${sep}${price}`;
+    const nameLine = `${namePart}${' '.repeat(Math.max(1, cols - namePart.length - total.length))}${total}`;
+    const detail = `${qtyLabel} x ${unitPrice}`;
+  return `${nameLine}\n${detail}`;
   }
 
   formatItemsLines(
-    items: Array<{ productName: string; variantName: string; quantitySold: number; unitType: string; totalAmount: number }>,
-    usePeso = true,
+    items: Array<{
+      productName: string;
+      variantName: string;
+      quantitySold: number;
+      unitType: string;
+      totalAmount: number;
+      unitPrice?: number;
+    }>,
+    usePeso = false,
     paperWidth?: string,
   ): string {
     const cols = receiptColumnCount(paperWidth);
@@ -189,9 +203,9 @@ export class PosReceiptPrintService {
       .replace(/\{\{\s*companyName\s*\}\}/gi, store)
       .replace(/\{\{\s*businessAddress\s*\}\}/gi, ctx.businessAddress || '')
       .replace(/\{\{\s*items\s*\}\}/gi, ctx.itemsText || '')
-      .replace(/\{\{\s*total\s*\}\}/gi, ctx.total || '₱0.00')
-      .replace(/\{\{\s*amountPaid\s*\}\}/gi, ctx.amountPaid || '₱0.00')
-      .replace(/\{\{\s*change\s*\}\}/gi, ctx.change || '₱0.00')
+      .replace(/\{\{\s*total\s*\}\}/gi, ctx.total || '0.00')
+      .replace(/\{\{\s*amountPaid\s*\}\}/gi, ctx.amountPaid || '0.00')
+      .replace(/\{\{\s*change\s*\}\}/gi, ctx.change || '0.00')
       .replace(/\{\{\s*footer\s*\}\}/gi, ctx.footer || 'Thank you!')
       .replace(/\{\{\s*paymentMethod\s*\}\}/gi, ctx.paymentMethod || '')
       .replace(/\{\{\s*cashier\s*\}\}/gi, cashier)
@@ -387,7 +401,7 @@ export class PosReceiptPrintService {
     lines.push(rule);
     if (ctx.itemsText) lines.push(ctx.itemsText);
     lines.push(rule);
-    lines.push(`Total: ${ctx.total ?? '₱0.00'}`);
+    lines.push(`Total: ${ctx.total ?? '0.00'}`);
     if (ctx.amountPaid) lines.push(`Paid: ${ctx.amountPaid}`);
     if (ctx.change) lines.push(`Change: ${ctx.change}`);
     lines.push(rule);
@@ -632,10 +646,10 @@ export class PosReceiptPrintService {
       logoUrl: (item['businessLogoLight'] as string) || (item['businessLogoDark'] as string) || null,
       showLogo: String(item['posReceiptShowLogo'] ?? 'true').toLowerCase() !== 'false',
       paperWidth,
-      itemsText: this.formatItemsLines(sale.items ?? [], true, paperWidth),
-      total: `₱${Number(sale.totalAmount).toFixed(2)}`,
-      amountPaid: sale.amountPaid != null ? `₱${Number(sale.amountPaid).toFixed(2)}` : '',
-      change: sale.changeAmount != null ? `₱${Number(sale.changeAmount).toFixed(2)}` : '₱0.00',
+      itemsText: this.formatItemsLines(sale.items ?? [], false, paperWidth),
+      total: Number(sale.totalAmount).toFixed(2),
+      amountPaid: sale.amountPaid != null ? Number(sale.amountPaid).toFixed(2) : '',
+      change: sale.changeAmount != null ? Number(sale.changeAmount).toFixed(2) : '0.00',
       paymentMethod: String(sale.paymentMethod ?? '').trim(),
       cashier: cashierName,
       saleDate: new Date(sale.createdAt || sale.saleDate).toLocaleString('en-PH'),

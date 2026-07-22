@@ -36,6 +36,8 @@ import { PosChatUiService } from '../../../shared/services/pos-chat-ui.service';
 
 import { PosReceiptPrintService } from '../../../shared/services/pos-receipt-print.service';
 
+import { PosOfflineService, type CustomChartConfig, type CustomChartGroupBy, type CustomChartMetric } from '../../../shared/services/pos-offline.service';
+
 import { NotificationService } from '../../../shared/services/notification.service';
 
 
@@ -58,7 +60,7 @@ type KpiWidgetId =
 
 
 
-type ChartWidgetId = 'chart-daily' | 'chart-category' | 'chart-payment';
+type ChartWidgetId = 'chart-daily' | 'chart-category' | 'chart-payment' | 'chart-custom';
 
 type ChartVisualType = 'bar' | 'donut';
 
@@ -356,6 +358,51 @@ export class PosAdminDashboardComponent implements OnInit {
 
   paymentDonutLabels: string[] = [];
 
+  customChartConfig: CustomChartConfig | null = null;
+
+  customChartBuilderOpen = false;
+
+  customChartDraft: CustomChartConfig = {
+    title: 'Custom Chart',
+    groupBy: 'category',
+    metric: 'total_amount',
+    visualType: 'bar',
+  };
+
+  customChartLabels: string[] = [];
+
+  customChartValues: number[] = [];
+
+  customChartLoading = false;
+
+  customBarSeries: ApexAxisChartSeries = [{ name: 'Value', data: [] }];
+
+  customBarXaxis: ApexXAxis = { categories: [] };
+
+  customDonutSeries: number[] = [];
+
+  customDonutLabels: string[] = [];
+
+  private customChartLoadSeq = 0;
+
+  readonly customGroupByOptions: Array<{ value: CustomChartGroupBy; label: string }> = [
+    { value: 'day', label: 'Sale date' },
+    { value: 'cashier', label: 'Cashier' },
+    { value: 'payment_method', label: 'Payment method' },
+    { value: 'payment_status', label: 'Payment status' },
+    { value: 'category', label: 'Product category' },
+    { value: 'product', label: 'Product' },
+    { value: 'brand', label: 'Brand' },
+    { value: 'unit_type', label: 'Unit type' },
+  ];
+
+  readonly customMetricOptions: Array<{ value: CustomChartMetric; label: string }> = [
+    { value: 'total_amount', label: 'Total sales amount' },
+    { value: 'quantity_sold', label: 'Quantity sold' },
+    { value: 'transaction_count', label: 'Transaction count' },
+    { value: 'discount_amount', label: 'Discount amount' },
+  ];
+
 
 
   chartTypes: Record<ChartWidgetId, ChartVisualType> = {
@@ -365,6 +412,8 @@ export class PosAdminDashboardComponent implements OnInit {
     'chart-category': 'bar',
 
     'chart-payment': 'bar',
+
+    'chart-custom': 'bar',
 
   };
 
@@ -384,9 +433,9 @@ export class PosAdminDashboardComponent implements OnInit {
         size: '62%',
         labels: {
           show: true,
-          name: { show: true, color: '#9ca3af', fontWeight: 500 },
-          value: { show: true, color: '#f9fafb', fontWeight: 700 },
-          total: { show: true, label: 'Total', color: '#d1d5db', fontWeight: 600 },
+          name: { show: true, color: '#ffffff', fontWeight: 500 },
+          value: { show: true, color: '#ffffff', fontWeight: 700 },
+          total: { show: true, label: 'Total', color: '#ffffff', fontWeight: 600 },
         },
       },
     },
@@ -445,6 +494,8 @@ export class PosAdminDashboardComponent implements OnInit {
 
     'chart-payment': { label: 'Payment Methods', span: 'chart' },
 
+    'chart-custom': { label: 'Custom Chart', span: 'chart' },
+
     'list-staff': { label: 'Active Cashiers', span: 'list' },
 
     'list-low-stock': { label: 'Low Stock Alert', span: 'list' },
@@ -491,6 +542,8 @@ export class PosAdminDashboardComponent implements OnInit {
 
     private readonly notify: NotificationService,
 
+    private readonly offline: PosOfflineService,
+
   ) {}
 
 
@@ -501,8 +554,172 @@ export class PosAdminDashboardComponent implements OnInit {
 
     this.loadWidgetSizes();
 
+    this.loadCustomChartConfig();
+
     void this.refresh();
 
+  }
+
+
+
+  private loadCustomChartConfig(): void {
+
+    this.customChartConfig = this.offline.loadCustomChartConfig();
+
+    if (this.customChartConfig && !this.widgetOrder.includes('chart-custom')) {
+
+      const paymentIdx = this.widgetOrder.indexOf('chart-payment');
+
+      const insertAt = paymentIdx >= 0 ? paymentIdx + 1 : this.widgetOrder.length;
+
+      this.widgetOrder.splice(insertAt, 0, 'chart-custom');
+
+    }
+
+    if (this.customChartConfig) {
+
+      this.widgetMeta['chart-custom'].label = this.customChartConfig.title;
+
+      this.chartTypes['chart-custom'] = this.customChartConfig.visualType;
+
+    }
+
+  }
+
+
+
+  openCustomChartBuilder(): void {
+    this.customChartDraft = this.customChartConfig
+      ? { ...this.customChartConfig }
+      : { title: 'Custom Chart', groupBy: 'category', metric: 'total_amount', visualType: 'bar' };
+    this.customChartBuilderOpen = true;
+  }
+
+
+
+  closeCustomChartBuilder(): void {
+    this.customChartBuilderOpen = false;
+  }
+
+
+
+  async saveCustomChart(): Promise<void> {
+    const title = this.customChartDraft.title.trim() || 'Custom Chart';
+    this.customChartConfig = { ...this.customChartDraft, title };
+    this.offline.saveCustomChartConfig(this.customChartConfig);
+    this.widgetMeta['chart-custom'].label = title;
+    this.chartTypes['chart-custom'] = this.customChartConfig.visualType;
+    if (!this.widgetOrder.includes('chart-custom')) {
+      const paymentIdx = this.widgetOrder.indexOf('chart-payment');
+      const insertAt = paymentIdx >= 0 ? paymentIdx + 1 : this.widgetOrder.length;
+      this.widgetOrder.splice(insertAt, 0, 'chart-custom');
+      this.saveLayout();
+    }
+    this.customChartBuilderOpen = false;
+    await this.loadCustomChartData();
+  }
+
+
+
+  removeCustomChart(): void {
+    this.customChartConfig = null;
+    this.offline.saveCustomChartConfig(null);
+    this.clearCustomChartSeries();
+    this.widgetOrder = this.widgetOrder.filter((id) => id !== 'chart-custom');
+    delete this.widgetGridSpans['chart-custom'];
+    this.saveLayout();
+    this.customChartBuilderOpen = false;
+  }
+
+
+
+  get hiddenWidgets(): WidgetId[] {
+    const visible = new Set(this.widgetOrder);
+    return DEFAULT_WIDGETS.filter((id) => !visible.has(id));
+  }
+
+
+
+  removeWidget(id: WidgetId): void {
+    if (id === 'chart-custom') {
+      this.removeCustomChart();
+      return;
+    }
+    this.widgetOrder = this.widgetOrder.filter((w) => w !== id);
+    delete this.widgetGridSpans[id];
+    this.saveLayout();
+  }
+
+
+
+  addWidget(id: WidgetId): void {
+    if (this.widgetOrder.includes(id)) return;
+    const span = this.widgetMeta[id].span;
+    const section = [...this.widgetOrder.filter((w) => this.widgetMeta[w].span === span), id];
+    this.reorderSection(span, section);
+  }
+
+
+
+  onAddWidgetSelect(event: Event): void {
+    const select = event.target as HTMLSelectElement;
+    const id = select.value as WidgetId;
+    if (!id || !(id in this.widgetMeta)) return;
+    this.addWidget(id);
+    select.value = '';
+  }
+
+
+
+  private rebuildCustomChartSeries(): void {
+    const metricLabel =
+      this.customMetricOptions.find((o) => o.value === this.customChartConfig?.metric)?.label ?? 'Value';
+    this.customBarSeries = [{ name: metricLabel, data: [...this.customChartValues] }];
+    this.customBarXaxis = { categories: [...this.customChartLabels] };
+    this.customDonutSeries = [...this.customChartValues];
+    this.customDonutLabels = [...this.customChartLabels];
+  }
+
+  private clearCustomChartSeries(): void {
+    this.customChartLabels = [];
+    this.customChartValues = [];
+    this.customBarSeries = [{ name: 'Value', data: [] }];
+    this.customBarXaxis = { categories: [] };
+    this.customDonutSeries = [];
+    this.customDonutLabels = [];
+  }
+
+  private async loadCustomChartData(): Promise<void> {
+    if (!this.customChartConfig) {
+      this.clearCustomChartSeries();
+      return;
+    }
+    const seq = ++this.customChartLoadSeq;
+    const firstLoad = this.customChartValues.length === 0;
+    if (firstLoad) this.customChartLoading = true;
+    try {
+      const { from, to } = this.periodRange();
+      const r = await this.pos.getCustomChart(
+        this.customChartConfig.groupBy,
+        this.customChartConfig.metric,
+        from,
+        to,
+      );
+      if (seq !== this.customChartLoadSeq) return;
+      if (r?.success && r.data) {
+        this.customChartLabels = r.data.labels ?? [];
+        this.customChartValues = r.data.values ?? [];
+      } else {
+        this.customChartLabels = [];
+        this.customChartValues = [];
+      }
+      this.rebuildCustomChartSeries();
+    } catch {
+      if (seq !== this.customChartLoadSeq) return;
+      this.clearCustomChartSeries();
+    } finally {
+      if (seq === this.customChartLoadSeq) this.customChartLoading = false;
+    }
   }
 
 
@@ -1188,6 +1405,7 @@ export class PosAdminDashboardComponent implements OnInit {
         this.lowStock = (lowStockRes.success ? (lowStockRes.data ?? []) : []) as typeof this.lowStock;
 
         this.buildCharts();
+        await this.loadCustomChartData();
 
       });
 
@@ -1211,13 +1429,15 @@ export class PosAdminDashboardComponent implements OnInit {
 
   isChartWidget(id: WidgetId): id is ChartWidgetId {
 
-    return id === 'chart-daily' || id === 'chart-category' || id === 'chart-payment';
+    return id === 'chart-daily' || id === 'chart-category' || id === 'chart-payment' || id === 'chart-custom';
 
   }
 
 
 
   chartVisualType(id: ChartWidgetId): ChartVisualType {
+
+    if (id === 'chart-custom' && this.customChartConfig) return this.customChartConfig.visualType;
 
     return this.chartTypes[id];
 
@@ -1228,6 +1448,14 @@ export class PosAdminDashboardComponent implements OnInit {
   setChartVisualType(id: ChartWidgetId, type: ChartVisualType): void {
 
     this.chartTypes[id] = type;
+
+    if (id === 'chart-custom' && this.customChartConfig) {
+
+      this.customChartConfig = { ...this.customChartConfig, visualType: type };
+
+      this.offline.saveCustomChartConfig(this.customChartConfig);
+
+    }
 
   }
 
@@ -1467,13 +1695,15 @@ export class PosAdminDashboardComponent implements OnInit {
 
       if (!raw) return;
 
-      const parsed = JSON.parse(raw) as WidgetId[];
+      const parsed = JSON.parse(raw) as unknown;
 
-      if (Array.isArray(parsed) && parsed.every((id) => DEFAULT_WIDGETS.includes(id)) && parsed.length === DEFAULT_WIDGETS.length) {
+      if (!Array.isArray(parsed) || parsed.length === 0) return;
 
-        this.widgetOrder = parsed;
+      if (!parsed.every((id) => typeof id === 'string' && id in this.widgetMeta)) return;
 
-      }
+      if (new Set(parsed).size !== parsed.length) return;
+
+      this.widgetOrder = parsed as WidgetId[];
 
     } catch { /* ignore */ }
 

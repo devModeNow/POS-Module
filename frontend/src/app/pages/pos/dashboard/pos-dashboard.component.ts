@@ -17,6 +17,7 @@ import { NotificationService } from '../../../shared/services/notification.servi
 import { RbacService } from '../../../shared/services/rbac.service';
 import { ActionBusyService } from '../../../shared/services/action-busy.service';
 import { GlobalActionLoaderComponent } from '../../../shared/components/common/global-action-loader/global-action-loader.component';
+import { PosOfflineService } from '../../../shared/services/pos-offline.service';
 import { PosReceiptPrintService } from '../../../shared/services/pos-receipt-print.service';
 import { PosCommunicationsService } from '../../../shared/services/pos-communications.service';
 import { PosPageHeaderComponent } from '../shared/pos-page-header.component';
@@ -75,6 +76,8 @@ export class PosDashboardComponent implements OnInit {
   checkoutSuccess: { changeDue: number; totalAmount: number } | null = null;
   cashDrawerEnabled = false;
   useCashDrawerThisSale = true;
+  checkoutSubtotalsOpen = false;
+  offlineSyncing = false;
 
   confirmOpen = false;
   confirmTitle = '';
@@ -95,6 +98,7 @@ export class PosDashboardComponent implements OnInit {
     private readonly actionBusy: ActionBusyService,
     private readonly receiptPrint: PosReceiptPrintService,
     private readonly comms: PosCommunicationsService,
+    private readonly offline: PosOfflineService,
   ) {
     this.isCashierMode = this.rbac.isCashier();
   }
@@ -183,8 +187,11 @@ export class PosDashboardComponent implements OnInit {
       cartKey: line.cartKey ?? this.cartService.cartKey(line.variantId, line.unitType ?? 'piece'),
       unitType: line.unitType ?? 'piece',
     }));
-    // Desktop shows the cart column via lg:flex; keep mobile drawer closed.
+    // Desktop (xl+) shows cart column; tablet/portrait uses slide-out drawer.
     this.cartOpen = false;
+    if (this.cart.length > 0 && typeof window !== 'undefined' && window.matchMedia('(max-width: 1279px)').matches) {
+      this.cartOpen = true;
+    }
     void this.loadCategories();
     void this.loadDiscounts();
     void this.loadPaymentMethods();
@@ -255,6 +262,51 @@ export class PosDashboardComponent implements OnInit {
     }
   }
 
+  get isOffline(): boolean {
+    return !this.offline.isOnline();
+  }
+
+  get pendingOfflineSales(): number {
+    return this.offline.pendingCount();
+  }
+
+  async syncOfflineSales(): Promise<void> {
+    if (this.offlineSyncing || !this.offline.isOnline()) return;
+    this.offlineSyncing = true;
+    try {
+      const result = await this.offline.syncQueue((payload) => this.posService.checkout(payload));
+      if (result.synced > 0) {
+        this.notify.success('Synced', `${result.synced} offline sale(s) uploaded.`);
+        await this.loadCatalog();
+      }
+      if (result.failed > 0) {
+        this.notify.warning('Sync incomplete', `${result.failed} sale(s) still waiting to sync.`);
+      } else if (result.synced === 0 && this.pendingOfflineSales === 0) {
+        this.notify.info('All synced', 'No pending offline sales.');
+      }
+    } finally {
+      this.offlineSyncing = false;
+    }
+  }
+
+  private applyCachedCatalog(): boolean {
+    const cached = this.offline.getCachedCatalog(this.orgId());
+    if (!cached) return false;
+    if (cached.mode === 'variants' && cached.variantCatalog?.length) {
+      this.variantCatalog = (cached.variantCatalog as PosVariant[]).map((v) => this.normalizeVariant(v));
+      this.products = [];
+    } else if (cached.products?.length) {
+      this.products = cached.products as PosProduct[];
+      this.variantCatalog = [];
+    } else {
+      return false;
+    }
+    this.syncCartStock();
+    this.state = 'loaded';
+    this.errorMessage = '';
+    return true;
+  }
+
   async loadProducts(): Promise<void> {
     const isInitial = this.state !== 'loaded';
     if (isInitial) this.state = 'loading';
@@ -263,15 +315,18 @@ export class PosDashboardComponent implements OnInit {
     try {
       const r = await this.posService.getProducts(this.search, this.selectedCategory || undefined);
       if (!r.success || !r.data) {
+        if (this.applyCachedCatalog()) return;
         this.state = 'error';
         this.errorMessage = r.message ?? 'Failed to load products.';
         return;
       }
       this.products = r.data;
       this.variantCatalog = [];
+      this.offline.cacheCatalog(this.orgId(), { mode: 'types', products: this.products });
       this.syncCartStock();
       this.state = 'loaded';
     } catch {
+      if (this.applyCachedCatalog()) return;
       this.state = 'error';
       this.errorMessage = 'Failed to load products. Please try again.';
     } finally {
@@ -287,15 +342,18 @@ export class PosDashboardComponent implements OnInit {
     try {
       const r = await this.posService.getVariantsCatalog(this.search, this.selectedCategory || undefined);
       if (!r.success || !r.data) {
+        if (this.applyCachedCatalog()) return;
         this.state = 'error';
         this.errorMessage = r.message ?? 'Failed to load variants.';
         return;
       }
       this.variantCatalog = (r.data ?? []).map((v) => this.normalizeVariant(v));
       this.products = [];
+      this.offline.cacheCatalog(this.orgId(), { mode: 'variants', variantCatalog: this.variantCatalog });
       this.syncCartStock();
       this.state = 'loaded';
     } catch {
+      if (this.applyCachedCatalog()) return;
       this.state = 'error';
       this.errorMessage = 'Failed to load variants. Please try again.';
     } finally {
@@ -781,6 +839,7 @@ export class PosDashboardComponent implements OnInit {
     this.selectedDiscountId = null;
     this.amountReceived = 0;
     this.checkoutSuccess = null;
+    this.checkoutSubtotalsOpen = false;
     this.useCashDrawerThisSale = this.cashDrawerEnabled;
     this.showCheckoutModal = true;
   }
@@ -810,7 +869,7 @@ export class PosDashboardComponent implements OnInit {
   requestConfirmCheckout(): void {
     this.openConfirm(
       'Complete sale?',
-      `Confirm sale for ₱${this.formatCurrency(this.cartTotal())}?`,
+      `Confirm sale  ₱${this.formatCurrency(this.cartTotal())}?`,
       () => void this.confirmCheckout(),
     );
   }
@@ -820,7 +879,7 @@ export class PosDashboardComponent implements OnInit {
     this.isCheckingOut = true;
     try {
       await this.actionBusy.run('pos-checkout', async () => {
-        const r = await this.posService.checkout({
+        const payload = {
           items: this.cart.map((line) => ({
             variantId: line.variantId,
             quantity: line.quantity,
@@ -829,7 +888,26 @@ export class PosDashboardComponent implements OnInit {
           discountId: this.selectedDiscountId,
           amountPaid: Number(this.amountReceived) || 0,
           paymentMethodId: this.selectedPaymentMethodId,
-        });
+        };
+
+        if (!this.offline.isOnline()) {
+          this.offline.queueCheckout(this.orgId(), payload, this.cartTotal());
+          this.checkoutSuccess = {
+            changeDue: this.changeDue(),
+            totalAmount: this.cartTotal(),
+          };
+          this.notify.success('Saved offline', 'Sale queued. Tap Sync when internet is back.');
+          this.cart = [];
+          this.cartService.clear(this.orgId());
+          this.cartOpen = false;
+          this.selectedDiscountId = null;
+          this.amountReceived = 0;
+          this.showCheckoutModal = false;
+          this.checkoutSuccess = null;
+          return;
+        }
+
+        const r = await this.posService.checkout(payload);
         if (!r.success || !r.data) {
           this.notify.error('Checkout failed', r.message ?? 'Unable to complete sale.');
           return;

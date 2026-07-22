@@ -158,6 +158,10 @@ export class AppSidebarComponent {
   }
 
   onSidebarMouseEnter() {
+    const canHover =
+      typeof window !== 'undefined' &&
+      window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+    if (!canHover) return;
     if (!this.sidebarService.isExpandedValue) {
       this.sidebarService.setHovered(true);
     }

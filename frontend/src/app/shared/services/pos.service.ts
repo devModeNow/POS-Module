@@ -253,6 +253,18 @@ export class PosService {
     return r.data;
   }
 
+  async getCustomChart(groupBy: string, metric: string, from?: string, to?: string) {
+    const params: Record<string, string> = { groupBy, metric };
+    if (from) params['from'] = from;
+    if (to) params['to'] = to;
+    const r = await apiClient.get<{
+      success: boolean;
+      data?: { groupBy: string; metric: string; labels: string[]; values: number[] };
+      message?: string;
+    }>('/api/pos/reports/custom-chart', { params });
+    return r.data;
+  }
+
   async getSaleTransactions(from?: string, to?: string, paymentStatus?: string, limit = 50, offset = 0) {
     const params: Record<string, string> = { limit: String(limit), offset: String(offset) };
     if (from) params['from'] = from;
@@ -505,10 +517,17 @@ export class PosService {
     return r.data;
   }
 
-  async getMySales(from?: string, to?: string) {
+  async getMySales(options?: {
+    from?: string;
+    to?: string;
+    status?: string;
+    search?: string;
+    page?: number;
+    pageSize?: number;
+  }) {
     const r = await apiClient.get<{ success: boolean; data?: unknown; message?: string }>(
       '/api/pos/my-sales',
-      { params: { from, to } },
+      { params: options },
     );
     return r.data;
   }

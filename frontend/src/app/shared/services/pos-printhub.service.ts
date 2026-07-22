@@ -22,11 +22,28 @@ const PRINTHUB_BT_SERVICE = '000018f0-0000-1000-8000-00805f9b34fb';
 const LS_DEVICE_ID = 'pos.printhub.btDeviceId';
 const LS_DEVICE_NAME = 'pos.printhub.btDeviceName';
 
+/** Web Bluetooth rejects writeValue payloads over 512 bytes; stay well under for Android MTU. */
+const BLE_WRITE_CHUNK = 180;
+const BLE_CHUNKED_FLAG = '__posBleChunked';
+
+type BleWriteChar = {
+  writeValue: (data: BufferSource) => Promise<void>;
+  writeValueWithoutResponse?: (data: BufferSource) => Promise<void>;
+  [BLE_CHUNKED_FLAG]?: boolean;
+  [key: string]: unknown;
+};
+
 type BluetoothGattLike = {
   connected: boolean;
   connect: () => Promise<unknown>;
   getPrimaryService: (uuid: string) => Promise<{
-    getCharacteristics: () => Promise<Array<{ properties: { write?: boolean; writeWithoutResponse?: boolean } }>>;
+    getCharacteristics: () => Promise<
+      Array<{
+        properties: { write?: boolean; writeWithoutResponse?: boolean };
+        writeValue: (data: BufferSource) => Promise<void>;
+        writeValueWithoutResponse?: (data: BufferSource) => Promise<void>;
+      }>
+    >;
   }>;
 };
 
@@ -165,6 +182,7 @@ export class PosPrintHubService {
         const hub = new PrintHub({ paperSize, printerType });
         void hub.connectToPrint({
           onReady: () => {
+            this.ensureChunkedPrintChar(hub);
             this.printer = hub;
             this.setConnected(true);
             this.deviceLabel = printerType === 'usb' ? 'PrintHub USB printer' : 'PrintHub Bluetooth printer';
@@ -259,7 +277,8 @@ export class PosPrintHubService {
           if (!writeChar) continue;
 
           const hub = new PrintHub({ paperSize, printerType: 'bluetooth' });
-          (hub as PrintHubInstance & { printChar: unknown }).printChar = writeChar;
+          (hub as PrintHubInstance & { printChar: unknown }).printChar =
+            this.wrapBleWriteChar(writeChar as BleWriteChar);
           this.printer = hub;
           this.deviceLabel = device.name?.trim() || this.readStoredName() || 'PrintHub Bluetooth printer';
           this.storeDevice(device.id, this.deviceLabel);
@@ -316,6 +335,7 @@ export class PosPrintHubService {
     const width = paperWidth || this.paperWidth || '58mm';
     this.paperWidth = width.includes('80') ? '80mm' : '58mm';
     hub.setPaperSize(this.paperWidth.includes('80') ? '80' : '58');
+    this.ensureChunkedPrintChar(hub);
 
     // Already have a live GATT characteristic — print directly (avoid reopening the picker).
     if ((hub as PrintHubInstance & { printChar?: unknown }).printChar) {
@@ -342,6 +362,7 @@ export class PosPrintHubService {
       void hub.connectToPrint({
         onReady: async (print) => {
           try {
+            this.ensureChunkedPrintChar(print);
             if (elements?.length) {
               await this.writeReceiptFromTemplate(print, ctx, elements);
             } else {
@@ -762,13 +783,75 @@ export class PosPrintHubService {
     printChar: { writeValue: (data: BufferSource) => Promise<void> },
     data: Uint8Array,
   ): Promise<void> {
-    const chunkSize = 180; // safer MTU for many Android BLE printers
-    for (let offset = 0; offset < data.length; offset += chunkSize) {
-      const slice = data.slice(offset, offset + chunkSize);
-      await printChar.writeValue(slice);
+    // Prefer one call when characteristic is already wrapped; otherwise chunk here.
+    const wrapped = printChar as BleWriteChar;
+    if (wrapped[BLE_CHUNKED_FLAG]) {
+      await printChar.writeValue(data as BufferSource);
+      return;
+    }
+    for (let offset = 0; offset < data.length; offset += BLE_WRITE_CHUNK) {
+      const slice = data.slice(offset, offset + BLE_WRITE_CHUNK);
+      await printChar.writeValue(slice as BufferSource);
       // Brief yield so Android BLE stack can keep up.
       await new Promise((r) => setTimeout(r, 20));
     }
+  }
+
+  /**
+   * PrintHub's writeText sends the whole string in one writeValue (no chunking).
+   * Long receipt blocks (item lists on re-print) exceed the Web Bluetooth 512-byte cap.
+   * Wrap the GATT characteristic so every write is split safely.
+   */
+  private wrapBleWriteChar(char: BleWriteChar): BleWriteChar {
+    if (char[BLE_CHUNKED_FLAG]) return char;
+
+    const originalWrite = char.writeValue.bind(char);
+    const originalWriteWo = char.writeValueWithoutResponse?.bind(char);
+
+    const writeChunked = async (
+      writeFn: (data: BufferSource) => Promise<void>,
+      data: BufferSource,
+    ): Promise<void> => {
+      const bytes =
+        data instanceof ArrayBuffer
+          ? new Uint8Array(data)
+          : data instanceof Uint8Array
+            ? data
+            : new Uint8Array(
+                (data as ArrayBufferView).buffer,
+                (data as ArrayBufferView).byteOffset,
+                (data as ArrayBufferView).byteLength,
+              );
+      if (bytes.length <= BLE_WRITE_CHUNK) {
+        await writeFn(bytes as BufferSource);
+        return;
+      }
+      for (let offset = 0; offset < bytes.length; offset += BLE_WRITE_CHUNK) {
+        const slice = bytes.slice(offset, offset + BLE_WRITE_CHUNK);
+        await writeFn(slice as BufferSource);
+        await new Promise((r) => setTimeout(r, 15));
+      }
+    };
+
+    return new Proxy(char, {
+      get(target, prop, receiver) {
+        if (prop === BLE_CHUNKED_FLAG) return true;
+        if (prop === 'writeValue') {
+          return (data: BufferSource) => writeChunked(originalWrite, data);
+        }
+        if (prop === 'writeValueWithoutResponse' && originalWriteWo) {
+          return (data: BufferSource) => writeChunked(originalWriteWo, data);
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    }) as BleWriteChar;
+  }
+
+  private ensureChunkedPrintChar(hub: PrintHubInstance): void {
+    const holder = hub as PrintHubInstance & { printChar?: BleWriteChar | null };
+    if (!holder.printChar?.writeValue) return;
+    holder.printChar = this.wrapBleWriteChar(holder.printChar);
   }
 
   private renderTemplateText(content: string, ctx: ReceiptPrintContext): string {
@@ -876,8 +959,10 @@ export class PosPrintHubService {
       return { success: false, message: 'Printer not ready for cash drawer.' };
     }
     try {
+      this.ensureChunkedPrintChar(this.printer!);
       const pulse = new Uint8Array([0x1b, 0x70, 0x00, 0x19, 0xfa]);
-      await this.writeBleChunks(printChar, pulse);
+      const char = (this.printer as PrintHubInstance & { printChar: BleWriteChar }).printChar;
+      await this.writeBleChunks(char, pulse);
       return { success: true };
     } catch (error) {
       return {

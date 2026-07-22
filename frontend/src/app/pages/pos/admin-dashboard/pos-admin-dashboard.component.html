@@ -4,7 +4,7 @@
   <div class="flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900 sm:flex-row sm:items-center sm:justify-between">
     <div>
       <h2 class="text-xl font-semibold text-gray-900 dark:text-white">Store Overview</h2>
-      <p class="mt-1 text-xs text-gray-400">Drag cards to rearrange · drag chart/list corners to resize</p>
+      <p class="mt-1 text-xs text-gray-400">Drag cards to rearrange · drag chart/list corners to resize · use × to remove</p>
     </div>
     <div class="flex flex-wrap items-center gap-2">
       <select [(ngModel)]="period" (ngModelChange)="onPeriodChange()"
@@ -26,6 +26,19 @@
           </svg>
         }
       </button>
+      <button type="button" (click)="openCustomChartBuilder()" title="Build custom chart"
+        class="rounded-md border border-brand-200 bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-100 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300">
+        Custom chart
+      </button>
+      @if (hiddenWidgets.length) {
+        <select (change)="onAddWidgetSelect($event)"
+          class="rounded-md border border-gray-200 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white">
+          <option value="" selected disabled>Add card…</option>
+          @for (id of hiddenWidgets; track id) {
+            <option [value]="id">{{ widgetMeta[id].label }}</option>
+          }
+        </select>
+      }
     </div>
   </div>
 
@@ -34,17 +47,22 @@
     @for (id of kpiWidgets; track id) {
       <div cdkDrag class="dashboard-widget rounded-lg border p-4 transition-shadow hover:shadow-md" [attr.data-widget-id]="id" [ngClass]="kpiColor(id)">
         <div class="dashboard-widget-content flex min-h-0 flex-1 flex-col">
-          <button type="button" class="flex h-full min-h-[100px] flex-1 flex-col justify-between text-left" (click)="openKpiDetail(id)">
-            <div class="flex items-start justify-between gap-1">
-              <p class="text-xs font-semibold uppercase tracking-wide opacity-80">{{ widgetMeta[id].label }}</p>
-              <span cdkDragHandle class="widget-drag-handle shrink-0 text-gray-400" title="Drag to reorder" (click)="$event.stopPropagation()">
+          <div class="flex shrink-0 items-start justify-between gap-1">
+            <p class="text-xs font-semibold uppercase tracking-wide opacity-80">{{ widgetMeta[id].label }}</p>
+            <div class="flex shrink-0 items-center gap-0.5">
+              <button type="button" title="Remove card" (click)="removeWidget(id)"
+                class="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10">
+                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+              <span cdkDragHandle class="widget-drag-handle text-gray-400" title="Drag to reorder">
                 <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 11-.001 4.001A2 2 0 017 2zm0 6a2 2 0 11-.001 4.001A2 2 0 017 8zm0 6a2 2 0 11-.001 4.001A2 2 0 017 14zm6-8a2 2 0 11-.001 4.001A2 2 0 0113 6zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 12zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 18z"/></svg>
               </span>
             </div>
-            <div>
-              <p class="text-lg font-bold leading-tight">{{ kpiValue(id) }}</p>
-              <p class="mt-1 text-[10px] uppercase tracking-wide opacity-60">Tap for details</p>
-            </div>
+          </div>
+          <button type="button" class="flex min-h-[80px] flex-1 flex-col justify-end text-left" (click)="openKpiDetail(id)">
+            <p class="text-lg font-bold leading-tight">{{ kpiValue(id) }}</p>
           </button>
         </div>
       </div>
@@ -73,6 +91,12 @@
                   </button>
                 </div>
               }
+              <button type="button" title="Remove chart" (click)="$event.stopPropagation(); removeWidget(id)"
+                class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10">
+                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
               <span cdkDragHandle class="widget-drag-handle text-gray-400" title="Drag to reorder">
                 <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 11-.001 4.001A2 2 0 017 2zm0 6a2 2 0 11-.001 4.001A2 2 0 017 8zm0 6a2 2 0 11-.001 4.001A2 2 0 017 14zm6-8a2 2 0 11-.001 4.001A2 2 0 0113 6zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 12zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 18z"/></svg>
               </span>
@@ -110,6 +134,21 @@
                   [legend]="donutLegend"></apx-chart>
               }
             }
+            @if (id === 'chart-custom' && customChartConfig) {
+              @if (customChartLoading) {
+                <p class="py-10 text-center text-sm text-gray-500">Loading custom chart…</p>
+              } @else if (!customChartValues.length) {
+                <p class="py-10 text-center text-sm text-gray-500">No data for the selected fields in this period.</p>
+              } @else if (chartVisualType('chart-custom') === 'bar') {
+                <apx-chart [series]="customBarSeries" [chart]="chartBase" [xaxis]="customBarXaxis"
+                  [colors]="chartColors" [plotOptions]="chartPlot" [grid]="chartGrid" [dataLabels]="chartDataLabels"
+                  [stroke]="chartStroke" [legend]="{ position: 'top' }"></apx-chart>
+              } @else {
+                <apx-chart [series]="customDonutSeries" [chart]="donutChartBase" [labels]="customDonutLabels"
+                  [colors]="chartColors" [plotOptions]="donutPlot" [dataLabels]="donutDataLabels"
+                  [legend]="donutLegend"></apx-chart>
+              }
+            }
           </div>
         </div>
         <div class="dashboard-widget-resize" title="Resize card" (pointerdown)="startWidgetResize($event, id)"></div>
@@ -124,9 +163,17 @@
         <div class="dashboard-widget-content flex min-h-0 flex-1 flex-col">
           <div class="mb-3 flex shrink-0 items-center justify-between">
             <h4 class="text-sm font-semibold text-gray-800 dark:text-white">{{ widgetMeta[id].label }}</h4>
-            <span cdkDragHandle class="widget-drag-handle text-gray-400" title="Drag to reorder">
-              <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 11-.001 4.001A2 2 0 017 2zm0 6a2 2 0 11-.001 4.001A2 2 0 017 8zm0 6a2 2 0 11-.001 4.001A2 2 0 017 14zm6-8a2 2 0 11-.001 4.001A2 2 0 0113 6zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 12zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 18z"/></svg>
-            </span>
+            <div class="flex items-center gap-0.5">
+              <button type="button" title="Remove card" (click)="$event.stopPropagation(); removeWidget(id)"
+                class="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-gray-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10">
+                <svg class="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+              <span cdkDragHandle class="widget-drag-handle text-gray-400" title="Drag to reorder">
+                <svg class="h-4 w-4" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 11-.001 4.001A2 2 0 017 2zm0 6a2 2 0 11-.001 4.001A2 2 0 017 8zm0 6a2 2 0 11-.001 4.001A2 2 0 017 14zm6-8a2 2 0 11-.001 4.001A2 2 0 0113 6zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 12zm0 6a2 2 0 11-.001 4.001A2 2 0 0113 18z"/></svg>
+              </span>
+            </div>
           </div>
           <div class="dashboard-widget-body">
             @if (id === 'list-staff') {
@@ -525,6 +572,51 @@
             }
           }
         }
+      </div>
+    </div>
+  </div>
+}
+
+@if (customChartBuilderOpen) {
+  <div class="fixed inset-0 z-[100000] flex items-center justify-center bg-gray-900/50 p-4">
+    <div class="w-full max-w-md rounded-xl bg-white p-6 shadow-2xl dark:bg-gray-900">
+      <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Custom chart</h3>
+      <p class="mt-1 text-sm text-gray-500">Choose fields to build a graph from sales data.</p>
+      <div class="mt-4 space-y-4">
+        <label class="block">
+          <span class="mb-1 block text-sm font-medium">Chart title</span>
+          <input [(ngModel)]="customChartDraft.title" class="w-full rounded-md border px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800" />
+        </label>
+        <label class="block">
+          <span class="mb-1 block text-sm font-medium">Group by (X-axis / slices)</span>
+          <select [(ngModel)]="customChartDraft.groupBy" class="w-full rounded-md border px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800">
+            @for (opt of customGroupByOptions; track opt.value) {
+              <option [ngValue]="opt.value">{{ opt.label }}</option>
+            }
+          </select>
+        </label>
+        <label class="block">
+          <span class="mb-1 block text-sm font-medium">Metric (Y-axis / values)</span>
+          <select [(ngModel)]="customChartDraft.metric" class="w-full rounded-md border px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800">
+            @for (opt of customMetricOptions; track opt.value) {
+              <option [ngValue]="opt.value">{{ opt.label }}</option>
+            }
+          </select>
+        </label>
+        <label class="block">
+          <span class="mb-1 block text-sm font-medium">Chart style</span>
+          <select [(ngModel)]="customChartDraft.visualType" class="w-full rounded-md border px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800">
+            <option value="bar">Bar</option>
+            <option value="donut">Donut</option>
+          </select>
+        </label>
+      </div>
+      <div class="mt-6 flex flex-wrap gap-2">
+        <button type="button" (click)="closeCustomChartBuilder()" class="flex-1 rounded-md border px-4 py-2 text-sm">Cancel</button>
+        @if (customChartConfig) {
+          <button type="button" (click)="removeCustomChart()" class="rounded-md border border-red-200 px-4 py-2 text-sm text-red-600">Remove</button>
+        }
+        <button type="button" (click)="saveCustomChart()" class="flex-1 rounded-md bg-brand-500 px-4 py-2 text-sm font-semibold text-white">Save chart</button>
       </div>
     </div>
   </div>

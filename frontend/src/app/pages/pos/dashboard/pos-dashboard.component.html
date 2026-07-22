@@ -7,9 +7,23 @@
   [class.border-gray-200]="!isCashierMode"
   [class.dark:border-gray-800]="!isCashierMode">
   <section class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+    @if (isOffline || pendingOfflineSales > 0) {
+      <div class="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100 sm:px-4">
+        <span>
+          @if (isOffline) { Offline mode — sales will queue locally. }
+          @if (pendingOfflineSales > 0) { {{ pendingOfflineSales }} sale(s) waiting to sync. }
+        </span>
+        @if (pendingOfflineSales > 0) {
+          <button type="button" (click)="syncOfflineSales()" [disabled]="offlineSyncing || isOffline"
+            class="rounded-md bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white disabled:opacity-50">
+            {{ offlineSyncing ? 'Syncing…' : 'Sync now' }}
+          </button>
+        }
+      </div>
+    }
     <app-pos-page-header>
       <button type="button" posHeaderActions (click)="toggleCart()"
-        class="relative inline-flex touch-manipulation items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-3 text-sm font-semibold text-white lg:hidden">
+        class="relative inline-flex touch-manipulation items-center justify-center gap-2 rounded-md bg-emerald-600 px-4 py-3 text-sm font-semibold text-white xl:hidden">
         Cart
         @if (cartCount() > 0) {
           <span class="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-white px-1.5 text-xs font-bold text-emerald-700">{{ cartCount() }}</span>
@@ -229,10 +243,11 @@
   @if (cart.length > 0) {
     @if (cartOpen) {
       <button type="button" (click)="toggleCart()" aria-label="Close cart"
-        class="fixed inset-0 z-30 bg-gray-900/40 lg:hidden"></button>
+        class="fixed inset-0 z-30 bg-gray-900/40 xl:hidden"></button>
     }
-  <aside class="hidden h-full min-h-0 w-full shrink-0 flex-col overflow-hidden border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900 max-lg:fixed max-lg:inset-y-0 max-lg:right-0 max-lg:z-50 max-lg:w-full max-lg:max-w-sm max-lg:border-l max-lg:shadow-2xl lg:flex lg:w-[22rem] lg:border-l lg:border-t-0"
-    [class.flex]="cartOpen">
+  <aside class="flex h-full min-h-0 w-full shrink-0 flex-col overflow-hidden border-gray-200 bg-white transition-transform duration-300 ease-in-out dark:border-gray-800 dark:bg-gray-900 max-xl:fixed max-xl:inset-y-0 max-xl:right-0 max-xl:z-50 max-xl:w-full max-xl:max-w-sm max-xl:border-l max-xl:shadow-2xl xl:w-[22rem] xl:translate-x-0 xl:border-l xl:border-t-0 xl:shadow-none"
+    [class.max-xl:translate-x-full]="!cartOpen"
+    [class.max-xl:translate-x-0]="cartOpen">
     <div class="flex shrink-0 items-center justify-between border-b border-gray-200 px-4 py-4 dark:border-gray-800">
       <div>
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Cart</h2>
@@ -240,7 +255,7 @@
       </div>
       <div class="flex items-center gap-1">
         <button type="button" (click)="toggleCart()" title="Close cart"
-          class="touch-manipulation rounded-md p-2 text-gray-500 hover:bg-gray-100 lg:hidden dark:hover:bg-gray-800">
+          class="touch-manipulation rounded-md p-2 text-gray-500 hover:bg-gray-100 xl:hidden dark:hover:bg-gray-800">
           <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
           </svg>
@@ -309,7 +324,7 @@
 
   @if (cart.length > 0 && !cartOpen) {
     <button type="button" (click)="toggleCart()" aria-label="Open cart"
-      class="fixed bottom-5 right-5 z-40 inline-flex touch-manipulation items-center gap-2 rounded-full bg-emerald-600 px-5 py-3 text-sm font-bold text-white shadow-lg ring-2 ring-white/30 lg:hidden">
+      class="fixed bottom-5 right-5 z-40 inline-flex touch-manipulation items-center gap-2 rounded-full bg-emerald-600 px-5 py-3 text-sm font-bold text-white shadow-lg ring-2 ring-white/30 xl:hidden">
       Cart
       <span class="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-white px-1.5 text-xs font-bold text-emerald-700">{{ cartCount() }}</span>
     </button>
@@ -463,49 +478,65 @@
 
 <!-- Checkout -->
 @if (showCheckoutModal) {
-  <div class="fixed inset-0 z-[100000] flex items-end justify-center overflow-y-auto bg-gray-900/50 p-2 sm:items-center">
-    <div class="my-auto flex w-full max-w-md flex-col overflow-hidden rounded-md bg-white shadow-2xl dark:bg-gray-900 max-h-[98vh]">
-      <div class="overflow-y-auto p-6">
+  <div class="fixed inset-0 z-[100000] flex items-end justify-center bg-gray-900/50 p-2 sm:items-center">
+    <div class="my-auto flex w-full max-w-md flex-col overflow-hidden rounded-md bg-white shadow-2xl dark:bg-gray-900 max-h-[min(98vh,720px)]">
       @if (checkoutSuccess) {
-        <div class="py-8 text-center">
+        <div class="overflow-y-auto p-6 py-8 text-center">
           <h3 class="text-2xl font-bold">Sale Complete</h3>
           <p class="mt-2 text-gray-500">Total: ₱{{ formatCurrency(checkoutSuccess.totalAmount) }}</p>
           <p class="mt-4 text-3xl font-bold text-emerald-600">Change: ₱{{ formatCurrency(checkoutSuccess.changeDue) }}</p>
         </div>
       } @else {
-        <h3 class="text-xl font-bold">Complete Payment</h3>
-        <div class="mt-5 space-y-4">
-          <div class="flex justify-between rounded-md bg-gray-50 px-4 py-3 dark:bg-gray-800">
-            <span class="text-sm text-gray-500">Subtotal (regular)</span>
-            <span class="font-semibold">₱{{ formatCurrency(cartRegularSubtotal()) }}</span>
+        <div class="shrink-0 border-b border-gray-200 px-6 py-4 dark:border-gray-800">
+          <h3 class="text-xl font-bold">Complete Payment</h3>
+        </div>
+        <div class="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-6 py-4">
+          <div class="overflow-hidden rounded-md border border-gray-200 dark:border-gray-700">
+            <button type="button" (click)="checkoutSubtotalsOpen = !checkoutSubtotalsOpen"
+              class="flex w-full items-center justify-between bg-gray-50 px-4 py-3 text-left text-sm font-medium text-gray-700 dark:bg-gray-800 dark:text-gray-200">
+              <span>Order summary</span>
+              <svg class="h-4 w-4 transition-transform" [class.rotate-180]="checkoutSubtotalsOpen" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            @if (checkoutSubtotalsOpen) {
+              <div class="space-y-2 border-t border-gray-200 p-3 dark:border-gray-700">
+                <div class="flex justify-between rounded-md bg-gray-50 px-4 py-3 dark:bg-gray-800/60">
+                  <span class="text-sm text-gray-500">Subtotal (regular)</span>
+                  <span class="font-semibold">₱{{ formatCurrency(cartRegularSubtotal()) }}</span>
+                </div>
+                @if (cartSaleSavings() > 0) {
+                  <div class="flex justify-between rounded-md bg-red-50 px-4 py-3 dark:bg-red-500/10">
+                    <span class="text-sm text-red-700 dark:text-red-300">Sale savings</span>
+                    <span class="font-semibold text-red-700 dark:text-red-300">−₱{{ formatCurrency(cartSaleSavings()) }}</span>
+                  </div>
+                }
+                <div class="flex justify-between rounded-md bg-gray-50 px-4 py-3 dark:bg-gray-800/60">
+                  <span class="text-sm text-gray-500">Subtotal (after sale)</span>
+                  <span class="font-semibold">₱{{ formatCurrency(cartSubtotal()) }}</span>
+                </div>
+              </div>
+            }
           </div>
-          @if (cartSaleSavings() > 0) {
-            <div class="flex justify-between rounded-md bg-red-50 px-4 py-3 dark:bg-red-500/10">
-              <span class="text-sm text-red-700 dark:text-red-300">Sale savings</span>
-              <span class="font-semibold text-red-700 dark:text-red-300">−₱{{ formatCurrency(cartSaleSavings()) }}</span>
-            </div>
-          }
-          <div class="flex justify-between rounded-md bg-gray-50 px-4 py-3 dark:bg-gray-800">
-            <span class="text-sm text-gray-500">Subtotal (after sale)</span>
-            <span class="font-semibold">₱{{ formatCurrency(cartSubtotal()) }}</span>
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label class="block min-w-0">
+              <span class="mb-2 block text-sm font-medium">Payment Method</span>
+              <select [(ngModel)]="selectedPaymentMethodId" class="w-full rounded-md border px-3 py-3 text-sm dark:border-gray-700 dark:bg-gray-800">
+                @for (m of paymentMethods; track m.id) {
+                  <option [ngValue]="m.id">{{ paymentMethodLabel(m) }}</option>
+                }
+              </select>
+            </label>
+            <label class="block min-w-0">
+              <span class="mb-2 block text-sm font-medium">Discount</span>
+              <select [(ngModel)]="selectedDiscountId" (ngModelChange)="onDiscountChange()" class="w-full rounded-md border px-3 py-3 text-sm dark:border-gray-700 dark:bg-gray-800">
+                <option [ngValue]="null">No discount</option>
+                @for (d of discounts; track d.id) {
+                  <option [ngValue]="d.id">{{ discountLabel(d) }}</option>
+                }
+              </select>
+            </label>
           </div>
-          <label class="block">
-            <span class="mb-2 block text-sm font-medium">Payment Method</span>
-            <select [(ngModel)]="selectedPaymentMethodId" class="w-full rounded-md border px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
-              @for (m of paymentMethods; track m.id) {
-                <option [ngValue]="m.id">{{ paymentMethodLabel(m) }}</option>
-              }
-            </select>
-          </label>
-          <label class="block">
-            <span class="mb-2 block text-sm font-medium">Discount</span>
-            <select [(ngModel)]="selectedDiscountId" (ngModelChange)="onDiscountChange()" class="w-full rounded-md border px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
-              <option [ngValue]="null">No discount</option>
-              @for (d of discounts; track d.id) {
-                <option [ngValue]="d.id">{{ discountLabel(d) }}</option>
-              }
-            </select>
-          </label>
           @if (cartOrderDiscount() > 0) {
             <div class="flex justify-between rounded-md bg-amber-50 px-4 py-3 dark:bg-amber-500/10">
               <span class="text-sm text-amber-700 dark:text-amber-300">{{ selectedDiscount?.name ?? 'Discount' }}</span>
@@ -518,10 +549,6 @@
               <span class="font-semibold text-amber-700">−₱{{ formatCurrency(cartDiscountAmount()) }}</span>
             </div>
           }
-          <div class="flex justify-between rounded-md bg-emerald-50 px-4 py-3">
-            <span class="text-sm font-medium text-emerald-700">Total Due</span>
-            <span class="text-2xl font-bold text-emerald-700">₱{{ formatCurrency(cartTotal()) }}</span>
-          </div>
           <label class="block">
             <span class="mb-2 block text-sm font-medium">Amount Received (₱)</span>
             <input #amountReceivedInput type="number" min="0" step="0.01"
@@ -542,14 +569,19 @@
             </label>
           }
         </div>
-        <div class="mt-6 flex gap-3">
-          <button type="button" (click)="closeCheckoutModal()" [disabled]="isCheckingOut" class="flex-1 rounded-md border py-4">Cancel</button>
-          <button type="button" (click)="requestConfirmCheckout()" [disabled]="!canConfirmCheckout()" class="flex-1 rounded-md bg-emerald-600 py-4 font-bold text-white disabled:opacity-50">
-            {{ isCheckingOut ? 'Processing...' : 'Confirm Sale' }}
-          </button>
+        <div class="shrink-0 border-t border-gray-200 px-6 py-4 dark:border-gray-800">
+          <div class="mb-4 flex items-center justify-between rounded-md bg-emerald-50 px-4 py-3 dark:bg-emerald-500/10">
+            <span class="text-sm font-medium text-emerald-700 dark:text-emerald-300">Total amount</span>
+            <span class="text-2xl font-bold text-emerald-700 dark:text-emerald-300">₱{{ formatCurrency(cartTotal()) }}</span>
+          </div>
+          <div class="flex gap-3">
+            <button type="button" (click)="closeCheckoutModal()" [disabled]="isCheckingOut" class="flex-1 rounded-md border py-4">Cancel</button>
+            <button type="button" (click)="requestConfirmCheckout()" [disabled]="!canConfirmCheckout()" class="flex-1 rounded-md bg-emerald-600 py-4 font-bold text-white disabled:opacity-50">
+              {{ isCheckingOut ? 'Processing...' : 'Submit' }}
+            </button>
+          </div>
         </div>
       }
-      </div>
     </div>
   </div>
 }

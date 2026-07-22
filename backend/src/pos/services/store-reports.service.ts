@@ -452,6 +452,114 @@ export class PosStoreReportsService {
     }
   }
 
+  async customChart(
+    orgId: number,
+    groupByRaw?: string,
+    metricRaw?: string,
+    from?: string,
+    to?: string,
+  ) {
+    try {
+      const groupBy = String(groupByRaw ?? 'category').trim().toLowerCase();
+      const metric = String(metricRaw ?? 'total_amount').trim().toLowerCase();
+
+      const groupMap: Record<string, { select: string; group: string; needsProductJoin: boolean }> = {
+        day: {
+          select: `st.sale_date::text`,
+          group: `st.sale_date`,
+          needsProductJoin: false,
+        },
+        cashier: {
+          select: `COALESCE(NULLIF(TRIM(COALESCE(to_jsonb(u)->>'fullname', '')), ''), u.username, 'Unknown')`,
+          group: `COALESCE(NULLIF(TRIM(COALESCE(to_jsonb(u)->>'fullname', '')), ''), u.username, 'Unknown')`,
+          needsProductJoin: false,
+        },
+        payment_method: {
+          select: `COALESCE(pm.name, 'Unknown')`,
+          group: `COALESCE(pm.name, 'Unknown')`,
+          needsProductJoin: false,
+        },
+        payment_status: {
+          select: `CASE WHEN st.payment_status = 'floating' THEN 'Floating' ELSE 'Settled' END`,
+          group: `CASE WHEN st.payment_status = 'floating' THEN 'Floating' ELSE 'Settled' END`,
+          needsProductJoin: false,
+        },
+        category: {
+          select: `COALESCE(NULLIF(TRIM(p.category), ''), 'Uncategorized')`,
+          group: `COALESCE(NULLIF(TRIM(p.category), ''), 'Uncategorized')`,
+          needsProductJoin: true,
+        },
+        product: {
+          select: `COALESCE(NULLIF(TRIM(p.name), ''), 'Unknown product')`,
+          group: `COALESCE(NULLIF(TRIM(p.name), ''), 'Unknown product')`,
+          needsProductJoin: true,
+        },
+        brand: {
+          select: `COALESCE(NULLIF(TRIM(p.brand), ''), 'Unbranded')`,
+          group: `COALESCE(NULLIF(TRIM(p.brand), ''), 'Unbranded')`,
+          needsProductJoin: true,
+        },
+        unit_type: {
+          select: `COALESCE(NULLIF(TRIM(st.unit_type), ''), 'pc')`,
+          group: `COALESCE(NULLIF(TRIM(st.unit_type), ''), 'pc')`,
+          needsProductJoin: false,
+        },
+      };
+
+      const metricMap: Record<string, string> = {
+        total_amount: `COALESCE(SUM(st.total_amount), 0)`,
+        quantity_sold: `COALESCE(SUM(st.quantity_sold), 0)`,
+        transaction_count: `COUNT(*)`,
+        discount_amount: `COALESCE(SUM(st.discount_amount), 0)`,
+      };
+
+      const group = groupMap[groupBy] ?? groupMap['category'];
+      const metricExpr = metricMap[metric] ?? metricMap['total_amount'];
+      const resolvedGroupBy = groupMap[groupBy] ? groupBy : 'category';
+      const resolvedMetric = metricMap[metric] ? metric : 'total_amount';
+
+      const params: unknown[] = [orgId];
+      const dateClause = this.dateClause(params, from, to);
+
+      const joins: string[] = [
+        `LEFT JOIN tblusers u ON u.id = st.created_by`,
+        `LEFT JOIN tblpayment_methods pm ON pm.id = st.payment_method_id`,
+      ];
+      if (group.needsProductJoin) {
+        joins.push(
+          `LEFT JOIN tblinventory_variants v ON v.id = st.variant_id`,
+          `LEFT JOIN tblinventory_products p ON p.id = v.product_id`,
+        );
+      }
+
+      const result = await this.db.query<{ label: string; value: string }>(
+        `SELECT ${group.select} AS label,
+                ${metricExpr}::text AS value
+         FROM tblsales_transactions st
+         ${joins.join('\n         ')}
+         WHERE st.org_id = $1
+           AND COALESCE(st.is_voided, false) = false
+           ${dateClause}
+         GROUP BY ${group.group}
+         ORDER BY ${metricExpr} DESC
+         LIMIT 30`,
+        params,
+      );
+
+      return {
+        success: true,
+        data: {
+          groupBy: resolvedGroupBy,
+          metric: resolvedMetric,
+          labels: result.rows.map((r) => String(r.label ?? 'Unknown')),
+          values: result.rows.map((r) => Number(r.value ?? 0)),
+        },
+      };
+    } catch (e) {
+      return { success: false, message: e instanceof Error ? e.message : 'Failed to load custom chart' };
+    }
+  }
+
   async dailySales(orgId: number, from?: string, to?: string) {
     return this.dashboard(orgId, from, to);
   }
@@ -601,7 +709,13 @@ export class PosStoreReportsService {
     }
   }
 
-  async cashierSales(orgId: number, cashierId: number, from?: string, to?: string) {
+  async cashierSales(
+    orgId: number,
+    cashierId: number,
+    from?: string,
+    to?: string,
+    options?: { status?: string; search?: string; page?: number; pageSize?: number },
+  ) {
     try {
       await this.ensureSalesVoidSchema();
       const params: unknown[] = [orgId, cashierId];
@@ -640,6 +754,41 @@ export class PosStoreReportsService {
         params,
       );
 
+      const tableParams = [...params];
+      let tableClause = `st.org_id = $1 AND st.created_by = $2
+           AND st.amount_paid IS NOT NULL
+           AND COALESCE(st.is_voided, FALSE) = FALSE
+           ${dateClause}`;
+
+      const status = String(options?.status ?? '').trim().toLowerCase();
+      if (status === 'settled' || status === 'floating') {
+        tableParams.push(status);
+        tableClause += ` AND COALESCE(st.payment_status, 'settled') = $${tableParams.length}`;
+      }
+
+      const search = String(options?.search ?? '').trim();
+      if (search) {
+        tableParams.push(`%${search}%`);
+        const searchIdx = tableParams.length;
+        tableClause += ` AND (
+             st.id::text ILIKE $${searchIdx}
+             OR st.sale_date::text ILIKE $${searchIdx}
+             OR st.total_amount::text ILIKE $${searchIdx}
+           )`;
+      }
+
+      const pageSize = Math.min(100, Math.max(5, Number(options?.pageSize) || 10));
+      const page = Math.max(1, Number(options?.page) || 1);
+      const offset = (page - 1) * pageSize;
+
+      const countResult = await this.db.query<{ count: string }>(
+        `SELECT COUNT(*)::text AS count
+         FROM tblsales_transactions st
+         WHERE ${tableClause}`,
+        tableParams,
+      );
+
+      const recentParams = [...tableParams, pageSize, offset];
       const recent = await this.db.query<{
         id: number;
         saleDate: string;
@@ -660,14 +809,13 @@ export class PosStoreReportsService {
                 )::text AS "totalAmount",
                 COALESCE(st.payment_status, 'settled') AS "paymentStatus"
          FROM tblsales_transactions st
-         WHERE st.org_id = $1 AND st.created_by = $2
-           AND st.amount_paid IS NOT NULL
-           AND COALESCE(st.is_voided, FALSE) = FALSE
-           ${dateClause}
+         WHERE ${tableClause}
          ORDER BY st.created_at DESC
-         LIMIT 20`,
-        params,
+         LIMIT $${recentParams.length - 1} OFFSET $${recentParams.length}`,
+        recentParams,
       );
+
+      const recentTotal = Number(countResult.rows[0]?.count ?? 0);
 
       return {
         success: true,
@@ -688,6 +836,9 @@ export class PosStoreReportsService {
             totalAmount: Number(r.totalAmount),
             paymentStatus: r.paymentStatus,
           })),
+          recentTotal,
+          page,
+          pageSize,
         },
       };
     } catch (e) {

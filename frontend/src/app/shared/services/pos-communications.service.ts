@@ -246,8 +246,8 @@ export class PosCommunicationsService {
     return content
       .replace('{{businessName}}', ctx.businessName || 'Store')
       .replace('{{businessAddress}}', ctx.businessAddress || '')
-      .replace('{{items}}', '2x pack - Sample item .... ₱100.00')
-      .replace('{{total}}', '₱100.00')
+      .replace('{{items}}', 'Sample item .... 100.00\n2 x 50.00')
+      .replace('{{total}}', '100.00')
       .replace('{{footer}}', ctx.footer || 'Thank you!');
   }
 }

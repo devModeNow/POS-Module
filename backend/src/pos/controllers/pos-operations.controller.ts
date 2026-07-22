@@ -35,9 +35,18 @@ export class PosOperationsController {
   mySales(
     @Query('from') from: string,
     @Query('to') to: string,
+    @Query('status') status: string,
+    @Query('search') search: string,
+    @Query('page') page: string,
+    @Query('pageSize') pageSize: string,
     @Req() req: AuthReq,
   ) {
-    return this.reports.cashierSales(posOrgId(req), posUserId(req), from, to);
+    return this.reports.cashierSales(posOrgId(req), posUserId(req), from, to, {
+      status,
+      search,
+      page: Number(page) || 1,
+      pageSize: Number(pageSize) || 10,
+    });
   }
 
   @Get('void-codes')

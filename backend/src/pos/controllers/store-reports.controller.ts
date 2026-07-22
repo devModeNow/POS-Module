@@ -20,6 +20,17 @@ export class PosStoreReportsController {
     return this.reportsService.dashboard(orgId(req), from, to, paymentStatus);
   }
 
+  @Get('custom-chart')
+  customChart(
+    @Query('groupBy') groupBy: string,
+    @Query('metric') metric: string,
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Req() req: AuthReq,
+  ) {
+    return this.reportsService.customChart(orgId(req), groupBy, metric, from, to);
+  }
+
   @Get('daily-sales')
   dailySales(@Query('from') from: string, @Query('to') to: string, @Req() req: AuthReq) {
     return this.reportsService.dailySales(orgId(req), from, to);

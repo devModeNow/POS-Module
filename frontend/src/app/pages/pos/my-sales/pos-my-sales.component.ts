@@ -46,7 +46,16 @@ export class PosMySalesComponent implements OnInit {
   error = '';
   summary: { totalSales: number; transactionCount: number; totalDiscount: number } | null = null;
   recent: SaleRow[] = [];
+  recentTotal = 0;
   lastUpdatedAt: Date | null = null;
+
+  tableSearch = '';
+  tableStatus = '';
+  currentPage = 1;
+  pageSize = 10;
+  readonly pageSizeOptions = [10, 20, 50];
+
+  private searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   reprintingSaleId: number | null = null;
   showReprintAuthModal = false;
@@ -79,6 +88,23 @@ export class PosMySalesComponent implements OnInit {
     });
   }
 
+  get totalPages(): number {
+    return Math.max(1, Math.ceil(this.recentTotal / this.pageSize));
+  }
+
+  get pageRangeStart(): number {
+    if (this.recentTotal === 0) return 0;
+    return (this.currentPage - 1) * this.pageSize + 1;
+  }
+
+  get pageRangeEnd(): number {
+    return Math.min(this.currentPage * this.pageSize, this.recentTotal);
+  }
+
+  get hasTableFilters(): boolean {
+    return !!this.tableSearch.trim() || !!this.tableStatus;
+  }
+
   constructor(
     private readonly pos: PosService,
     private readonly receiptPrint: PosReceiptPrintService,
@@ -97,11 +123,21 @@ export class PosMySalesComponent implements OnInit {
     this.loading = true;
     this.error = '';
     try {
-      const r = await this.pos.getMySales(this.from || undefined, this.to || undefined) as {
+      const r = await this.pos.getMySales({
+        from: this.from || undefined,
+        to: this.to || undefined,
+        status: this.tableStatus || undefined,
+        search: this.tableSearch.trim() || undefined,
+        page: this.currentPage,
+        pageSize: this.pageSize,
+      }) as {
         success: boolean;
         data?: {
           summary: { totalSales: number; transactionCount: number; totalDiscount: number };
           recent: SaleRow[];
+          recentTotal?: number;
+          page?: number;
+          pageSize?: number;
         };
         message?: string;
       };
@@ -109,14 +145,67 @@ export class PosMySalesComponent implements OnInit {
         this.error = r.message ?? 'Failed to load sales.';
         this.summary = null;
         this.recent = [];
+        this.recentTotal = 0;
         return;
       }
       this.summary = r.data.summary;
       this.recent = r.data.recent ?? [];
+      this.recentTotal = r.data.recentTotal ?? this.recent.length;
+      if (r.data.page) this.currentPage = r.data.page;
+      if (r.data.pageSize) this.pageSize = r.data.pageSize;
+      if (this.recent.length === 0 && this.recentTotal > 0 && this.currentPage > 1) {
+        this.currentPage = 1;
+        void this.load();
+        return;
+      }
       this.lastUpdatedAt = new Date();
     } finally {
       this.loading = false;
     }
+  }
+
+  onPeriodChange(): void {
+    this.currentPage = 1;
+    void this.load();
+  }
+
+  onTableStatusChange(): void {
+    this.currentPage = 1;
+    void this.load();
+  }
+
+  onTableSearchInput(): void {
+    if (this.searchDebounceTimer) clearTimeout(this.searchDebounceTimer);
+    this.searchDebounceTimer = setTimeout(() => {
+      this.currentPage = 1;
+      void this.load();
+    }, 350);
+  }
+
+  clearTableFilters(): void {
+    this.tableSearch = '';
+    this.tableStatus = '';
+    this.currentPage = 1;
+    void this.load();
+  }
+
+  onPageSizeChange(): void {
+    this.currentPage = 1;
+    void this.load();
+  }
+
+  goToPage(page: number): void {
+    if (page < 1 || page > this.totalPages || page === this.currentPage) return;
+    this.currentPage = page;
+    void this.load();
+  }
+
+  prevPage(): void {
+    this.goToPage(this.currentPage - 1);
+  }
+
+  nextPage(): void {
+    this.goToPage(this.currentPage + 1);
   }
 
   async openSaleDetail(row: SaleRow): Promise<void> {

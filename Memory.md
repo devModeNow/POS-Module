@@ -109,6 +109,17 @@ Living notes for agents continuing this repo. Prefer this file over re-reading l
 - **Cash drawer:** Printer settings → enable + timing (`before_receipt` default = open on complete sale before receipt). ESC/POS pulse via PrintHub / USB / network / Bluetooth. Checkout modal shows per-sale “Open cash drawer” when enabled. DB: `pos_cash_drawer_enabled`, `pos_cash_drawer_open_on`.
 - **Donut chart labels:** Admin dashboard donut slice labels use white text + drop shadow; center/legend use light gray for dark-theme readability.
 
+### 4.1
+- **Tablet/portrait cart:** Cart drawer uses slide-in panel (`max-xl`) instead of conflicting `hidden`/`flex`; desktop cart column at `xl+`. Auto-opens on tablet when cart has items.
+- **Checkout modal:** Subtotals in accordion; payment + discount side-by-side; fixed header/footer with scrollable body; Total Due above action buttons.
+- **Admin custom chart:** Field-based builder — pick **Group by** (day, cashier, payment method/status, category, product, brand, unit) + **Metric** (total amount, qty sold, transaction count, discount) + bar/donut. Data from `GET /api/pos/reports/custom-chart`.
+- **Admin KPI cards:** Removed “Tap for details” hint text.
+- **Donut readability:** Center donut labels forced to white (`#ffffff`).
+- **All chart widgets:** Bar/donut toggle on daily, category, payment, and custom charts.
+- **Tablet sidenav overlap:** Backdrop breakpoint aligned to `xl:hidden` (matches sidebar); hover-expand disabled on touch devices.
+- **Receipt item lines:** `Item name .... total` on first line, `qty x unitPrice` on second; no currency symbol on thermal output.
+- **Offline mode:** Catalog cached locally; checkout queues when offline; amber banner + Sync now when pending sales exist.
+
 ## Key printer files
 - Panel: `frontend/.../pos-printer-settings-panel/*`
 - Print: `pos-receipt-print.service.ts`, `pos-printhub.service.ts`
@@ -171,3 +182,6 @@ Living notes for agents continuing this repo. Prefer this file over re-reading l
 13. Purchase Orders page → smart item search + in-page form.
 14. Cash drawer enabled → complete sale opens drawer before receipt (PrintHub/USB/network).
 15. Admin dashboard charts → donut view labels readable (white % on slices).
+16. Tablet portrait → cart drawer opens; checkout modal accordion + fixed footer.
+17. Offline sale → queues locally; Sync now uploads when online.
+18. Receipt items → name + total on line 1, qty x price on line 2 (no ₱ on thermal).

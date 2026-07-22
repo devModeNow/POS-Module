@@ -255,4 +255,23 @@
    - Make sure to finish line-by-line, do not start working on next line unless its a pre-requisite to the present one.
    - Make sure to check all taskss under this continuation before setting it to done because in the past there are tasks that has not been done so be sure to check if its all done properly and without errors and bugs. 
    - Make sure update the Memory.md.
+   //Continuation 4.1
+   - In cashier dashboard, in tablet mode or the device is in portrait mode, the cart is now showing.
+   - In cashier dashboard complete sale modal, put inside accordion the Subtotal (regular) and Subtotal (after sale).
+   - In cashier dashboard complete sale modal, show the Payment method dropdown and Discount dropdown side by side so we can save some space.
+   - In cashier dashboard complete sale modal, show the Total Due just above the Cancel and Confirm Sale buttons.
+   - In cashier dashboard complete sale modal, make the Complete Payment text above also the Total due and button below in fixed position, so that only inside pard of the modal is scrollable.
+   - In posadmin main dashboard, add a feature where I or the admin can make a custom graph based on what I created or selected.
+   - In posadmin main dashboard, remove the "TAP FOR DETAILS" text under the cards.
+   - In posadmin main dashboard, when the graph is in Donut mode, make the text colored white so that it is readable.
+   - In posadmin dashboard, make all graphs to have a choice to use donut graph.
+   - When I am accessing the posadmin using tablet or touchscren device, the sidenav is overlapping.
+   - In all dashboard printer settings and output, on the item lists change the layout to Item name then total price on the right and below will be like quantity x price.
+   - In all dashboard printer settings and output, remove the currency sign.
+   - In all dashboard but mainly for cashier dashboard, I want to have offline mode since  there are times that the app will be use in a no internet environment. Then there will be a sync button where its already online.
+   - Make sure to finish line-by-line, do not start working on next line unless its a pre-requisite to the present one.
+   - Make sure to check all taskss under this continuation before setting it to done because in the past there are tasks that has not been done so be sure to check if its all done properly and without errors and bugs. 
+   - Make sure update the Memory.md.
+
+
 
