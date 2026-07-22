@@ -188,8 +188,13 @@ export class PosDashboardComponent implements OnInit {
       unitType: line.unitType ?? 'piece',
     }));
     // Desktop (xl+) shows cart column; tablet/portrait uses slide-out drawer.
+    // Do not auto-open on init in portrait — drawer covers the catalog.
     this.cartOpen = false;
-    if (this.cart.length > 0 && typeof window !== 'undefined' && window.matchMedia('(max-width: 1279px)').matches) {
+    if (
+      this.cart.length > 0 &&
+      typeof window !== 'undefined' &&
+      window.matchMedia('(max-width: 1279px) and (orientation: landscape)').matches
+    ) {
       this.cartOpen = true;
     }
     void this.loadCategories();
@@ -580,7 +585,7 @@ export class PosDashboardComponent implements OnInit {
       ];
     }
     this.persistCart();
-    this.cartOpen = true;
+    this.openCartDrawerOnAdd();
   }
 
   incrementLine(line: CartLine): void {
@@ -828,6 +833,15 @@ export class PosDashboardComponent implements OnInit {
 
   toggleCart(): void {
     this.cartOpen = !this.cartOpen;
+  }
+
+  /** Open the slide-out cart after adding an item (tablet/portrait). */
+  private openCartDrawerOnAdd(): void {
+    this.cartOpen = true;
+  }
+
+  private isCartDrawerMode(): boolean {
+    return typeof window !== 'undefined' && window.matchMedia('(max-width: 1279px)').matches;
   }
 
   async openCheckoutModal(): Promise<void> {

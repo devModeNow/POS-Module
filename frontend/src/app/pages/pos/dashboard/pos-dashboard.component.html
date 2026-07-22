@@ -243,11 +243,12 @@
   @if (cart.length > 0) {
     @if (cartOpen) {
       <button type="button" (click)="toggleCart()" aria-label="Close cart"
-        class="fixed inset-0 z-30 bg-gray-900/40 xl:hidden"></button>
+        class="fixed inset-0 z-[9550] bg-gray-900/40 xl:hidden"></button>
     }
-  <aside class="flex h-full min-h-0 w-full shrink-0 flex-col overflow-hidden border-gray-200 bg-white transition-transform duration-300 ease-in-out dark:border-gray-800 dark:bg-gray-900 max-xl:fixed max-xl:inset-y-0 max-xl:right-0 max-xl:z-50 max-xl:w-full max-xl:max-w-sm max-xl:border-l max-xl:shadow-2xl xl:w-[22rem] xl:translate-x-0 xl:border-l xl:border-t-0 xl:shadow-none"
-    [class.max-xl:translate-x-full]="!cartOpen"
-    [class.max-xl:translate-x-0]="cartOpen">
+  <aside
+    class="flex h-full min-h-0 w-full shrink-0 flex-col overflow-hidden border-gray-200 bg-white transition-transform duration-300 ease-in-out dark:border-gray-800 dark:bg-gray-900 max-xl:fixed max-xl:inset-y-0 max-xl:right-0 max-xl:top-0 max-xl:z-[9600] max-xl:h-[100dvh] max-xl:max-h-[100dvh] max-xl:w-full max-xl:max-w-sm max-xl:border-l max-xl:shadow-2xl xl:w-[22rem] xl:translate-x-0 xl:border-l xl:border-t-0 xl:shadow-none"
+    [ngClass]="cartOpen ? 'max-xl:translate-x-0' : 'max-xl:translate-x-full'"
+    [attr.aria-hidden]="!cartOpen">
     <div class="flex shrink-0 items-center justify-between border-b border-gray-200 px-4 py-4 dark:border-gray-800">
       <div>
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Cart</h2>
@@ -324,7 +325,7 @@
 
   @if (cart.length > 0 && !cartOpen) {
     <button type="button" (click)="toggleCart()" aria-label="Open cart"
-      class="fixed bottom-5 right-5 z-40 inline-flex touch-manipulation items-center gap-2 rounded-full bg-emerald-600 px-5 py-3 text-sm font-bold text-white shadow-lg ring-2 ring-white/30 xl:hidden">
+      class="fixed bottom-5 right-5 z-[9400] inline-flex touch-manipulation items-center gap-2 rounded-full bg-emerald-600 px-5 py-3 text-sm font-bold text-white shadow-lg ring-2 ring-white/30 xl:hidden">
       Cart
       <span class="inline-flex h-6 min-w-6 items-center justify-center rounded-full bg-white px-1.5 text-xs font-bold text-emerald-700">{{ cartCount() }}</span>
     </button>
