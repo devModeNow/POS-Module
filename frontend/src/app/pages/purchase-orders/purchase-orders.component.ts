@@ -2,7 +2,6 @@ import { CommonModule } from '@angular/common';
 import { Component, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { PageBreadcrumbComponent } from '../../shared/components/common/page-breadcrumb/page-breadcrumb.component';
-import { ButtonComponent } from '../../shared/components/ui/button/button.component';
 import { DatePickerComponent } from '../../shared/components/form/date-picker/date-picker.component';
 import { CanDirective } from '../../shared/directives/can.directive';
 import { InventoryItem, InventoryService, PurchaseOrder, PurchaseOrderItem, Supplier } from '../../shared/services/inventory.service';
@@ -20,7 +19,7 @@ type EditablePOItem = PurchaseOrderItem & {
 @Component({
   selector: 'app-purchase-orders',
   standalone: true,
-  imports: [CommonModule, FormsModule, PageBreadcrumbComponent, ButtonComponent, DatePickerComponent, CanDirective],
+  imports: [CommonModule, FormsModule, PageBreadcrumbComponent, DatePickerComponent, CanDirective],
   templateUrl: './purchase-orders.component.html',
 })
 export class PurchaseOrdersComponent implements OnInit {
@@ -29,6 +28,7 @@ export class PurchaseOrdersComponent implements OnInit {
   poFilterSupplier = '';
   isLoadingPO = false;
   isSavingPO = false;
+  isCreatePOOpen = false;
 
   poDetail: PurchaseOrder | null = null;
 
@@ -88,6 +88,16 @@ export class PurchaseOrdersComponent implements OnInit {
     this.supplierSearchText = '';
     this.supplierSearchResults = [];
     this.showSupplierDropdown = false;
+  }
+
+  openCreatePO(): void {
+    this.resetPOForm();
+    this.isCreatePOOpen = true;
+  }
+
+  closeCreatePO(): void {
+    if (this.isSavingPO) return;
+    this.isCreatePOOpen = false;
   }
 
   onSupplierSearchInput(): void {
@@ -317,6 +327,7 @@ export class PurchaseOrdersComponent implements OnInit {
       }
       this.notify.success('Created', 'Purchase order created.');
       this.resetPOForm();
+      this.isCreatePOOpen = false;
       await this.loadPO();
     } catch (e: any) {
       const msg = e?.response?.data?.message;

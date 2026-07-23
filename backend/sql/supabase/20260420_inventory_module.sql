@@ -79,7 +79,7 @@ CREATE TABLE IF NOT EXISTS public.tblpurchases (
   org_id          BIGINT NOT NULL REFERENCES public.tblorganizations(id),
   supplier_id     BIGINT REFERENCES public.tblsuppliers(id),
   po_number       TEXT,
-  status          TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','received','cancelled')),
+  status          TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','ordered','received','cancelled')),
   notes           TEXT,
   order_date      DATE,
   expected_date   DATE,

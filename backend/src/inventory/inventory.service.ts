@@ -9,6 +9,8 @@ const THUMB_SIZE = 400;
 
 @Injectable()
 export class InventoryService {
+  private poSchemaReady = false;
+
   constructor(private readonly db: DatabaseService) {}
 
   // ── Parts ────────────────────────────────────────────────────────────────
@@ -402,7 +404,53 @@ export class InventoryService {
   // ── Purchase Orders ───────────────────────────────────────────────────────
 
   private async ensurePoSchema(): Promise<void> {
+    if (this.poSchemaReady) return;
     await this.db.query(`ALTER TABLE tblpo_items ADD COLUMN IF NOT EXISTS variant_id BIGINT`);
+    // Drop ALL status CHECKs first — updating to 'draft' while a legacy check is active fails.
+    await this.db.query(`
+      DO $$
+      DECLARE r RECORD;
+      BEGIN
+        FOR r IN
+          SELECT c.conname
+          FROM pg_constraint c
+          JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ANY (c.conkey)
+          WHERE c.conrelid = 'public.tblpurchases'::regclass
+            AND c.contype = 'c'
+            AND a.attname = 'status'
+        LOOP
+          EXECUTE format('ALTER TABLE public.tblpurchases DROP CONSTRAINT IF EXISTS %I', r.conname);
+        END LOOP;
+      END $$
+    `);
+    await this.db.query(`
+      UPDATE public.tblpurchases
+      SET status = CASE lower(trim(COALESCE(status, '')))
+        WHEN 'pending' THEN 'draft'
+        WHEN 'completed' THEN 'received'
+        WHEN 'complete' THEN 'received'
+        WHEN 'canceled' THEN 'cancelled'
+        WHEN 'draft' THEN 'draft'
+        WHEN 'ordered' THEN 'ordered'
+        WHEN 'received' THEN 'received'
+        WHEN 'cancelled' THEN 'cancelled'
+        ELSE 'draft'
+      END
+      WHERE status IS NULL
+         OR lower(trim(status)) NOT IN ('draft', 'ordered', 'received', 'cancelled')
+    `);
+    await this.db.query(`
+      DO $$
+      BEGIN
+        ALTER TABLE public.tblpurchases
+          ADD CONSTRAINT tblpurchases_status_check
+          CHECK (status IN ('draft', 'ordered', 'received', 'cancelled'));
+      EXCEPTION
+        WHEN duplicate_object THEN NULL;
+      END $$
+    `);
+    await this.db.query(`ALTER TABLE public.tblpurchases ALTER COLUMN status SET DEFAULT 'draft'`);
+    this.poSchemaReady = true;
   }
 
   /**

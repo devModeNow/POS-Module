@@ -113,12 +113,20 @@ Living notes for agents continuing this repo. Prefer this file over re-reading l
 - **Tablet/portrait cart:** Cart drawer uses slide-in panel (`max-xl`) instead of conflicting `hidden`/`flex`; desktop cart column at `xl+`. Auto-opens on tablet when cart has items.
 - **Checkout modal:** Subtotals in accordion; payment + discount side-by-side; fixed header/footer with scrollable body; Total Due above action buttons.
 - **Admin custom chart:** Field-based builder — pick **Group by** (day, cashier, payment method/status, category, product, brand, unit) + **Metric** (total amount, qty sold, transaction count, discount) + bar/donut. Data from `GET /api/pos/reports/custom-chart`.
+- **Custom chart infinite load:** ApexCharts bindings must use **cached properties** (`customBarSeries`, `customBarXaxis`, …), not methods that return new arrays each CD cycle.
+- **Admin widget remove/add:** × on KPI/chart/list cards; “Add card…” dropdown restores hidden widgets; layout persistence allows partial `widgetOrder`.
 - **Admin KPI cards:** Removed “Tap for details” hint text.
 - **Donut readability:** Center donut labels forced to white (`#ffffff`).
 - **All chart widgets:** Bar/donut toggle on daily, category, payment, and custom charts.
 - **Tablet sidenav overlap:** Backdrop breakpoint aligned to `xl:hidden` (matches sidebar); hover-expand disabled on touch devices.
 - **Receipt item lines:** `Item name .... total` on first line, `qty x unitPrice` on second; no currency symbol on thermal output.
 - **Offline mode:** Catalog cached locally; checkout queues when offline; amber banner + Sync now when pending sales exist.
+- **Cashier My Sales table:** Server-side search/status filters + pagination (`page`/`pageSize` on `GET /api/pos/my-sales`); Txn # column.
+- **BLE re-print 512-byte error:** Wrap PrintHub GATT `writeValue` in chunked proxy (~180 bytes) in `pos-printhub.service.ts`.
+- **Portrait cart z-index:** Drawer/backdrop above header (`z-[9600]` / `z-[9550]`); open/close via `[ngClass]` (not `[class.max-xl:…]`).
+- **Purchase Orders page:** Full-width PO table; create form opens in a modal via **+** button. Toolbar/actions use icon buttons (refresh, create, view, save, receive, close, add/remove item).
+- **PO create status check:** Live DB had `CHECK (pending|received|cancelled)` rejecting `draft`. Fixed to `draft|ordered|received|cancelled` (`20260723_po_status_check_fix.sql` + `ensurePoSchema`). Drop legacy check **before** normalizing values.
+- **PO item remove ✕:** Top-right of each item card (create + draft detail); avoid grid wrap from column spans summing > 12.
 
 ## Key printer files
 - Panel: `frontend/.../pos-printer-settings-panel/*`
@@ -165,6 +173,10 @@ Living notes for agents continuing this repo. Prefer this file over re-reading l
 - `PUT /api/pos/printer-settings` in `terminal.controller.ts` whitelists allowed fields — add new printer/cash-drawer keys there or they never reach `settings.service`.
 - Nest whitelist + large base64 logos need 10mb body limit.
 - Do not import spacing helpers from `pos-printhub` through `pos-receipt-print` in a way that creates a cycle — use `pos-receipt-spacing.ts`.
+- Backend DB credentials live in `backend/.env` (not repo-root `.env`) — wrong file → wrong Supabase project.
+- ApexCharts: never bind methods that allocate new `series`/`categories` arrays each change-detection cycle.
+- Angular `[class.max-xl:foo]` bindings break on Tailwind colon variants — use `[ngClass]` instead.
+- `tblpurchases_status_check`: drop constraint before UPDATE to `draft`; legacy check was `pending|received|cancelled`.
 
 ## Suggested next checks when continuing
 1. Login as POS user → PrintHub connects (silent if previously paired; picker once if first time).
@@ -179,9 +191,11 @@ Living notes for agents continuing this repo. Prefer this file over re-reading l
 10. Admin KPI transactions → Re-print icon in Actions column.
 11. Saved template align/spacing → reprint matches editor layout (items format `Qty - Name - Unit`).
 12. Re-print from My Sales → admin void code required.
-13. Purchase Orders page → smart item search + in-page form.
+13. Purchase Orders page → full-width table; **+** opens create modal; icon actions; status `draft` OK.
 14. Cash drawer enabled → complete sale opens drawer before receipt (PrintHub/USB/network).
-15. Admin dashboard charts → donut view labels readable (white % on slices).
-16. Tablet portrait → cart drawer opens; checkout modal accordion + fixed footer.
+15. Admin dashboard charts → donut view labels readable (white % on slices); custom chart stable (no infinite load).
+16. Tablet portrait → cart drawer above header/filters; checkout modal accordion + fixed footer.
 17. Offline sale → queues locally; Sync now uploads when online.
 18. Receipt items → name + total on line 1, qty x price on line 2 (no ₱ on thermal).
+19. My Sales → filter/pagination on recent sales table.
+20. BLE re-print of long receipts → no 512-byte GATT write error.
