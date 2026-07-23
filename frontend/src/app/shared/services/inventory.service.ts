@@ -5,6 +5,8 @@ export interface InventoryItem {
   id: number;
   partName: string;
   productId?: number | null;
+  productName?: string | null;
+  variantName?: string | null;
   category?: string | null;
   brand?: string | null;
   description?: string | null;
@@ -28,6 +30,7 @@ export interface PurchaseOrderItem {
   variantId?: number | null;
   itemName: string;
   productName?: string | null;
+  unitType?: string | null;
   brand?: string | null;
   category?: string | null;
   quantity: number;
@@ -36,6 +39,7 @@ export interface PurchaseOrderItem {
   lineTotal?: number;
   partName?: string | null;
   source?: string;
+  availableUnits?: string[];
 }
 
 export interface PurchaseOrder {

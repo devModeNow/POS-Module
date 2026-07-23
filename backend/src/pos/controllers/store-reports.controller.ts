@@ -63,6 +63,9 @@ export class PosStoreReportsController {
     @Query('paymentStatus') paymentStatus: string,
     @Query('limit') limit: string,
     @Query('offset') offset: string,
+    @Query('search') search: string,
+    @Query('sortBy') sortBy: string,
+    @Query('sortDir') sortDir: string,
     @Req() req: AuthReq,
   ) {
     return this.reportsService.listTransactions(
@@ -72,6 +75,7 @@ export class PosStoreReportsController {
       paymentStatus,
       Math.min(Math.max(Number(limit) || 50, 1), 200),
       Math.max(Number(offset) || 0, 0),
+      { search, sortBy, sortDir },
     );
   }
 

@@ -65,14 +65,13 @@ export class PosDashboardComponent implements OnInit {
   cartEditUnitsLoading = false;
 
   showCheckoutModal = false;
-  showVoidModal = false;
-  voidingLine: CartLine | null = null;
-  voidAdminCode = '';
-  voidReason = '';
-  isVoiding = false;
-  selectedDiscountId: number | null = null;
+  selectedDiscountId: number | null | 'custom' = null;
   selectedPaymentMethodId: number | null = null;
+  paymentReferenceNumber = '';
+  customDiscountDraft = 0;
+  customDiscountApplied = 0;
   amountReceived = 0;
+  readonly quickAmounts = [10, 20, 50, 100, 500, 1000];
   checkoutSuccess: { changeDue: number; totalAmount: number } | null = null;
   cashDrawerEnabled = false;
   useCashDrawerThisSale = true;
@@ -217,8 +216,26 @@ export class PosDashboardComponent implements OnInit {
   }
 
   get selectedDiscount(): PosDiscount | null {
-    if (!this.selectedDiscountId) return null;
+    if (this.selectedDiscountId == null || this.selectedDiscountId === 'custom') return null;
     return this.discounts.find((d) => d.id === this.selectedDiscountId) ?? null;
+  }
+
+  get selectedPaymentMethod(): PosPaymentMethod | null {
+    if (!this.selectedPaymentMethodId) return null;
+    return this.paymentMethods.find((m) => m.id === this.selectedPaymentMethodId) ?? null;
+  }
+
+  get requiresPaymentReference(): boolean {
+    const code = String(this.selectedPaymentMethod?.code ?? '').toLowerCase().replace(/[\s_-]+/g, '');
+    const name = String(this.selectedPaymentMethod?.name ?? '').toLowerCase().replace(/[\s_-]+/g, '');
+    const haystack = `${code} ${name}`;
+    return (
+      haystack.includes('gcash') ||
+      haystack.includes('maya') ||
+      haystack.includes('banktransfer') ||
+      (haystack.includes('bank') && haystack.includes('transfer')) ||
+      haystack.includes('foodpanda')
+    );
   }
 
   onSearchFieldFocus(): void {
@@ -797,6 +814,9 @@ export class PosDashboardComponent implements OnInit {
   }
 
   cartOrderDiscount(): number {
+    if (this.selectedDiscountId === 'custom') {
+      return Math.min(Math.max(0, Number(this.customDiscountApplied) || 0), this.cartSubtotal());
+    }
     const discount = this.selectedDiscount;
     if (!discount || (discount.discountType !== 'percent' && discount.discountType !== 'fixed')) {
       return 0;
@@ -823,11 +843,14 @@ export class PosDashboardComponent implements OnInit {
 
   canConfirmCheckout(): boolean {
     const received = Number(this.amountReceived) || 0;
+    const referenceOk =
+      !this.requiresPaymentReference || !!this.paymentReferenceNumber.trim();
     return (
       received >= this.cartTotal() &&
       this.cart.length > 0 &&
       !this.isCheckingOut &&
-      !!this.selectedPaymentMethodId
+      !!this.selectedPaymentMethodId &&
+      referenceOk
     );
   }
 
@@ -851,6 +874,9 @@ export class PosDashboardComponent implements OnInit {
     }
     await this.loadCashDrawerSettings();
     this.selectedDiscountId = null;
+    this.customDiscountDraft = 0;
+    this.customDiscountApplied = 0;
+    this.paymentReferenceNumber = '';
     this.amountReceived = 0;
     this.checkoutSuccess = null;
     this.checkoutSubtotalsOpen = false;
@@ -866,7 +892,40 @@ export class PosDashboardComponent implements OnInit {
   }
 
   onDiscountChange(): void {
-    // Keep amount received as cashier entered; do not auto-fill.
+    if (this.selectedDiscountId !== 'custom') {
+      this.customDiscountDraft = 0;
+      this.customDiscountApplied = 0;
+      return;
+    }
+    this.customDiscountApplied = 0;
+    this.customDiscountDraft = 0;
+  }
+
+  applyQuickAmount(amount: number): void {
+    this.amountReceived = Math.round(((Number(this.amountReceived) || 0) + amount) * 100) / 100;
+  }
+
+  clearAmountReceived(): void {
+    this.amountReceived = 0;
+  }
+
+  requestApplyCustomDiscount(): void {
+    const amount = Math.round((Number(this.customDiscountDraft) || 0) * 100) / 100;
+    if (amount <= 0) {
+      this.notify.warning('Invalid discount', 'Enter a custom discount greater than zero.');
+      return;
+    }
+    if (amount > this.cartSubtotal()) {
+      this.notify.warning('Invalid discount', 'Custom discount cannot exceed the subtotal.');
+      return;
+    }
+    this.openConfirm(
+      'Apply custom discount?',
+      `Apply a ₱${this.formatCurrency(amount)} discount to this sale?`,
+      () => {
+        this.customDiscountApplied = amount;
+      },
+    );
   }
 
   displayPrice(product: PosProduct): { price: number; original?: number } {
@@ -899,9 +958,13 @@ export class PosDashboardComponent implements OnInit {
             quantity: line.quantity,
             unitType: line.unitType,
           })),
-          discountId: this.selectedDiscountId,
+          discountId: this.selectedDiscountId === 'custom' ? null : this.selectedDiscountId,
+          discountAmount: this.selectedDiscountId === 'custom' ? this.customDiscountApplied : undefined,
           amountPaid: Number(this.amountReceived) || 0,
           paymentMethodId: this.selectedPaymentMethodId,
+          referenceNumber: this.requiresPaymentReference
+            ? this.paymentReferenceNumber.trim()
+            : undefined,
         };
 
         if (!this.offline.isOnline()) {
@@ -915,6 +978,9 @@ export class PosDashboardComponent implements OnInit {
           this.cartService.clear(this.orgId());
           this.cartOpen = false;
           this.selectedDiscountId = null;
+          this.customDiscountDraft = 0;
+          this.customDiscountApplied = 0;
+          this.paymentReferenceNumber = '';
           this.amountReceived = 0;
           this.showCheckoutModal = false;
           this.checkoutSuccess = null;
@@ -936,6 +1002,9 @@ export class PosDashboardComponent implements OnInit {
         this.cartService.clear(this.orgId());
         this.cartOpen = false;
         this.selectedDiscountId = null;
+        this.customDiscountDraft = 0;
+        this.customDiscountApplied = 0;
+        this.paymentReferenceNumber = '';
         this.amountReceived = 0;
         await this.loadCatalog();
         this.showCheckoutModal = false;
@@ -1031,46 +1100,6 @@ export class PosDashboardComponent implements OnInit {
 
   paymentMethodLabel(m: PosPaymentMethod): string {
     return m.name;
-  }
-
-  openVoidLine(line: CartLine): void {
-    this.voidingLine = line;
-    this.voidAdminCode = '';
-    this.voidReason = '';
-    this.showVoidModal = true;
-  }
-
-  closeVoidModal(): void {
-    this.showVoidModal = false;
-    this.voidingLine = null;
-  }
-
-  async confirmVoidLine(): Promise<void> {
-    if (!this.voidingLine || !this.voidAdminCode.trim()) {
-      this.notify.warning('Required', 'Enter the admin void code.');
-      return;
-    }
-    this.isVoiding = true;
-    try {
-      await this.actionBusy.run('pos-void', async () => {
-        const r = await this.posService.voidCartLine({
-          cartKey: this.voidingLine!.cartKey,
-          adminCode: this.voidAdminCode.trim(),
-          reason: this.voidReason.trim() || undefined,
-        });
-        if (!r.success) {
-          this.notify.error('Void failed', r.message ?? 'Invalid admin code');
-          return;
-        }
-        const key = this.voidingLine!.cartKey;
-        this.cart = this.cart.filter((l) => l.cartKey !== key);
-        this.persistCart();
-        this.notify.success('Voided', 'Item removed from cart.');
-        this.closeVoidModal();
-      });
-    } finally {
-      this.isVoiding = false;
-    }
   }
 
   openConfirm(title: string, message: string, action: () => void, dialogVariant: 'primary' | 'danger' = 'primary'): void {

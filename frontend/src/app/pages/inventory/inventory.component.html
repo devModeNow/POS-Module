@@ -509,12 +509,20 @@
             </div>
           } @else {
           <p class="text-xs text-gray-500 dark:text-gray-400">Step 1 — pick or type a category, then the product type, then add variants below.</p>
-          <label><span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">1. Category *</span>
-            <input type="text" list="pos-category-list" [(ngModel)]="productForm.category" [disabled]="isSavingItem" placeholder="Pick or type new category"
+          <label class="relative"><span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">1. Category *</span>
+            <input type="text" [(ngModel)]="productForm.category" [disabled]="isSavingItem" placeholder="Search or type a new category"
+              (input)="onProductCategoryInput(productForm.category)"
+              (focus)="onProductCategoryInput(productForm.category)"
+              (blur)="showProductCategoryDropdown = false"
               class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
-            <datalist id="pos-category-list">
-              @for (cat of categoryOptions; track cat.id) { <option [value]="cat.name"></option> }
-            </datalist>
+            @if (showProductCategoryDropdown && productCategorySuggestions.length) {
+              <div class="absolute left-0 top-full z-10 mt-1 max-h-40 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                @for (cat of productCategorySuggestions; track cat.id) {
+                  <button type="button" (mousedown)="selectProductCategory(cat.name)"
+                    class="block w-full px-3 py-1.5 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-200">{{ cat.name }}</button>
+                }
+              </div>
+            }
           </label>
           <label><span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">2. Product Type / Name *</span>
             <input type="text" [(ngModel)]="productForm.name" [disabled]="isSavingItem" placeholder="e.g. Peanut, Gummy Bears"

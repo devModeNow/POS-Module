@@ -335,6 +335,7 @@ export class InventoryService {
                 p.brand, p.category,
                 v.stock_qty AS "stockQty", v.cost_price AS "costPrice",
                 v.selling_price AS "sellingPrice",
+                v.unit_type AS "unitType",
                 COALESCE(v.image_url, p.image_url) AS "imageUrl"
          FROM tblinventory_variants v
          INNER JOIN tblinventory_products p ON p.id = v.product_id
@@ -367,12 +368,15 @@ export class InventoryService {
         return {
           id: 0,
           partName,
+          productName,
+          variantName,
           brand: row['brand'] ?? null,
           category: row['category'] ?? null,
           stockQty: Number(row['stockQty'] ?? 0),
           costPrice: Number(row['costPrice'] ?? 0),
           sellingPrice: Number(row['sellingPrice'] ?? 0),
           imageUrl: row['imageUrl'] ?? null,
+          unitType: row['unitType'] ?? 'piece',
           existsInInventory: true,
           variantId: Number(row['variantId']),
           productId: Number(row['productId']),
@@ -388,14 +392,87 @@ export class InventoryService {
 
   async getLowStock(orgId: number) {
     try {
-      const result = await this.db.query(
+      const legacy = await this.db.query<{
+        id: number;
+        partName: string;
+        category: string | null;
+        brand: string | null;
+        stockQty: string;
+        stockWarning: string;
+        sellingPrice: string;
+      }>(
         `SELECT id, part_name AS "partName", category, brand,
-                stock_qty AS "stockQty", stock_warning AS "stockWarning",
-                selling_price AS "sellingPrice"
+                stock_qty::text AS "stockQty", stock_warning::text AS "stockWarning",
+                selling_price::text AS "sellingPrice"
          FROM tblinventory
          WHERE org_id = $1 AND stock_qty <= stock_warning
-         ORDER BY stock_qty ASC`, [orgId]);
-      return { success: true, data: result.rows };
+         ORDER BY stock_qty ASC`,
+        [orgId],
+      );
+
+      let variants: Array<{
+        id: number;
+        partName: string;
+        category: string | null;
+        brand: string | null;
+        stockQty: string;
+        stockWarning: string;
+        sellingPrice: string;
+      }> = [];
+      try {
+        const pos = await this.db.query<{
+          id: number;
+          partName: string;
+          category: string | null;
+          brand: string | null;
+          stockQty: string;
+          stockWarning: string;
+          sellingPrice: string;
+        }>(
+          `SELECT v.id,
+                  (p.name || ' — ' || v.variant_name) AS "partName",
+                  p.category, p.brand,
+                  v.stock_qty::text AS "stockQty",
+                  v.stock_warning::text AS "stockWarning",
+                  v.selling_price::text AS "sellingPrice"
+           FROM tblinventory_variants v
+           INNER JOIN tblinventory_products p ON p.id = v.product_id
+           WHERE v.org_id = $1
+             AND v.is_active = TRUE
+             AND p.is_active = TRUE
+             AND v.stock_qty <= v.stock_warning
+           ORDER BY v.stock_qty ASC`,
+          [orgId],
+        );
+        variants = pos.rows;
+      } catch {
+        variants = [];
+      }
+
+      const data = [
+        ...legacy.rows.map((r) => ({
+          id: r.id,
+          partName: r.partName,
+          category: r.category,
+          brand: r.brand,
+          stockQty: Number(r.stockQty),
+          stockWarning: Number(r.stockWarning),
+          sellingPrice: Number(r.sellingPrice),
+          source: 'legacy' as const,
+        })),
+        ...variants.map((r) => ({
+          id: r.id,
+          partName: r.partName,
+          category: r.category,
+          brand: r.brand,
+          stockQty: Number(r.stockQty),
+          stockWarning: Number(r.stockWarning),
+          sellingPrice: Number(r.sellingPrice),
+          source: 'variant' as const,
+        })),
+      ].sort((a, b) => a.stockQty - b.stockQty);
+
+      return { success: true, data };
     } catch (e) {
       return { success: false, message: e instanceof Error ? e.message : 'Failed to load low stock' };
     }
@@ -579,15 +656,8 @@ export class InventoryService {
                 pi.inventory_id AS "inventoryId",
                 pi.variant_id AS "variantId",
                 pi.item_name AS "itemName",
-                COALESCE(
-                  i.part_name,
-                  CASE
-                    WHEN vp.name IS NOT NULL AND v.variant_name IS NOT NULL AND lower(v.variant_name) <> 'default'
-                      THEN vp.name || ' — ' || v.variant_name
-                    ELSE vp.name
-                  END,
-                  pi.item_name
-                ) AS "productName",
+                COALESCE(vp.name, i.part_name, pi.item_name) AS "productName",
+                COALESCE(v.unit_type, i.unit_type, 'piece') AS "unitType",
                 COALESCE(i.brand, vp.brand, '') AS "brand",
                 COALESCE(i.category, vp.category, '') AS "category",
                 pi.quantity,
@@ -613,12 +683,14 @@ export class InventoryService {
           inventoryId: row['inventoryId'] ?? null,
           variantId: row['variantId'] ?? null,
           itemName: row['itemName'] ?? row['productName'] ?? '',
-          productName: row['productName'],
+          productName: row['productName'] ?? '',
+          unitType: row['unitType'] ?? 'piece',
           brand: row['brand'] ?? '',
           category: row['category'] ?? '',
           quantity,
           unitCost,
           lineTotal,
+          availableUnits: row['unitType'] ? [String(row['unitType'])] : ['piece'],
         };
       });
 

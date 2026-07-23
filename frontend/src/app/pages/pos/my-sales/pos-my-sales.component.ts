@@ -6,7 +6,21 @@ import { PosReceiptPrintService } from '../../../shared/services/pos-receipt-pri
 import { NotificationService } from '../../../shared/services/notification.service';
 import { PosPageHeaderComponent } from '../shared/pos-page-header.component';
 
-type SaleRow = { id: number; saleDate: string; totalAmount: number; paymentStatus: string };
+type SaleRow = {
+  id: number;
+  saleDate: string;
+  totalAmount: number;
+  paymentStatus: string;
+  paymentMethod?: string;
+  referenceNumber?: string | null;
+};
+
+type PaymentMethodTotal = {
+  methodName: string;
+  methodCode: string;
+  totalAmount: number;
+  transactionCount: number;
+};
 
 type SaleDetail = {
   id: number;
@@ -15,6 +29,7 @@ type SaleDetail = {
   cashier: string;
   paymentMethod: string;
   paymentStatus: string;
+  referenceNumber?: string | null;
   amountPaid: number | null;
   changeAmount: number | null;
   discountAmount: number;
@@ -45,15 +60,22 @@ export class PosMySalesComponent implements OnInit {
   loading = false;
   error = '';
   summary: { totalSales: number; transactionCount: number; totalDiscount: number } | null = null;
+  byPayment: PaymentMethodTotal[] = [];
   recent: SaleRow[] = [];
   recentTotal = 0;
   lastUpdatedAt: Date | null = null;
+
+  private readonly hiddenPaymentCardsKey = 'pos.mySales.hiddenPaymentCards';
+  hiddenPaymentCardCodes = new Set<string>();
+  showAddPaymentCardMenu = false;
 
   tableSearch = '';
   tableStatus = '';
   currentPage = 1;
   pageSize = 10;
   readonly pageSizeOptions = [10, 20, 50];
+  sortBy: 'id' | 'date' | 'amount' | 'status' | 'payment' | 'reference' = 'date';
+  sortDir: 'asc' | 'desc' = 'desc';
 
   private searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -66,6 +88,13 @@ export class PosMySalesComponent implements OnInit {
   detailLoading = false;
   detailError = '';
   saleDetail: SaleDetail | null = null;
+  detailSaleRow: SaleRow | null = null;
+
+  showVoidModal = false;
+  voidingItem: SaleDetail['items'][number] | null = null;
+  voidAdminCode = '';
+  voidReason = '';
+  isVoiding = false;
 
   get periodLabel(): string {
     if (!this.from && !this.to) return 'All recorded sales';
@@ -105,17 +134,26 @@ export class PosMySalesComponent implements OnInit {
     return !!this.tableSearch.trim() || !!this.tableStatus;
   }
 
+  get visiblePaymentCards(): PaymentMethodTotal[] {
+    return this.byPayment.filter((p) => !this.hiddenPaymentCardCodes.has(p.methodCode));
+  }
+
+  get hiddenPaymentCards(): PaymentMethodTotal[] {
+    return this.byPayment.filter((p) => this.hiddenPaymentCardCodes.has(p.methodCode));
+  }
+
   constructor(
     private readonly pos: PosService,
     private readonly receiptPrint: PosReceiptPrintService,
     private readonly notify: NotificationService,
-  ) {}
+  ) {
+    this.loadHiddenPaymentCards();
+  }
 
   ngOnInit(): void {
-    const today = new Date();
-    const start = new Date(today.getFullYear(), today.getMonth(), 1);
-    this.from = start.toISOString().slice(0, 10);
-    this.to = today.toISOString().slice(0, 10);
+    const today = new Date().toISOString().slice(0, 10);
+    this.from = today;
+    this.to = today;
     void this.load();
   }
 
@@ -130,10 +168,13 @@ export class PosMySalesComponent implements OnInit {
         search: this.tableSearch.trim() || undefined,
         page: this.currentPage,
         pageSize: this.pageSize,
+        sortBy: this.sortBy,
+        sortDir: this.sortDir,
       }) as {
         success: boolean;
         data?: {
           summary: { totalSales: number; transactionCount: number; totalDiscount: number };
+          byPayment?: PaymentMethodTotal[];
           recent: SaleRow[];
           recentTotal?: number;
           page?: number;
@@ -144,11 +185,13 @@ export class PosMySalesComponent implements OnInit {
       if (!r.success || !r.data) {
         this.error = r.message ?? 'Failed to load sales.';
         this.summary = null;
+        this.byPayment = [];
         this.recent = [];
         this.recentTotal = 0;
         return;
       }
       this.summary = r.data.summary;
+      this.byPayment = r.data.byPayment ?? [];
       this.recent = r.data.recent ?? [];
       this.recentTotal = r.data.recentTotal ?? this.recent.length;
       if (r.data.page) this.currentPage = r.data.page;
@@ -208,8 +251,25 @@ export class PosMySalesComponent implements OnInit {
     this.goToPage(this.currentPage + 1);
   }
 
+  toggleSort(column: 'id' | 'date' | 'amount' | 'status' | 'payment' | 'reference'): void {
+    if (this.sortBy === column) {
+      this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      this.sortBy = column;
+      this.sortDir = column === 'id' || column === 'date' ? 'desc' : 'asc';
+    }
+    this.currentPage = 1;
+    void this.load();
+  }
+
+  sortIndicator(column: 'id' | 'date' | 'amount' | 'status' | 'payment' | 'reference'): string {
+    if (this.sortBy !== column) return '';
+    return this.sortDir === 'asc' ? ' ↑' : ' ↓';
+  }
+
   async openSaleDetail(row: SaleRow): Promise<void> {
     this.showDetailModal = true;
+    this.detailSaleRow = row;
     this.detailLoading = true;
     this.detailError = '';
     this.saleDetail = null;
@@ -228,7 +288,74 @@ export class PosMySalesComponent implements OnInit {
   closeSaleDetail(): void {
     this.showDetailModal = false;
     this.saleDetail = null;
+    this.detailSaleRow = null;
     this.detailError = '';
+  }
+
+  openVoidItem(item: SaleDetail['items'][number], event?: Event): void {
+    event?.stopPropagation();
+    this.voidingItem = item;
+    this.voidAdminCode = '';
+    this.voidReason = '';
+    this.showVoidModal = true;
+  }
+
+  closeVoidModal(): void {
+    if (this.isVoiding) return;
+    this.showVoidModal = false;
+    this.voidingItem = null;
+    this.voidAdminCode = '';
+    this.voidReason = '';
+  }
+
+  async confirmVoidItem(): Promise<void> {
+    if (!this.voidingItem) return;
+    if (!this.voidAdminCode.trim()) {
+      this.notify.warning('Required', 'Enter the admin void code to void this item.');
+      return;
+    }
+
+    this.isVoiding = true;
+    try {
+      const r = await this.pos.voidCartLine({
+        saleId: this.voidingItem.id,
+        adminCode: this.voidAdminCode.trim(),
+        reason: this.voidReason.trim() || undefined,
+      });
+      if (!r.success) {
+        this.notify.error('Void failed', r.message ?? 'Invalid admin code.');
+        return;
+      }
+
+      this.notify.success('Item voided', 'Stock has been restored for this product.');
+      this.showVoidModal = false;
+      this.voidingItem = null;
+      this.voidAdminCode = '';
+      this.voidReason = '';
+
+      if (this.detailSaleRow) {
+        const row = this.detailSaleRow;
+        this.detailLoading = true;
+        this.detailError = '';
+        try {
+          const detail = await this.pos.getTransactionDetail(row.id);
+          if (!detail.success || !detail.data) {
+            this.closeSaleDetail();
+          } else if (!detail.data.items?.length) {
+            this.closeSaleDetail();
+          } else {
+            this.saleDetail = detail.data;
+          }
+        } finally {
+          this.detailLoading = false;
+        }
+      }
+      await this.load();
+    } catch {
+      this.notify.error('Void failed', 'Could not void this item.');
+    } finally {
+      this.isVoiding = false;
+    }
   }
 
   promptReprintSale(row: SaleRow, event?: Event): void {
@@ -339,5 +466,34 @@ export class PosMySalesComponent implements OnInit {
     const d = new Date(`${iso}T12:00:00`);
     if (Number.isNaN(d.getTime())) return iso;
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  hidePaymentCard(code: string): void {
+    this.hiddenPaymentCardCodes.add(code);
+    this.persistHiddenPaymentCards();
+  }
+
+  showPaymentCard(code: string): void {
+    this.hiddenPaymentCardCodes.delete(code);
+    this.persistHiddenPaymentCards();
+    this.showAddPaymentCardMenu = false;
+  }
+
+  toggleAddPaymentCardMenu(): void {
+    this.showAddPaymentCardMenu = !this.showAddPaymentCardMenu;
+  }
+
+  private loadHiddenPaymentCards(): void {
+    try {
+      const raw = localStorage.getItem(this.hiddenPaymentCardsKey);
+      const parsed = raw ? (JSON.parse(raw) as string[]) : [];
+      this.hiddenPaymentCardCodes = new Set(Array.isArray(parsed) ? parsed : []);
+    } catch {
+      this.hiddenPaymentCardCodes = new Set();
+    }
+  }
+
+  private persistHiddenPaymentCards(): void {
+    localStorage.setItem(this.hiddenPaymentCardsKey, JSON.stringify([...this.hiddenPaymentCardCodes]));
   }
 }

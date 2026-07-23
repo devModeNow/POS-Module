@@ -74,6 +74,10 @@ export class PosChatService {
         ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ
     `);
     await this.db.query(`
+      ALTER TABLE public.tblpos_chat_messages
+        ADD COLUMN IF NOT EXISTS seen_at TIMESTAMPTZ
+    `);
+    await this.db.query(`
       CREATE TABLE IF NOT EXISTS public.tblpos_staff_presence (
         user_id    BIGINT NOT NULL,
         org_id     BIGINT NOT NULL,
@@ -173,6 +177,19 @@ export class PosChatService {
       if (mode === 'private') {
         const peer = Number(recipientId) || 0;
         if (!peer) return { success: false, message: 'Select a user for private chat' };
+
+        // Mark inbound private messages as seen while this thread is being viewed.
+        await this.db.query(
+          `UPDATE tblpos_chat_messages
+           SET seen_at = NOW()
+           WHERE org_id = $1
+             AND recipient_id = $2
+             AND sender_id = $3
+             AND seen_at IS NULL
+             AND deleted_at IS NULL`,
+          [orgId, userId, peer],
+        );
+
         const result = await this.db.query<{
           id: number;
           senderId: number;
@@ -387,6 +404,35 @@ export class PosChatService {
       return { success: true };
     } catch (e) {
       return { success: false, message: e instanceof Error ? e.message : 'Failed to clear chat' };
+    }
+  }
+
+  async getSeenStatus(orgId: number, userId: number, peerId: number) {
+    if (!orgId || !userId || !peerId) {
+      return { success: false, lastSeenMessageId: null as number | null, message: 'Invalid request' };
+    }
+    try {
+      await this.ensureSchema();
+      const r = await this.db.query<{ lastSeenId: string | null }>(
+        `SELECT MAX(id) FILTER (WHERE seen_at IS NOT NULL)::text AS "lastSeenId"
+         FROM tblpos_chat_messages
+         WHERE org_id = $1
+           AND sender_id = $2
+           AND recipient_id = $3
+           AND deleted_at IS NULL`,
+        [orgId, userId, peerId],
+      );
+      const raw = r.rows[0]?.lastSeenId;
+      return {
+        success: true,
+        lastSeenMessageId: raw != null ? Number(raw) : null,
+      };
+    } catch (e) {
+      return {
+        success: false,
+        lastSeenMessageId: null as number | null,
+        message: e instanceof Error ? e.message : 'Failed to load seen status',
+      };
     }
   }
 }

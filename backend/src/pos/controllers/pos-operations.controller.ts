@@ -39,6 +39,8 @@ export class PosOperationsController {
     @Query('search') search: string,
     @Query('page') page: string,
     @Query('pageSize') pageSize: string,
+    @Query('sortBy') sortBy: string,
+    @Query('sortDir') sortDir: string,
     @Req() req: AuthReq,
   ) {
     return this.reports.cashierSales(posOrgId(req), posUserId(req), from, to, {
@@ -46,6 +48,8 @@ export class PosOperationsController {
       search,
       page: Number(page) || 1,
       pageSize: Number(pageSize) || 10,
+      sortBy,
+      sortDir,
     });
   }
 

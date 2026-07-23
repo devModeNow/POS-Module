@@ -111,6 +111,11 @@ export class PosCommunicationsController {
     return this.chatService.clearChat(posOrgId(req), posUserId(req), mode, recipientId);
   }
 
+  @Get('chat/seen')
+  getSeenStatus(@Query('recipientId') recipientId: string, @Req() req: AuthReq) {
+    return this.chatService.getSeenStatus(posOrgId(req), posUserId(req), Number(recipientId) || 0);
+  }
+
   @Get('notifications')
   listNotifications(@Req() req: AuthReq) {
     return this.notificationsService.list(

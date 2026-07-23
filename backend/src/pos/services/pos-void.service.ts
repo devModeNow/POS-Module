@@ -31,7 +31,8 @@ export class PosVoidService {
         ADD COLUMN IF NOT EXISTS is_voided BOOLEAN NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS voided_at TIMESTAMPTZ,
         ADD COLUMN IF NOT EXISTS voided_by BIGINT,
-        ADD COLUMN IF NOT EXISTS void_reason TEXT
+        ADD COLUMN IF NOT EXISTS void_reason TEXT,
+        ADD COLUMN IF NOT EXISTS reference_number TEXT
     `);
   }
 
@@ -158,15 +159,109 @@ export class PosVoidService {
     }
 
     try {
-      await this.ensureSchema();
-      const r = await this.db.query<{ id: number }>(
-        `UPDATE tblsales_transactions
-         SET is_voided = TRUE, voided_at = NOW(), voided_by = $1, void_reason = $2
-         WHERE id = $3 AND org_id = $4 AND COALESCE(is_voided, FALSE) = FALSE
-         RETURNING id`,
-        [userId, dto.reason ?? null, dto.saleId, orgId],
+      const line = await this.db.query<{
+        id: number;
+        variantId: number | null;
+        quantitySold: string;
+        amountPaid: string | null;
+        changeAmount: string | null;
+        paymentMethodId: number | null;
+        paymentStatus: string | null;
+        discountAmount: string | null;
+        discountId: number | null;
+        referenceNumber: string | null;
+        createdBy: number | null;
+        saleDate: string;
+        createdAt: string;
+      }>(
+        `SELECT id,
+                variant_id AS "variantId",
+                quantity_sold::text AS "quantitySold",
+                amount_paid::text AS "amountPaid",
+                change_amount::text AS "changeAmount",
+                payment_method_id AS "paymentMethodId",
+                payment_status AS "paymentStatus",
+                discount_amount::text AS "discountAmount",
+                discount_id AS "discountId",
+                NULLIF(TRIM(COALESCE(reference_number, '')), '') AS "referenceNumber",
+                created_by AS "createdBy",
+                sale_date::text AS "saleDate",
+                created_at AS "createdAt"
+         FROM tblsales_transactions
+         WHERE id = $1 AND org_id = $2 AND COALESCE(is_voided, FALSE) = FALSE
+         LIMIT 1`,
+        [dto.saleId, orgId],
       );
-      if (!r.rowCount) return { success: false, message: 'Sale not found or already voided' };
+
+      const saleLine = line.rows[0];
+      if (!saleLine) return { success: false, message: 'Sale not found or already voided' };
+
+      await this.db.withTransaction(async (client) => {
+        const voided = await client.query<{ id: number }>(
+          `UPDATE tblsales_transactions
+           SET is_voided = TRUE, voided_at = NOW(), voided_by = $1, void_reason = $2
+           WHERE id = $3 AND org_id = $4 AND COALESCE(is_voided, FALSE) = FALSE
+           RETURNING id`,
+          [userId, dto.reason ?? null, dto.saleId, orgId],
+        );
+        if (!voided.rowCount) {
+          throw new Error('Sale not found or already voided');
+        }
+
+        const qty = Number(saleLine.quantitySold) || 0;
+        if (saleLine.variantId != null && qty > 0) {
+          await client.query(
+            `UPDATE tblinventory_variants
+             SET stock_qty = stock_qty + $1, updated_at = NOW()
+             WHERE id = $2 AND org_id = $3`,
+            [qty, saleLine.variantId, orgId],
+          );
+        }
+
+        // If this row held the checkout payment header, move it to a sibling line in the same batch.
+        if (saleLine.amountPaid != null) {
+          const sibling = await client.query<{ id: number }>(
+            `SELECT id
+             FROM tblsales_transactions
+             WHERE org_id = $1
+               AND created_by IS NOT DISTINCT FROM $2
+               AND sale_date = $3::date
+               AND created_at >= $4::timestamptz - interval '5 seconds'
+               AND created_at <= $4::timestamptz + interval '5 seconds'
+               AND id <> $5
+               AND COALESCE(is_voided, FALSE) = FALSE
+             ORDER BY id ASC
+             LIMIT 1`,
+            [orgId, saleLine.createdBy, saleLine.saleDate, saleLine.createdAt, saleLine.id],
+          );
+          const nextId = sibling.rows[0]?.id;
+          if (nextId) {
+            await client.query(
+              `UPDATE tblsales_transactions
+               SET amount_paid = $1,
+                   change_amount = $2,
+                   payment_method_id = $3,
+                   payment_status = $4,
+                   discount_amount = $5,
+                   discount_id = $6,
+                   reference_number = $7
+               WHERE id = $8 AND org_id = $9`,
+              [
+                saleLine.amountPaid,
+                saleLine.changeAmount,
+                saleLine.paymentMethodId,
+                saleLine.paymentStatus,
+                saleLine.discountAmount,
+                saleLine.discountId,
+                saleLine.referenceNumber,
+                nextId,
+                orgId,
+              ],
+            );
+          }
+        }
+      });
+
       await this.audit.log({
         orgId,
         userId,
@@ -174,7 +269,11 @@ export class PosVoidService {
         action: 'pos.sale.void',
         entityType: 'sale',
         entityId: dto.saleId,
-        details: { reason: dto.reason ?? null },
+        details: {
+          reason: dto.reason ?? null,
+          variantId: saleLine.variantId,
+          quantityRestored: Number(saleLine.quantitySold) || 0,
+        },
       });
       return { success: true };
     } catch (e) {

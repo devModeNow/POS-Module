@@ -14,7 +14,8 @@ export class PosStoreReportsService {
         ADD COLUMN IF NOT EXISTS is_voided BOOLEAN NOT NULL DEFAULT FALSE,
         ADD COLUMN IF NOT EXISTS voided_at TIMESTAMPTZ,
         ADD COLUMN IF NOT EXISTS voided_by BIGINT,
-        ADD COLUMN IF NOT EXISTS void_reason TEXT
+        ADD COLUMN IF NOT EXISTS void_reason TEXT,
+        ADD COLUMN IF NOT EXISTS reference_number TEXT
     `);
     this.salesVoidSchemaReady = true;
   }
@@ -39,8 +40,10 @@ export class PosStoreReportsService {
     paymentStatus?: string,
     limit = 50,
     offset = 0,
+    options?: { search?: string; sortBy?: string; sortDir?: string },
   ) {
     try {
+      await this.ensureSalesVoidSchema();
       const params: unknown[] = [orgId];
       let dateClause = this.dateClause(params, from, to);
       let statusClause = '';
@@ -49,14 +52,74 @@ export class PosStoreReportsService {
         statusClause = ` AND st.payment_status = $${params.length}`;
       }
 
+      let searchClause = '';
+      const search = String(options?.search ?? '').trim();
+      if (search) {
+        params.push(`%${search}%`);
+        const searchIdx = params.length;
+        searchClause = ` AND (
+             st.id::text ILIKE $${searchIdx}
+             OR st.sale_date::text ILIKE $${searchIdx}
+             OR st.total_amount::text ILIKE $${searchIdx}
+             OR COALESCE(st.reference_number, '') ILIKE $${searchIdx}
+             OR COALESCE(pm.name, '') ILIKE $${searchIdx}
+             OR COALESCE(to_jsonb(u)->>'fullname', u.username, '') ILIKE $${searchIdx}
+           )`;
+      }
+
+      const sortDir = String(options?.sortDir ?? 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+      const sortByRaw = String(options?.sortBy ?? 'date').toLowerCase();
+      const sortByMap: Record<string, string> = {
+        date: 'st.created_at',
+        saledate: 'st.created_at',
+        cashier: `COALESCE(to_jsonb(u)->>'fullname', u.username, '')`,
+        payment: `COALESCE(pm.name, 'Unknown')`,
+        paymentmethod: `COALESCE(pm.name, 'Unknown')`,
+        items: `(
+                  SELECT COUNT(*)
+                  FROM tblsales_transactions s2
+                  WHERE s2.org_id = st.org_id
+                    AND s2.created_by = st.created_by
+                    AND s2.sale_date = st.sale_date
+                    AND s2.created_at >= st.created_at - interval '10 seconds'
+                    AND s2.created_at <= st.created_at + interval '10 seconds'
+                    AND COALESCE(s2.is_voided, FALSE) = FALSE
+                )`,
+        amount: `(
+                  SELECT COALESCE(SUM(s2.total_amount), 0)
+                  FROM tblsales_transactions s2
+                  WHERE s2.org_id = st.org_id
+                    AND s2.created_by = st.created_by
+                    AND s2.sale_date = st.sale_date
+                    AND s2.created_at >= st.created_at - interval '10 seconds'
+                    AND s2.created_at <= st.created_at + interval '10 seconds'
+                    AND COALESCE(s2.is_voided, FALSE) = FALSE
+                )`,
+        total: `(
+                  SELECT COALESCE(SUM(s2.total_amount), 0)
+                  FROM tblsales_transactions s2
+                  WHERE s2.org_id = st.org_id
+                    AND s2.created_by = st.created_by
+                    AND s2.sale_date = st.sale_date
+                    AND s2.created_at >= st.created_at - interval '10 seconds'
+                    AND s2.created_at <= st.created_at + interval '10 seconds'
+                    AND COALESCE(s2.is_voided, FALSE) = FALSE
+                )`,
+        status: `COALESCE(st.payment_status, 'settled')`,
+        reference: `COALESCE(st.reference_number, '')`,
+      };
+      const orderExpr = sortByMap[sortByRaw] ?? 'st.created_at';
+
       const countParams = [...params];
       const countResult = await this.db.query<{ count: string }>(
         `SELECT COUNT(*)::text AS count
          FROM tblsales_transactions st
+         LEFT JOIN tblpayment_methods pm ON pm.id = st.payment_method_id
+         LEFT JOIN tblusers u ON u.id = st.created_by
          WHERE st.org_id = $1
            AND st.amount_paid IS NOT NULL
            AND COALESCE(st.is_voided, FALSE) = FALSE
-           ${dateClause} ${statusClause}`,
+           ${dateClause} ${statusClause} ${searchClause}`,
         countParams,
       );
 
@@ -70,6 +133,7 @@ export class PosStoreReportsService {
         changeAmount: string | null;
         paymentStatus: string;
         paymentMethod: string;
+        referenceNumber: string | null;
         cashier: string;
         createdAt: string;
         itemCount: string;
@@ -90,6 +154,7 @@ export class PosStoreReportsService {
                 st.change_amount::text AS "changeAmount",
                 COALESCE(st.payment_status, 'settled') AS "paymentStatus",
                 COALESCE(pm.name, 'Unknown') AS "paymentMethod",
+                NULLIF(TRIM(COALESCE(st.reference_number, '')), '') AS "referenceNumber",
                 COALESCE(to_jsonb(u)->>'fullname', u.username, 'Unknown') AS cashier,
                 st.created_at AS "createdAt",
                 (
@@ -108,8 +173,8 @@ export class PosStoreReportsService {
          WHERE st.org_id = $1
            AND st.amount_paid IS NOT NULL
            AND COALESCE(st.is_voided, FALSE) = FALSE
-           ${dateClause} ${statusClause}
-         ORDER BY st.created_at DESC
+           ${dateClause} ${statusClause} ${searchClause}
+         ORDER BY ${orderExpr} ${sortDir}, st.id DESC
          LIMIT $${params.length - 1} OFFSET $${params.length}`,
         params,
       );
@@ -124,6 +189,7 @@ export class PosStoreReportsService {
           changeAmount: row.changeAmount != null ? Number(row.changeAmount) : null,
           paymentStatus: row.paymentStatus,
           paymentMethod: row.paymentMethod,
+          referenceNumber: row.referenceNumber,
           cashier: row.cashier,
           createdAt: row.createdAt,
           itemCount: Number(row.itemCount),
@@ -234,12 +300,14 @@ export class PosStoreReportsService {
         paymentStatus: string;
         discountAmount: string | null;
         paymentMethodId: number | null;
+        referenceNumber: string | null;
       }>(
         `SELECT amount_paid::text AS "amountPaid",
                 change_amount::text AS "changeAmount",
                 COALESCE(payment_status, 'settled') AS "paymentStatus",
                 discount_amount::text AS "discountAmount",
-                payment_method_id AS "paymentMethodId"
+                payment_method_id AS "paymentMethodId",
+                NULLIF(TRIM(COALESCE(reference_number, '')), '') AS "referenceNumber"
          FROM tblsales_transactions
          WHERE org_id = $1
            AND created_by IS NOT DISTINCT FROM $2
@@ -258,6 +326,7 @@ export class PosStoreReportsService {
       const paymentStatus = pay?.paymentStatus ?? a.paymentStatus;
       const discountAmount = pay?.discountAmount ?? a.discountAmount;
       const paymentMethodId = pay?.paymentMethodId ?? a.paymentMethodId;
+      const referenceNumber = pay?.referenceNumber ?? null;
 
       const lines = await this.db.query<{
         id: number;
@@ -313,6 +382,7 @@ export class PosStoreReportsService {
           cashier: meta.rows[0]?.cashier ?? 'Unknown',
           paymentMethod: meta.rows[0]?.paymentMethod ?? 'Unknown',
           paymentStatus,
+          referenceNumber,
           amountPaid: amountPaid != null ? Number(amountPaid) : null,
           changeAmount: changeAmount != null ? Number(changeAmount) : null,
           discountAmount: discountAmount != null ? Number(discountAmount) : 0,
@@ -714,7 +784,14 @@ export class PosStoreReportsService {
     cashierId: number,
     from?: string,
     to?: string,
-    options?: { status?: string; search?: string; page?: number; pageSize?: number },
+    options?: {
+      status?: string;
+      search?: string;
+      page?: number;
+      pageSize?: number;
+      sortBy?: string;
+      sortDir?: string;
+    },
   ) {
     try {
       await this.ensureSalesVoidSchema();
@@ -754,6 +831,37 @@ export class PosStoreReportsService {
         params,
       );
 
+      const byPayment = await this.db.query<{
+        methodName: string;
+        methodCode: string;
+        totalAmount: string;
+        transactionCount: string;
+      }>(
+        `SELECT COALESCE(pm.name, 'Cash') AS "methodName",
+                COALESCE(pm.code, 'cash') AS "methodCode",
+                COALESCE(SUM(batch.total), 0)::text AS "totalAmount",
+                COUNT(*)::text AS "transactionCount"
+         FROM tblsales_transactions st
+         LEFT JOIN tblpayment_methods pm ON pm.id = st.payment_method_id
+         CROSS JOIN LATERAL (
+           SELECT COALESCE(SUM(s2.total_amount), 0) AS total
+           FROM tblsales_transactions s2
+           WHERE s2.org_id = st.org_id
+             AND s2.created_by = st.created_by
+             AND s2.sale_date = st.sale_date
+             AND s2.created_at >= st.created_at - interval '10 seconds'
+             AND s2.created_at <= st.created_at + interval '10 seconds'
+             AND COALESCE(s2.is_voided, FALSE) = FALSE
+         ) batch
+         WHERE st.org_id = $1 AND st.created_by = $2
+           AND st.amount_paid IS NOT NULL
+           AND COALESCE(st.is_voided, FALSE) = FALSE
+           ${dateClause}
+         GROUP BY pm.name, pm.code
+         ORDER BY SUM(batch.total) DESC`,
+        params,
+      );
+
       const tableParams = [...params];
       let tableClause = `st.org_id = $1 AND st.created_by = $2
            AND st.amount_paid IS NOT NULL
@@ -774,12 +882,53 @@ export class PosStoreReportsService {
              st.id::text ILIKE $${searchIdx}
              OR st.sale_date::text ILIKE $${searchIdx}
              OR st.total_amount::text ILIKE $${searchIdx}
+             OR COALESCE(st.reference_number, '') ILIKE $${searchIdx}
+             OR EXISTS (
+               SELECT 1 FROM tblpayment_methods pm_s
+               WHERE pm_s.id = st.payment_method_id
+                 AND pm_s.name ILIKE $${searchIdx}
+             )
            )`;
       }
 
       const pageSize = Math.min(100, Math.max(5, Number(options?.pageSize) || 10));
       const page = Math.max(1, Number(options?.page) || 1);
       const offset = (page - 1) * pageSize;
+
+      const sortDir = String(options?.sortDir ?? 'desc').toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+      const sortByRaw = String(options?.sortBy ?? 'date').toLowerCase();
+      const sortByMap: Record<string, string> = {
+        id: 'st.id',
+        date: 'st.created_at',
+        saledate: 'st.created_at',
+        amount: `(
+                  SELECT COALESCE(SUM(s2.total_amount), 0)
+                  FROM tblsales_transactions s2
+                  WHERE s2.org_id = st.org_id
+                    AND s2.created_by = st.created_by
+                    AND s2.sale_date = st.sale_date
+                    AND s2.created_at >= st.created_at - interval '10 seconds'
+                    AND s2.created_at <= st.created_at + interval '10 seconds'
+                    AND COALESCE(s2.is_voided, FALSE) = FALSE
+                )`,
+        totalamount: `(
+                  SELECT COALESCE(SUM(s2.total_amount), 0)
+                  FROM tblsales_transactions s2
+                  WHERE s2.org_id = st.org_id
+                    AND s2.created_by = st.created_by
+                    AND s2.sale_date = st.sale_date
+                    AND s2.created_at >= st.created_at - interval '10 seconds'
+                    AND s2.created_at <= st.created_at + interval '10 seconds'
+                    AND COALESCE(s2.is_voided, FALSE) = FALSE
+                )`,
+        status: `COALESCE(st.payment_status, 'settled')`,
+        paymentstatus: `COALESCE(st.payment_status, 'settled')`,
+        payment: `COALESCE(pm.name, 'Cash')`,
+        paymentmethod: `COALESCE(pm.name, 'Cash')`,
+        reference: `COALESCE(st.reference_number, '')`,
+        referencenumber: `COALESCE(st.reference_number, '')`,
+      };
+      const orderExpr = sortByMap[sortByRaw] ?? 'st.created_at';
 
       const countResult = await this.db.query<{ count: string }>(
         `SELECT COUNT(*)::text AS count
@@ -794,6 +943,8 @@ export class PosStoreReportsService {
         saleDate: string;
         totalAmount: string;
         paymentStatus: string;
+        paymentMethod: string;
+        referenceNumber: string | null;
       }>(
         `SELECT st.id,
                 st.sale_date::text AS "saleDate",
@@ -807,10 +958,13 @@ export class PosStoreReportsService {
                     AND s2.created_at <= st.created_at + interval '10 seconds'
                     AND COALESCE(s2.is_voided, FALSE) = FALSE
                 )::text AS "totalAmount",
-                COALESCE(st.payment_status, 'settled') AS "paymentStatus"
+                COALESCE(st.payment_status, 'settled') AS "paymentStatus",
+                COALESCE(pm.name, 'Cash') AS "paymentMethod",
+                NULLIF(TRIM(COALESCE(st.reference_number, '')), '') AS "referenceNumber"
          FROM tblsales_transactions st
+         LEFT JOIN tblpayment_methods pm ON pm.id = st.payment_method_id
          WHERE ${tableClause}
-         ORDER BY st.created_at DESC
+         ORDER BY ${orderExpr} ${sortDir}, st.id DESC
          LIMIT $${recentParams.length - 1} OFFSET $${recentParams.length}`,
         recentParams,
       );
@@ -830,15 +984,25 @@ export class PosStoreReportsService {
             totalSales: Number(r.totalSales),
             transactionCount: Number(r.transactionCount),
           })),
+          byPayment: byPayment.rows.map((r) => ({
+            methodName: r.methodName,
+            methodCode: r.methodCode,
+            totalAmount: Number(r.totalAmount),
+            transactionCount: Number(r.transactionCount),
+          })),
           recent: recent.rows.map((r) => ({
             id: r.id,
             saleDate: r.saleDate,
             totalAmount: Number(r.totalAmount),
             paymentStatus: r.paymentStatus,
+            paymentMethod: r.paymentMethod,
+            referenceNumber: r.referenceNumber,
           })),
           recentTotal,
           page,
           pageSize,
+          sortBy: sortByRaw,
+          sortDir: sortDir.toLowerCase(),
         },
       };
     } catch (e) {
@@ -890,6 +1054,7 @@ export class PosStoreReportsService {
         saleDate: string | null;
         cashier: string;
         paymentMethod: string;
+        referenceNumber: string | null;
         paymentStatus: string;
         totalAmount: string;
         itemCount: string;
@@ -923,6 +1088,7 @@ export class PosStoreReportsService {
                   'Cashier'
                 ) AS cashier,
                 COALESCE(pm.name, 'Unknown') AS "paymentMethod",
+                NULLIF(TRIM(COALESCE(st.reference_number, '')), '') AS "referenceNumber",
                 COALESCE(st.payment_status, 'settled') AS "paymentStatus",
                 COALESCE((
                   SELECT SUM(s2.total_amount)
@@ -964,6 +1130,7 @@ export class PosStoreReportsService {
           saleDate: row.saleDate,
           cashier: row.cashier,
           paymentMethod: row.paymentMethod,
+          referenceNumber: row.referenceNumber,
           paymentStatus: row.paymentStatus,
           totalAmount: Number(row.totalAmount),
           itemCount: Number(row.itemCount),

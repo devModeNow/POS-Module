@@ -146,28 +146,138 @@
                 </button>
               }
             </div>
-            @for (item of poDetail.items; track $index) {
+            @for (item of poDetail.items; track $index; let i = $index) {
               @if (poDetail.status === 'draft') {
                 <div class="relative mb-3 rounded-lg border border-gray-200 p-3 pr-10 dark:border-gray-700">
-                  <button type="button" (click)="removePoDetailItem($index)" [disabled]="(poDetail.items?.length ?? 0) <= 1" title="Remove item"
+                  <button type="button" (click)="removePoDetailItem(i)" [disabled]="(poDetail.items?.length ?? 0) <= 1" title="Remove item"
                     class="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-md text-error-500 hover:bg-error-50 hover:text-error-700 disabled:opacity-30 dark:hover:bg-error-500/10">
                     <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                     </svg>
                   </button>
-                  <div class="mb-2">
-                    <input type="text" [(ngModel)]="item.itemName" placeholder="Item name"
-                      class="w-full rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
+
+                  <div class="relative mb-2">
+                    <label class="mb-1 block text-[11px] font-medium text-gray-600 dark:text-gray-300">Variant *</label>
+                    <input
+                      type="text"
+                      [(ngModel)]="item.itemName"
+                      placeholder="Search variant..."
+                      (input)="onDetailItemNameInput(i)"
+                      class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                    />
+                    @if (detailItemSearchResults[i]?.length) {
+                      <div class="absolute left-0 top-full z-20 mt-1 max-h-40 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                        @for (product of detailItemSearchResults[i]; track $index) {
+                          <button type="button" (mousedown)="selectDetailItemProduct(i, product)"
+                            class="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
+                            <span class="text-gray-800 dark:text-gray-200">{{ product.variantName || product.partName }}</span>
+                            <span class="text-xs text-gray-500 dark:text-gray-400">{{ product.productName || '' }} {{ product.brand ? '· ' + product.brand : '' }}</span>
+                          </button>
+                        }
+                      </div>
+                    }
                   </div>
+
+                  <div class="mb-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                    <div class="relative">
+                      <label class="mb-1 block text-[11px] font-medium text-gray-600 dark:text-gray-300">Product type</label>
+                      <input
+                        type="text"
+                        [(ngModel)]="item.productName"
+                        placeholder="Search or type new product type..."
+                        (input)="onDetailItemProductTypeInput(i, item.productName || '')"
+                        (focus)="onDetailItemProductTypeInput(i, item.productName || '')"
+                        (blur)="hideDetailItemProductTypeDropdown(i)"
+                        class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                      />
+                      @if (showDetailItemProductTypeDropdown[i] && detailItemProductTypeSuggestions[i]?.length) {
+                        <div class="absolute left-0 top-full z-20 mt-1 max-h-36 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                          @for (p of detailItemProductTypeSuggestions[i]; track p.id) {
+                            <button type="button" (mousedown)="selectDetailItemProductType(i, p.name)"
+                              class="block w-full px-2 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-200">
+                              {{ p.name }}
+                            </button>
+                          }
+                        </div>
+                      }
+                    </div>
+                    <div class="relative">
+                      <label class="mb-1 block text-[11px] font-medium text-gray-600 dark:text-gray-300">Unit type</label>
+                      <input
+                        type="text"
+                        [(ngModel)]="item.unitType"
+                        placeholder="Search or type new unit type..."
+                        (input)="onDetailItemUnitTypeInput(i, item.unitType || '')"
+                        (focus)="onDetailItemUnitTypeInput(i, item.unitType || '')"
+                        (blur)="hideDetailItemUnitTypeDropdown(i)"
+                        class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm capitalize dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                      />
+                      @if (showDetailItemUnitTypeDropdown[i] && detailItemUnitTypeSuggestions[i]?.length) {
+                        <div class="absolute left-0 top-full z-20 mt-1 max-h-36 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                          @for (u of detailItemUnitTypeSuggestions[i]; track u.code) {
+                            <button type="button" (mousedown)="selectDetailItemUnitType(i, u.code)"
+                              class="block w-full px-2 py-1.5 text-left text-xs capitalize hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-200">
+                              {{ u.label || u.code }}
+                            </button>
+                          }
+                        </div>
+                      }
+                    </div>
+                  </div>
+
                   <div class="grid grid-cols-12 gap-2">
-                    <input type="text" [(ngModel)]="item.brand" placeholder="Brand"
-                      class="col-span-12 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:col-span-6 md:col-span-3" />
-                    <input type="text" [(ngModel)]="item.category" placeholder="Category"
-                      class="col-span-12 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 sm:col-span-6 md:col-span-3" />
-                    <input type="number" [(ngModel)]="item.quantity" placeholder="Qty" min="1"
-                      class="col-span-6 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 md:col-span-2" />
-                    <input type="number" [(ngModel)]="item.unitCost" placeholder="Cost" min="0"
-                      class="col-span-6 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200 md:col-span-4" />
+                    <div class="relative col-span-12 sm:col-span-6 md:col-span-3">
+                      <label class="mb-1 block text-[11px] font-medium text-gray-600 dark:text-gray-300">Brand</label>
+                      <input
+                        type="text"
+                        [(ngModel)]="item.brand"
+                        placeholder="Search or type new brand..."
+                        (input)="onDetailItemBrandInput(i, item.brand || '')"
+                        (focus)="onDetailItemBrandInput(i, item.brand || '')"
+                        (blur)="hideDetailItemBrandDropdown(i)"
+                        class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                      />
+                      @if (showDetailItemBrandDropdown[i] && detailItemBrandSuggestions[i]?.length) {
+                        <div class="absolute left-0 top-full z-20 mt-1 max-h-32 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                          @for (b of detailItemBrandSuggestions[i]; track b.id) {
+                            <button type="button" (mousedown)="selectDetailItemBrand(i, b.name)"
+                              class="block w-full px-2 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-200">{{ b.name }}</button>
+                          }
+                        </div>
+                      }
+                    </div>
+
+                    <div class="relative col-span-12 sm:col-span-6 md:col-span-3">
+                      <label class="mb-1 block text-[11px] font-medium text-gray-600 dark:text-gray-300">Category</label>
+                      <input
+                        type="text"
+                        [(ngModel)]="item.category"
+                        placeholder="Search or type new category..."
+                        (input)="onDetailItemCategoryInput(i, item.category || '')"
+                        (focus)="onDetailItemCategoryInput(i, item.category || '')"
+                        (blur)="hideDetailItemCategoryDropdown(i)"
+                        class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200"
+                      />
+                      @if (showDetailItemCategoryDropdown[i] && detailItemCategorySuggestions[i]?.length) {
+                        <div class="absolute left-0 top-full z-20 mt-1 max-h-32 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                          @for (cat of detailItemCategorySuggestions[i]; track cat.id) {
+                            <button type="button" (mousedown)="selectDetailItemCategory(i, cat.name)"
+                              class="block w-full px-2 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-200">{{ cat.name }}</button>
+                          }
+                        </div>
+                      }
+                    </div>
+
+                    <label class="col-span-6 md:col-span-2">
+                      <span class="mb-1 block text-[11px] font-medium text-gray-600 dark:text-gray-300">Qty</span>
+                      <input type="number" [(ngModel)]="item.quantity" placeholder="Qty" min="1"
+                        class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
+                    </label>
+                    <label class="col-span-6 md:col-span-4">
+                      <span class="mb-1 block text-[11px] font-medium text-gray-600 dark:text-gray-300">Unit cost</span>
+                      <input type="number" [(ngModel)]="item.unitCost" placeholder="Cost" min="0"
+                        class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900 dark:text-gray-200" />
+                    </label>
                   </div>
                   <p class="mt-1 text-right text-xs text-gray-500 dark:text-gray-400">Line: ₱{{ lineTotal(item) | number:'1.2-2' }}</p>
                 </div>
@@ -176,8 +286,10 @@
                   <div class="flex items-start justify-between">
                     <div>
                       <p class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ item.itemName || item.productName }}</p>
-                      <div class="mt-0.5 flex gap-2">
-                        @if (item.brand) { <span class="text-xs text-gray-500 dark:text-gray-400">{{ item.brand }}</span> }
+                      <div class="mt-0.5 flex flex-wrap gap-2">
+                        @if (item.productName) { <span class="text-xs text-gray-500 dark:text-gray-400">{{ item.productName }}</span> }
+                        @if (item.unitType) { <span class="text-xs text-gray-500 dark:text-gray-400">· {{ item.unitType }}</span> }
+                        @if (item.brand) { <span class="text-xs text-gray-500 dark:text-gray-400">· {{ item.brand }}</span> }
                         @if (item.category) { <span class="text-xs text-gray-500 dark:text-gray-400">· {{ item.category }}</span> }
                       </div>
                     </div>
@@ -300,10 +412,11 @@
                 </svg>
               </button>
               <div class="relative mb-2">
+                <label class="mb-1 block text-[11px] font-medium text-gray-600 dark:text-gray-300">Variant *</label>
                 <input
                   type="text"
                   [(ngModel)]="item.itemName"
-                  placeholder="Search or type item name..."
+                  placeholder="Search variant..."
                   [disabled]="isSavingPO"
                   (input)="onPOItemNameInput(i)"
                   class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900"
@@ -313,22 +426,65 @@
                     @for (product of poItemSearchResults[i]; track $index) {
                       <button type="button" (click)="selectPOItemProduct(i, product)"
                         class="flex w-full items-center justify-between px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700">
-                        <span class="text-gray-800 dark:text-gray-200">{{ product.partName }}</span>
-                        <span class="text-xs text-gray-500 dark:text-gray-400">{{ product.brand || '' }} {{ product.category ? '· ' + product.category : '' }}</span>
+                        <span class="text-gray-800 dark:text-gray-200">{{ product.variantName || product.partName }}</span>
+                        <span class="text-xs text-gray-500 dark:text-gray-400">{{ product.productName || '' }} {{ product.brand ? '· ' + product.brand : '' }}</span>
                       </button>
                     }
                   </div>
                 }
               </div>
 
+              <div class="mb-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                <div class="relative">
+                  <label class="mb-1 block text-[11px] font-medium text-gray-600 dark:text-gray-300">Product type</label>
+                  <input
+                    type="text"
+                    [(ngModel)]="item.productName"
+                    placeholder="Search or type new product type..."
+                    [disabled]="isSavingPO"
+                    (input)="onPoItemProductTypeInput(i, item.productName || '')"
+                    (focus)="onPoItemProductTypeInput(i, item.productName || '')"
+                    (blur)="hidePoItemProductTypeDropdown(i)"
+                    class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900"
+                  />
+                  @if (showPoItemProductTypeDropdown[i] && poItemProductTypeSuggestions[i]?.length) {
+                    <div class="absolute left-0 top-full z-20 mt-1 max-h-36 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                      @for (p of poItemProductTypeSuggestions[i]; track p.id) {
+                        <button type="button" (mousedown)="selectPoItemProductType(i, p.name, p.id)"
+                          class="block w-full px-2 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-200">
+                          {{ p.name }}
+                        </button>
+                      }
+                    </div>
+                  }
+                </div>
+                <div class="relative">
+                  <label class="mb-1 block text-[11px] font-medium text-gray-600 dark:text-gray-300">Unit type</label>
+                  <input
+                    type="text"
+                    [(ngModel)]="item.unitType"
+                    placeholder="Search or type new unit type..."
+                    [disabled]="isSavingPO"
+                    (input)="onPoItemUnitTypeInput(i, item.unitType || '')"
+                    (focus)="onPoItemUnitTypeInput(i, item.unitType || '')"
+                    (blur)="hidePoItemUnitTypeDropdown(i)"
+                    class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm capitalize dark:border-gray-700 dark:bg-gray-900"
+                  />
+                  @if (showPoItemUnitTypeDropdown[i] && poItemUnitTypeSuggestions[i]?.length) {
+                    <div class="absolute left-0 top-full z-20 mt-1 max-h-36 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                      @for (u of poItemUnitTypeSuggestions[i]; track u.code) {
+                        <button type="button" (mousedown)="selectPoItemUnitType(i, u.code)"
+                          class="block w-full px-2 py-1.5 text-left text-xs capitalize hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-200">
+                          {{ u.label || u.code }}
+                        </button>
+                      }
+                    </div>
+                  }
+                </div>
+              </div>
+
               <div class="mb-2 flex flex-wrap gap-2 text-[11px] text-gray-500 dark:text-gray-400">
                 <span class="rounded-full bg-gray-100 px-2 py-0.5 dark:bg-gray-800">{{ itemSourceLabel(item) }}</span>
-                @if (item.variantLabel) {
-                  <span class="rounded-full bg-gray-100 px-2 py-0.5 dark:bg-gray-800">Variant: {{ item.variantLabel }}</span>
-                }
-                @if (item.unitType) {
-                  <span class="rounded-full bg-gray-100 px-2 py-0.5 capitalize dark:bg-gray-800">Unit: {{ item.unitType }}</span>
-                }
                 @if (item.stockQty != null) {
                   <span class="rounded-full bg-gray-100 px-2 py-0.5 dark:bg-gray-800">Stock: {{ item.stockQty }}</span>
                 }
@@ -336,41 +492,49 @@
 
               <div class="grid grid-cols-12 gap-2">
                 <div class="relative col-span-12 sm:col-span-6 md:col-span-3">
-                  <input type="text" [(ngModel)]="item.brand" placeholder="Brand" [disabled]="isSavingPO"
+                  <label class="mb-1 block text-[11px] font-medium text-gray-600 dark:text-gray-300">Brand</label>
+                  <input type="text" [(ngModel)]="item.brand" placeholder="Search or type new brand..." [disabled]="isSavingPO"
                     (input)="onPoItemBrandInput(i, item.brand || '')"
                     (focus)="onPoItemBrandInput(i, item.brand || '')"
-                    (blur)="showPoItemBrandDropdown[i] = false"
+                    (blur)="hidePoItemBrandDropdown(i)"
                     class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />
                   @if (showPoItemBrandDropdown[i] && poItemBrandSuggestions[i]?.length) {
-                    <div class="absolute left-0 top-full z-10 mt-1 max-h-32 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                    <div class="absolute left-0 top-full z-20 mt-1 max-h-32 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
                       @for (b of poItemBrandSuggestions[i]; track b.id) {
                         <button type="button" (mousedown)="selectPoItemBrand(i, b.name)"
-                          class="block w-full px-2 py-1 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-200">{{ b.name }}</button>
+                          class="block w-full px-2 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-200">{{ b.name }}</button>
                       }
                     </div>
                   }
                 </div>
 
                 <div class="relative col-span-12 sm:col-span-6 md:col-span-3">
-                  <input type="text" [(ngModel)]="item.category" placeholder="Category" [disabled]="isSavingPO"
+                  <label class="mb-1 block text-[11px] font-medium text-gray-600 dark:text-gray-300">Category</label>
+                  <input type="text" [(ngModel)]="item.category" placeholder="Search or type new category..." [disabled]="isSavingPO"
                     (input)="onPoItemCategoryInput(i, item.category || '')"
                     (focus)="onPoItemCategoryInput(i, item.category || '')"
-                    (blur)="showPoItemCategoryDropdown[i] = false"
+                    (blur)="hidePoItemCategoryDropdown(i)"
                     class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />
                   @if (showPoItemCategoryDropdown[i] && poItemCategorySuggestions[i]?.length) {
-                    <div class="absolute left-0 top-full z-10 mt-1 max-h-32 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
+                    <div class="absolute left-0 top-full z-20 mt-1 max-h-32 w-full overflow-y-auto rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-800">
                       @for (cat of poItemCategorySuggestions[i]; track cat.id) {
                         <button type="button" (mousedown)="selectPoItemCategory(i, cat.name)"
-                          class="block w-full px-2 py-1 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-200">{{ cat.name }}</button>
+                          class="block w-full px-2 py-1.5 text-left text-xs hover:bg-gray-50 dark:hover:bg-gray-700 dark:text-gray-200">{{ cat.name }}</button>
                       }
                     </div>
                   }
                 </div>
 
-                <input type="number" [(ngModel)]="item.quantity" placeholder="Qty" [disabled]="isSavingPO"
-                  class="col-span-6 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900 md:col-span-2" />
-                <input type="number" [(ngModel)]="item.unitCost" placeholder="Cost" [disabled]="isSavingPO"
-                  class="col-span-6 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900 md:col-span-4" />
+                <label class="col-span-6 md:col-span-2">
+                  <span class="mb-1 block text-[11px] font-medium text-gray-600 dark:text-gray-300">Qty</span>
+                  <input type="number" [(ngModel)]="item.quantity" placeholder="Qty" [disabled]="isSavingPO"
+                    class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />
+                </label>
+                <label class="col-span-6 md:col-span-4">
+                  <span class="mb-1 block text-[11px] font-medium text-gray-600 dark:text-gray-300">Unit cost</span>
+                  <input type="number" [(ngModel)]="item.unitCost" placeholder="Cost" [disabled]="isSavingPO"
+                    class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />
+                </label>
               </div>
             </div>
           }
@@ -401,3 +565,13 @@
     </div>
   </div>
 }
+
+<app-confirm-dialog
+  [isOpen]="confirmOpen"
+  [title]="confirmTitle"
+  [message]="confirmMessage"
+  [variant]="confirmVariant"
+  [confirmLabel]="confirmVariant === 'danger' ? 'Yes' : 'Confirm'"
+  (confirm)="onConfirmDialog()"
+  (cancel)="onCancelDialog()"
+/>

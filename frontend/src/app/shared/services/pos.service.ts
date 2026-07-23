@@ -94,6 +94,7 @@ export interface PosSaleTransaction {
   changeAmount: number | null;
   paymentStatus: string;
   paymentMethod: string;
+  referenceNumber?: string | null;
   cashier: string;
   createdAt: string;
   itemCount: number;
@@ -107,6 +108,7 @@ export interface PosCompletedSale {
   saleDate: string | null;
   cashier: string;
   paymentMethod: string;
+  referenceNumber?: string | null;
   paymentStatus: string;
   totalAmount: number;
   itemCount: number;
@@ -231,8 +233,10 @@ export class PosService {
   async checkout(payload: {
     items: Array<{ variantId: number; quantity: number; unitType?: string }>;
     discountId?: number | null;
+    discountAmount?: number;
     amountPaid?: number;
     paymentMethodId?: number | null;
+    referenceNumber?: string | null;
   }) {
     const r = await apiClient.post<{ success: boolean; data?: CheckoutResult; message?: string }>(
       '/api/pos/checkout',
@@ -265,11 +269,21 @@ export class PosService {
     return r.data;
   }
 
-  async getSaleTransactions(from?: string, to?: string, paymentStatus?: string, limit = 50, offset = 0) {
+  async getSaleTransactions(
+    from?: string,
+    to?: string,
+    paymentStatus?: string,
+    limit = 50,
+    offset = 0,
+    options?: { search?: string; sortBy?: string; sortDir?: string },
+  ) {
     const params: Record<string, string> = { limit: String(limit), offset: String(offset) };
     if (from) params['from'] = from;
     if (to) params['to'] = to;
     if (paymentStatus) params['paymentStatus'] = paymentStatus;
+    if (options?.search) params['search'] = options.search;
+    if (options?.sortBy) params['sortBy'] = options.sortBy;
+    if (options?.sortDir) params['sortDir'] = options.sortDir;
     const r = await apiClient.get<{ success: boolean; data?: PosSaleTransaction[]; total?: number; message?: string }>(
       '/api/pos/reports/transactions',
       { params },
@@ -524,6 +538,8 @@ export class PosService {
     search?: string;
     page?: number;
     pageSize?: number;
+    sortBy?: string;
+    sortDir?: string;
   }) {
     const r = await apiClient.get<{ success: boolean; data?: unknown; message?: string }>(
       '/api/pos/my-sales',
@@ -548,7 +564,7 @@ export class PosService {
     return r.data;
   }
 
-  async voidCartLine(payload: { cartKey?: string; adminCode: string; reason?: string }) {
+  async voidCartLine(payload: { saleId?: number; cartKey?: string; adminCode: string; reason?: string }) {
     const r = await apiClient.post<{ success: boolean; message?: string }>('/api/pos/void', payload);
     return r.data;
   }

@@ -158,6 +158,17 @@ export class PosCommunicationsService {
     return r.data;
   }
 
+  async getChatSeenStatus(recipientId: number) {
+    const r = await apiClient.get<{
+      success: boolean;
+      lastSeenMessageId?: number | null;
+      message?: string;
+    }>('/api/pos/communications/chat/seen', {
+      params: { recipientId: String(recipientId) },
+    });
+    return r.data;
+  }
+
   async listNotifications() {
     const r = await apiClient.get<{ success: boolean; data?: PosNotification[]; message?: string }>(
       '/api/pos/communications/notifications',

@@ -328,10 +328,13 @@ export class InventoryComponent implements OnInit, OnDestroy {
   // Brand & Category autocomplete
   brandSuggestions: { id: number; name: string }[] = [];
   categorySuggestions: { id: number; name: string }[] = [];
+  productCategorySuggestions: { id: number; name: string }[] = [];
   brandSearchTimer: ReturnType<typeof setTimeout> | null = null;
   categorySearchTimer: ReturnType<typeof setTimeout> | null = null;
+  productCategorySearchTimer: ReturnType<typeof setTimeout> | null = null;
   showBrandDropdown = false;
   showCategoryDropdown = false;
+  showProductCategoryDropdown = false;
   // For PO items
   poItemBrandSuggestions: { id: number; name: string }[][] = [[]];
   poItemCategorySuggestions: { id: number; name: string }[][] = [[]];
@@ -1724,7 +1727,14 @@ export class InventoryComponent implements OnInit, OnDestroy {
   }
 
   async receivePO(id: number): Promise<void> {
-    if (!confirm('Mark this PO as received and update stock?')) return;
+    this.openConfirm(
+      'Receive purchase order?',
+      'Mark this PO as received and update stock?',
+      () => void this.doReceivePO(id),
+    );
+  }
+
+  private async doReceivePO(id: number): Promise<void> {
     try {
       await this.svc.receivePO(id);
       this.notify.success('Received', 'Stock updated from PO.');
@@ -2075,6 +2085,32 @@ export class InventoryComponent implements OnInit, OnDestroy {
   }
 
   selectCategory(name: string): void { this.itemForm.category = name; this.showCategoryDropdown = false; }
+
+  onProductCategoryInput(value: string): void {
+    if (this.productCategorySearchTimer) clearTimeout(this.productCategorySearchTimer);
+    if (value.trim().length < 1) {
+      this.productCategorySuggestions = [];
+      this.showProductCategoryDropdown = false;
+      return;
+    }
+    this.productCategorySearchTimer = setTimeout(() => void this.searchProductCategories(value), 250);
+  }
+
+  private async searchProductCategories(q: string): Promise<void> {
+    try {
+      const r = await this.svc.getCategories(q);
+      this.productCategorySuggestions = r.data ?? [];
+      this.showProductCategoryDropdown = this.productCategorySuggestions.length > 0;
+    } catch {
+      this.productCategorySuggestions = [];
+      this.showProductCategoryDropdown = false;
+    }
+  }
+
+  selectProductCategory(name: string): void {
+    this.productForm.category = name;
+    this.showProductCategoryDropdown = false;
+  }
 
   // Brand autocomplete for PO items
   onPoItemBrandInput(index: number, value: string): void {

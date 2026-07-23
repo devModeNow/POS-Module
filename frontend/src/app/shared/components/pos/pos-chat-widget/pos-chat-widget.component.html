@@ -1,8 +1,11 @@
 @if (hidden) {
   <button #fabBtn type="button" (click)="showWidget()"
-    class="fixed bottom-4 right-4 z-[100000] flex h-12 w-12 items-center justify-center rounded-full bg-brand-500 text-white shadow-lg hover:bg-brand-600"
+    class="relative fixed bottom-4 right-4 z-[100000] flex h-12 w-12 items-center justify-center rounded-full bg-brand-500 text-white shadow-lg hover:bg-brand-600"
     title="Show chat">
     <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+    @if (hasNewMessage) {
+      <span class="absolute -right-0.5 -top-0.5 h-3.5 w-3.5 rounded-full bg-red-500 ring-2 ring-white dark:ring-gray-900"></span>
+    }
   </button>
 } @else {
   <div class="fixed bottom-4 right-4 z-[100000] flex flex-col items-end gap-2">
@@ -145,6 +148,9 @@
                       }
                       <p class="mt-0.5 px-1 text-[10px] text-gray-500 dark:text-gray-500"
                         [class.text-right]="isOwnMessage(msg)">{{ formatTime(msg.createdAt) }}</p>
+                      @if (isSeenMarker(msg)) {
+                        <p class="px-1 text-[10px] text-gray-400 dark:text-gray-500 text-right">Seen</p>
+                      }
                     </div>
                   </div>
                 </div>
@@ -190,9 +196,12 @@
       </div>
     }
     <button #fabBtn type="button" (click)="toggleExpanded()"
-      class="flex h-12 w-12 items-center justify-center rounded-full bg-brand-500 text-white shadow-lg hover:bg-brand-600"
+      class="relative flex h-12 w-12 items-center justify-center rounded-full bg-brand-500 text-white shadow-lg hover:bg-brand-600"
       [title]="expanded ? 'Minimize chat' : 'Open chat'">
       <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"/></svg>
+      @if (hasNewMessage && !expanded) {
+        <span class="absolute -right-0.5 -top-0.5 h-3.5 w-3.5 rounded-full bg-red-500 ring-2 ring-white dark:ring-gray-900"></span>
+      }
     </button>
   </div>
 }

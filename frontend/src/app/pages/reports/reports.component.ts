@@ -44,6 +44,10 @@ export class ReportsComponent implements OnInit {
   fromDate = this.today();
   toDate = this.today();
   paymentStatusFilter = '';
+  tableSearch = '';
+  sortBy = 'date';
+  sortDir: 'asc' | 'desc' = 'desc';
+  private searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
   isLoading = false;
   isPosOrg = false;
 
@@ -109,23 +113,31 @@ export class ReportsComponent implements OnInit {
   }
 
   get usesServerPagination(): boolean {
-    return this.reportType === 'pos-dashboard' || this.reportType === 'pos-completed-sales';
+    return this.reportType === 'pos-dashboard';
+  }
+
+  /** Effective row count for pagination (client-filtered completed sales included). */
+  get effectiveTotalItems(): number {
+    if (this.reportType === 'pos-completed-sales') {
+      return this.filteredCompletedSales.length;
+    }
+    return this.totalItems;
   }
 
   get totalPages(): number {
-    return Math.max(1, Math.ceil(this.totalItems / this.pageSize));
+    return Math.max(1, Math.ceil(this.effectiveTotalItems / this.pageSize));
   }
 
   get showPagination(): boolean {
-    return this.totalItems > this.pageSize;
+    return this.effectiveTotalItems > this.pageSize;
   }
 
   get pageRangeStart(): number {
-    return this.totalItems === 0 ? 0 : (this.page - 1) * this.pageSize + 1;
+    return this.effectiveTotalItems === 0 ? 0 : (this.page - 1) * this.pageSize + 1;
   }
 
   get pageRangeEnd(): number {
-    return Math.min(this.page * this.pageSize, this.totalItems);
+    return Math.min(this.page * this.pageSize, this.effectiveTotalItems);
   }
 
   constructor(
@@ -155,6 +167,98 @@ export class ReportsComponent implements OnInit {
     if (this.needsDateRange) {
       this.page = 1;
       void this.generate();
+    }
+  }
+
+  onTableSearchInput(): void {
+    if (this.reportType === 'pos-completed-sales') {
+      // Client-side filter/sort via filteredCompletedSales (+ pageSlice).
+      this.page = 1;
+      return;
+    }
+    if (this.searchDebounceTimer) clearTimeout(this.searchDebounceTimer);
+    this.searchDebounceTimer = setTimeout(() => {
+      this.page = 1;
+      void this.generate();
+    }, 350);
+  }
+
+  clearTableFilters(): void {
+    this.tableSearch = '';
+    this.page = 1;
+    if (this.reportType !== 'pos-completed-sales') {
+      void this.generate();
+    }
+  }
+
+  toggleSort(column: string): void {
+    if (this.sortBy === column) {
+      this.sortDir = this.sortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      this.sortBy = column;
+      this.sortDir = column === 'date' || column === 'amount' ? 'desc' : 'asc';
+    }
+    this.page = 1;
+    if (this.reportType !== 'pos-completed-sales') {
+      void this.generate();
+    }
+  }
+
+  sortIndicator(column: string): string {
+    if (this.sortBy !== column) return '';
+    return this.sortDir === 'asc' ? ' ↑' : ' ↓';
+  }
+
+  get hasTableFilters(): boolean {
+    return !!this.tableSearch.trim();
+  }
+
+  get filteredCompletedSales(): PosCompletedSale[] {
+    let rows = [...this.posCompletedSales];
+    const q = this.tableSearch.trim().toLowerCase();
+    if (q) {
+      rows = rows.filter((r) =>
+        [
+          r.cashier,
+          r.paymentMethod,
+          r.referenceNumber,
+          r.title,
+          r.body,
+          r.saleId,
+          r.totalAmount,
+          r.paymentStatus,
+        ]
+          .map((v) => String(v ?? '').toLowerCase())
+          .some((v) => v.includes(q)),
+      );
+    }
+    const dir = this.sortDir === 'asc' ? 1 : -1;
+    rows.sort((a, b) => {
+      const av = this.completedSortValue(a, this.sortBy);
+      const bv = this.completedSortValue(b, this.sortBy);
+      if (av < bv) return -1 * dir;
+      if (av > bv) return 1 * dir;
+      return 0;
+    });
+    return rows;
+  }
+
+  private completedSortValue(row: PosCompletedSale, column: string): string | number {
+    switch (column) {
+      case 'cashier':
+        return String(row.cashier ?? '').toLowerCase();
+      case 'payment':
+        return String(row.paymentMethod ?? '').toLowerCase();
+      case 'reference':
+        return String(row.referenceNumber ?? '').toLowerCase();
+      case 'amount':
+        return Number(row.totalAmount) || 0;
+      case 'status':
+        return String(row.paymentStatus ?? '').toLowerCase();
+      case 'items':
+        return Number(row.itemCount) || 0;
+      default:
+        return String(row.completedAt ?? '');
     }
   }
 
@@ -213,12 +317,22 @@ export class ReportsComponent implements OnInit {
           this.posDashboard = r.data ?? null;
           this.buildCharts();
           const tx = await this.posSvc.getSaleTransactions(
-            this.fromDate, this.toDate, this.paymentStatusFilter || undefined, this.pageSize, offset,
+            this.fromDate,
+            this.toDate,
+            this.paymentStatusFilter || undefined,
+            this.pageSize,
+            offset,
+            {
+              search: this.tableSearch.trim() || undefined,
+              sortBy: this.sortBy,
+              sortDir: this.sortDir,
+            },
           );
           this.posTransactions = tx.success ? (tx.data ?? []) : [];
           this.totalItems = tx.success ? (tx.total ?? this.posTransactions.length) : 0;
         } else if (this.reportType === 'pos-completed-sales') {
-          const r = await this.posSvc.getCompletedSalesReport(this.fromDate, this.toDate, this.pageSize, offset);
+          // Load up to API max for the period; search/sort/pagination are client-side.
+          const r = await this.posSvc.getCompletedSalesReport(this.fromDate, this.toDate, 200, 0);
           if (!r?.success) {
             this.notify.error('Error', r?.message ?? 'Failed to load completed sales.');
             this.posCompletedSales = [];
@@ -226,7 +340,7 @@ export class ReportsComponent implements OnInit {
             return;
           }
           this.posCompletedSales = r.data ?? [];
-          this.totalItems = r.total ?? this.posCompletedSales.length;
+          this.totalItems = this.posCompletedSales.length;
         } else if (this.reportType === 'pos-top-products') {
           const r = await this.posSvc.getTopProductsReport(this.fromDate, this.toDate);
           this.posTopProducts = r.data ?? [];

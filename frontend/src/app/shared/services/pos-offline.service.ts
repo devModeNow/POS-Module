@@ -4,8 +4,10 @@ import { BehaviorSubject } from 'rxjs';
 export type OfflineCheckoutPayload = {
   items: Array<{ variantId: number; quantity: number; unitType?: string }>;
   discountId?: number | null;
+  discountAmount?: number;
   amountPaid?: number;
   paymentMethodId?: number | null;
+  referenceNumber?: string | null;
 };
 
 export type QueuedCheckout = {

@@ -132,10 +132,10 @@
             <div class="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4">
               @for (variant of variantCatalog; track variant.id) {
                 <button type="button" (click)="openVariantFromCatalog(variant)" [disabled]="variant.stockQty <= 0"
-                  class="group touch-manipulation overflow-hidden rounded-md border border-gray-200 bg-white text-left shadow-sm transition active:scale-[0.98] disabled:opacity-50 dark:border-gray-800 dark:bg-gray-900">
+                  class="group relative touch-manipulation overflow-hidden rounded-md border border-gray-200 bg-white text-left shadow-sm transition active:scale-[0.98] disabled:opacity-80 dark:border-gray-800 dark:bg-gray-900">
                   <div class="relative aspect-[4/3] w-full overflow-hidden bg-gray-100 dark:bg-gray-800">
                     @if (catalogVariantImage(variant)) {
-                      <img [src]="catalogVariantImage(variant)!" [alt]="variant.variantName" class="h-full w-full object-cover object-center transition group-hover:scale-105" />
+                      <img [src]="catalogVariantImage(variant)!" [alt]="variant.variantName" class="h-full w-full object-cover object-center transition group-hover:scale-105" [class.grayscale]="variant.stockQty <= 0" />
                     } @else {
                       <div class="flex h-full w-full items-center justify-center text-gray-300">
                         <svg class="h-14 w-14" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -143,12 +143,23 @@
                         </svg>
                       </div>
                     }
+                    @if (variant.stockQty <= 0) {
+                      <div class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/35">
+                        <span class="rotate-[-18deg] text-center text-2xl font-black uppercase tracking-wider text-white/90 drop-shadow-md sm:text-3xl">Out of Stock</span>
+                      </div>
+                    }
                     @if (variantHasSale(variant)) {
-                      <span class="absolute left-2 top-2 rounded-sm bg-red-500 px-2 py-0.5 text-[10px] font-bold uppercase text-white">Sale</span>
+                      <span class="absolute left-2 top-2 z-20 rounded-sm bg-red-500 px-2 py-0.5 text-[10px] font-bold uppercase text-white">Sale</span>
                     }
                     <div class="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/90 via-black/55 to-transparent px-3 pb-3 pt-14">
-                      <p class="text-lg font-bold leading-tight text-white">{{ variant.variantName }}</p>
-                      <p class="mt-0.5 text-xs text-white/70">{{ variant.productName }} · {{ formatStock(variant.stockQty) }} in stock</p>
+                      <p class="text-xl font-extrabold leading-tight tracking-tight text-white sm:text-2xl">{{ variant.variantName }}</p>
+                      @if (variantHasSale(variant)) {
+                        <p class="mt-1 text-xs text-white/60 line-through">₱{{ formatCurrency(variant.sellingPrice) }}</p>
+                        <p class="text-2xl font-extrabold leading-none text-amber-300 sm:text-3xl">₱{{ formatCurrency(variant.salePrice!) }}</p>
+                      } @else {
+                        <p class="mt-1 text-2xl font-extrabold leading-none text-emerald-300 sm:text-3xl">₱{{ formatCurrency(variant.sellingPrice) }}</p>
+                      }
+                      <p class="mt-1 text-xs text-white/70">{{ variant.productName }} · {{ formatStock(variant.stockQty) }} in stock</p>
                     </div>
                   </div>
                 </button>
@@ -158,23 +169,33 @@
             <div class="space-y-2">
               @for (variant of variantCatalog; track variant.id) {
                 <button type="button" (click)="openVariantFromCatalog(variant)" [disabled]="variant.stockQty <= 0"
-                  class="flex w-full touch-manipulation items-center gap-4 rounded-md border border-gray-200 bg-white p-3 text-left shadow-sm transition active:scale-[0.99] disabled:opacity-50 dark:border-gray-800 dark:bg-gray-900">
+                  class="relative flex w-full touch-manipulation items-center gap-4 overflow-hidden rounded-md border border-gray-200 bg-white p-3 text-left shadow-sm transition active:scale-[0.99] disabled:opacity-80 dark:border-gray-800 dark:bg-gray-900">
+                  @if (variant.stockQty <= 0) {
+                    <div class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/25">
+                      <span class="rotate-[-12deg] text-xl font-black uppercase tracking-wider text-white/90 drop-shadow">Out of Stock</span>
+                    </div>
+                  }
                   <div class="h-16 w-16 shrink-0 overflow-hidden rounded-md bg-gray-100 dark:bg-gray-800">
                     @if (catalogVariantImage(variant)) {
-                      <img [src]="catalogVariantImage(variant)!" [alt]="variant.variantName" class="h-full w-full object-cover" />
+                      <img [src]="catalogVariantImage(variant)!" [alt]="variant.variantName" class="h-full w-full object-cover" [class.grayscale]="variant.stockQty <= 0" />
                     }
                   </div>
                   <div class="min-w-0 flex-1">
                     <div class="flex items-center gap-2">
-                      <p class="truncate text-base font-semibold text-gray-900 dark:text-white">{{ variant.variantName }}</p>
+                      <p class="truncate text-xl font-extrabold leading-tight text-gray-900 dark:text-white sm:text-2xl">{{ variant.variantName }}</p>
                       @if (variantHasSale(variant)) {
                         <span class="rounded-sm bg-red-500 px-2 py-0.5 text-[10px] font-bold uppercase text-white">Sale</span>
                       }
                     </div>
-                    <p class="text-xs text-gray-500">{{ variant.productName }} · {{ variant.category || 'Uncategorized' }}</p>
+                    <p class="text-xs text-gray-500">{{ variant.productName }} · {{ variant.category || 'Uncategorized' }} · {{ formatStock(variant.stockQty) }} in stock</p>
                   </div>
                   <div class="shrink-0 text-right">
-                    <p class="text-sm font-semibold text-gray-800 dark:text-gray-200">{{ formatStock(variant.stockQty) }} in stock</p>
+                    @if (variantHasSale(variant)) {
+                      <p class="text-xs text-gray-400 line-through">₱{{ formatCurrency(variant.sellingPrice) }}</p>
+                      <p class="text-2xl font-extrabold leading-none text-red-600 sm:text-3xl">₱{{ formatCurrency(variant.salePrice!) }}</p>
+                    } @else {
+                      <p class="text-2xl font-extrabold leading-none text-emerald-600 sm:text-3xl">₱{{ formatCurrency(variant.sellingPrice) }}</p>
+                    }
                   </div>
                 </button>
               }
@@ -187,10 +208,10 @@
           <div class="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4">
             @for (product of products; track product.id) {
               <button type="button" (click)="openProduct(product)" [disabled]="product.totalStock <= 0"
-                class="group touch-manipulation overflow-hidden rounded-md border border-gray-200 bg-white text-left shadow-sm transition active:scale-[0.98] disabled:opacity-50 dark:border-gray-800 dark:bg-gray-900">
+                class="group relative touch-manipulation overflow-hidden rounded-md border border-gray-200 bg-white text-left shadow-sm transition active:scale-[0.98] disabled:opacity-80 dark:border-gray-800 dark:bg-gray-900">
                 <div class="relative aspect-[4/3] w-full overflow-hidden bg-gray-100 dark:bg-gray-800">
                   @if (productImage(product)) {
-                    <img [src]="productImage(product)!" [alt]="product.name" class="h-full w-full object-cover object-center transition group-hover:scale-105" />
+                    <img [src]="productImage(product)!" [alt]="product.name" class="h-full w-full object-cover object-center transition group-hover:scale-105" [class.grayscale]="product.totalStock <= 0" />
                   } @else {
                     <div class="flex h-full w-full items-center justify-center text-gray-300">
                       <svg class="h-14 w-14" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -198,8 +219,13 @@
                       </svg>
                     </div>
                   }
+                  @if (product.totalStock <= 0) {
+                    <div class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/35">
+                      <span class="rotate-[-18deg] text-center text-2xl font-black uppercase tracking-wider text-white/90 drop-shadow-md sm:text-3xl">Out of Stock</span>
+                    </div>
+                  }
                   @if (product.hasSale) {
-                    <span class="absolute left-2 top-2 rounded-sm bg-red-500 px-2 py-0.5 text-[10px] font-bold uppercase text-white">Sale</span>
+                    <span class="absolute left-2 top-2 z-20 rounded-sm bg-red-500 px-2 py-0.5 text-[10px] font-bold uppercase text-white">Sale</span>
                   }
                   <div class="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/90 via-black/55 to-transparent px-3 pb-3 pt-14">
                     <p class="text-lg font-bold leading-tight text-white">{{ product.name }}</p>
@@ -213,10 +239,15 @@
           <div class="space-y-2">
             @for (product of products; track product.id) {
               <button type="button" (click)="openProduct(product)" [disabled]="product.totalStock <= 0"
-                class="flex w-full touch-manipulation items-center gap-4 rounded-md border border-gray-200 bg-white p-3 text-left shadow-sm transition active:scale-[0.99] disabled:opacity-50 dark:border-gray-800 dark:bg-gray-900">
+                class="relative flex w-full touch-manipulation items-center gap-4 overflow-hidden rounded-md border border-gray-200 bg-white p-3 text-left shadow-sm transition active:scale-[0.99] disabled:opacity-80 dark:border-gray-800 dark:bg-gray-900">
+                @if (product.totalStock <= 0) {
+                  <div class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/25">
+                    <span class="rotate-[-12deg] text-xl font-black uppercase tracking-wider text-white/90 drop-shadow">Out of Stock</span>
+                  </div>
+                }
                 <div class="h-16 w-16 shrink-0 overflow-hidden rounded-md bg-gray-100 dark:bg-gray-800">
                   @if (productImage(product)) {
-                    <img [src]="productImage(product)!" [alt]="product.name" class="h-full w-full object-cover" />
+                    <img [src]="productImage(product)!" [alt]="product.name" class="h-full w-full object-cover" [class.grayscale]="product.totalStock <= 0" />
                   }
                 </div>
                 <div class="min-w-0 flex-1">
@@ -292,12 +323,6 @@
                   <button type="button" (click)="decrementLine(line)" class="flex h-11 w-11 items-center justify-center rounded-md border text-lg font-bold lg:h-9 lg:w-9 dark:border-gray-700">−</button>
                   <span class="min-w-8 text-center text-sm font-semibold">{{ line.quantity }}</span>
                   <button type="button" (click)="incrementLine(line)" class="flex h-11 w-11 items-center justify-center rounded-md border text-lg font-bold lg:h-9 lg:w-9 dark:border-gray-700">+</button>
-                  <button type="button" (click)="openVoidLine(line)" title="Void item"
-                    class="rounded-md p-1.5 text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-500/10">
-                    <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                    </svg>
-                  </button>
                   <button type="button" (click)="requestRemoveLine(line)" title="Remove"
                     class="ml-auto rounded-md p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10">
                     <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -411,9 +436,14 @@
         </div>
         <ul class="mt-4 max-h-[50vh] space-y-3 overflow-y-auto scrollbar-auto">
           @for (v of filteredModalVariants; track v.id) {
-            <li class="rounded-md border border-gray-200 p-3 dark:border-gray-800"
-              [class.opacity-50]="v.stockQty <= 0">
-              <div class="flex gap-3">
+            <li class="relative overflow-hidden rounded-md border border-gray-200 p-3 dark:border-gray-800"
+              [class.opacity-80]="v.stockQty <= 0">
+              @if (v.stockQty <= 0) {
+                <div class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-black/20">
+                  <span class="rotate-[-12deg] text-2xl font-black uppercase tracking-wider text-white/90 drop-shadow">Out of Stock</span>
+                </div>
+              }
+              <div class="flex items-start gap-3">
                 <div class="h-16 w-16 shrink-0 overflow-hidden rounded-md bg-gray-100 dark:bg-gray-800">
                   @if (variantImage(v)) {
                     <img [src]="variantImage(v)!" [alt]="v.variantName" class="h-full w-full object-cover" />
@@ -426,13 +456,15 @@
                   }
                 </div>
                 <div class="min-w-0 flex-1">
-                  <p class="font-semibold text-gray-900 dark:text-white">{{ v.variantName }}</p>
+                  <p class="text-lg font-bold text-gray-900 dark:text-white">{{ v.variantName }}</p>
                   <p class="text-xs text-gray-500">{{ formatStock(v.stockQty) }} in stock</p>
+                </div>
+                <div class="shrink-0 self-center text-right">
                   @if (selectedUnitFor(v).salePrice && selectedUnitFor(v).salePrice! < selectedUnitFor(v).sellingPrice) {
                     <p class="text-xs text-gray-400 line-through">₱{{ formatCurrency(selectedUnitFor(v).sellingPrice) }}{{ variantPriceLabel(v) }}</p>
-                    <p class="text-sm font-bold text-red-600">₱{{ formatCurrency(selectedUnitFor(v).salePrice!) }}{{ variantPriceLabel(v) }}</p>
+                    <p class="text-2xl font-extrabold leading-none text-red-600 sm:text-3xl">₱{{ formatCurrency(selectedUnitFor(v).salePrice!) }}{{ variantPriceLabel(v) }}</p>
                   } @else {
-                    <p class="text-sm font-bold text-emerald-600">₱{{ formatCurrency(selectedUnitFor(v).sellingPrice) }}{{ variantPriceLabel(v) }}</p>
+                    <p class="text-2xl font-extrabold leading-none text-emerald-600 sm:text-3xl">₱{{ formatCurrency(selectedUnitFor(v).sellingPrice) }}{{ variantPriceLabel(v) }}</p>
                   }
                 </div>
               </div>
@@ -535,12 +567,39 @@
                 @for (d of discounts; track d.id) {
                   <option [ngValue]="d.id">{{ discountLabel(d) }}</option>
                 }
+                <option [ngValue]="'custom'">Custom</option>
               </select>
             </label>
           </div>
+          @if (requiresPaymentReference) {
+            <label class="block">
+              <span class="mb-2 block text-sm font-medium">Reference # <span class="text-red-500">*</span></span>
+              <input type="text" [(ngModel)]="paymentReferenceNumber" placeholder="Enter payment reference number"
+                class="w-full rounded-md border px-3 py-3 text-sm dark:border-gray-700 dark:bg-gray-800" />
+              <span class="mt-1 block text-xs text-gray-500">Required for {{ selectedPaymentMethod?.name || 'this payment method' }} to verify payment was received.</span>
+            </label>
+          }
+          @if (selectedDiscountId === 'custom') {
+            <div class="rounded-md border border-amber-200 bg-amber-50/60 p-3 dark:border-amber-700/40 dark:bg-amber-500/10">
+              <label class="block">
+                <span class="mb-2 block text-sm font-medium text-amber-800 dark:text-amber-200">Custom discount amount (₱)</span>
+                <div class="flex gap-2">
+                  <input type="number" min="0" step="0.01" [(ngModel)]="customDiscountDraft"
+                    class="min-w-0 flex-1 rounded-md border px-3 py-2.5 text-sm dark:border-gray-700 dark:bg-gray-800" />
+                  <button type="button" (click)="requestApplyCustomDiscount()"
+                    class="rounded-md bg-amber-600 px-3 py-2.5 text-sm font-semibold text-white hover:bg-amber-700">
+                    Apply
+                  </button>
+                </div>
+              </label>
+              @if (customDiscountApplied > 0) {
+                <p class="mt-2 text-xs text-amber-700 dark:text-amber-300">Applied: ₱{{ formatCurrency(customDiscountApplied) }}</p>
+              }
+            </div>
+          }
           @if (cartOrderDiscount() > 0) {
             <div class="flex justify-between rounded-md bg-amber-50 px-4 py-3 dark:bg-amber-500/10">
-              <span class="text-sm text-amber-700 dark:text-amber-300">{{ selectedDiscount?.name ?? 'Discount' }}</span>
+              <span class="text-sm text-amber-700 dark:text-amber-300">{{ selectedDiscountId === 'custom' ? 'Custom discount' : (selectedDiscount?.name ?? 'Discount') }}</span>
               <span class="font-semibold text-amber-700 dark:text-amber-300">−₱{{ formatCurrency(cartOrderDiscount()) }}</span>
             </div>
           }
@@ -550,13 +609,25 @@
               <span class="font-semibold text-amber-700">−₱{{ formatCurrency(cartDiscountAmount()) }}</span>
             </div>
           }
-          <label class="block">
-            <span class="mb-2 block text-sm font-medium">Amount Received (₱)</span>
+          <div>
+            <div class="mb-2 flex items-center justify-between">
+              <span class="text-sm font-medium">Amount Received (₱)</span>
+              <button type="button" (click)="clearAmountReceived()" class="text-xs text-gray-500 underline hover:text-gray-700 dark:hover:text-gray-300">Clear</button>
+            </div>
+            <div class="mb-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
+              @for (amt of quickAmounts; track amt) {
+                <button type="button" (click)="applyQuickAmount(amt)"
+                  class="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-700/40 dark:bg-emerald-500/10 dark:text-emerald-300 dark:hover:bg-emerald-500/20">
+                  {{ amt }}
+                </button>
+              }
+            </div>
             <input #amountReceivedInput type="number" min="0" step="0.01"
               [(ngModel)]="amountReceived"
               (ngModelChange)="onAmountReceivedChange($event)"
               class="w-full rounded-md border px-4 py-4 text-2xl font-semibold dark:border-gray-700 dark:bg-gray-800" inputmode="decimal" />
-          </label>
+            <p class="mt-1 text-xs text-gray-500">Tap amount cards to add, or type a custom amount.</p>
+          </div>
           <div class="rounded-md border-2 px-4 py-4 text-center" [class.border-emerald-300]="changeDue() >= 0" [class.border-red-300]="changeDue() < 0">
             <p class="text-sm text-gray-500">Change</p>
             <p class="text-3xl font-bold" [class.text-emerald-600]="changeDue() >= 0" [class.text-red-600]="changeDue() < 0">
@@ -583,30 +654,6 @@
           </div>
         </div>
       }
-    </div>
-  </div>
-}
-
-<!-- Void cart line -->
-@if (showVoidModal && voidingLine) {
-  <div class="fixed inset-0 z-[100000] flex items-center justify-center bg-gray-900/50 p-4">
-    <div class="w-full max-w-sm rounded-md bg-white p-6 shadow-2xl dark:bg-gray-900">
-      <h3 class="text-lg font-bold text-gray-900 dark:text-white">Void item</h3>
-      <p class="mt-1 text-sm text-gray-500">{{ voidingLine.variantName }} — requires admin code</p>
-      <label class="mt-4 block">
-        <span class="mb-1 block text-sm font-medium">Admin void code</span>
-        <input type="password" [(ngModel)]="voidAdminCode" class="w-full rounded-md border px-3 py-2.5 dark:border-gray-700 dark:bg-gray-800" />
-      </label>
-      <label class="mt-3 block">
-        <span class="mb-1 block text-sm font-medium">Reason (optional)</span>
-        <input type="text" [(ngModel)]="voidReason" class="w-full rounded-md border px-3 py-2.5 dark:border-gray-700 dark:bg-gray-800" />
-      </label>
-      <div class="mt-5 flex gap-3">
-        <button type="button" (click)="closeVoidModal()" class="flex-1 rounded-md border py-2.5">Cancel</button>
-        <button type="button" (click)="confirmVoidLine()" [disabled]="isVoiding" class="flex-1 rounded-md bg-amber-600 py-2.5 font-semibold text-white disabled:opacity-50">
-          {{ isVoiding ? 'Voiding...' : 'Void' }}
-        </button>
-      </div>
     </div>
   </div>
 }

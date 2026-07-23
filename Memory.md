@@ -128,6 +128,21 @@ Living notes for agents continuing this repo. Prefer this file over re-reading l
 - **PO create status check:** Live DB had `CHECK (pending|received|cancelled)` rejecting `draft`. Fixed to `draft|ordered|received|cancelled` (`20260723_po_status_check_fix.sql` + `ensurePoSchema`). Drop legacy check **before** normalizing values.
 - **PO item remove ✕:** Top-right of each item card (create + draft detail); avoid grid wrap from column spans summing > 12.
 
+### 4.2
+- **Variants catalog:** large variant name + price on grid/list cards; sale price shown when on sale.
+- **Variant picker modal:** price aligned right and enlarged (`text-2xl`/`text-3xl`).
+- **Void moved to My Sales:** cart keeps remove (X) only; post-sale void on each line in sale details (admin code). Backend restores `tblinventory_variants.stock_qty` and moves payment header (`amount_paid`, `reference_number`, etc.) to a sibling batch line when needed.
+- **My Sales:** sortable headers; removable payment-method total cards (`localStorage` key `pos.mySales.hiddenPaymentCards`); Payment + Reference # columns; default period = **today**.
+- **Checkout:** Reference # required for GCash/Maya/bank transfer/Foodpanda; quick amount chips 10–1000; Custom discount with confirm before apply. Persists `tblsales_transactions.reference_number`.
+- **OUT OF STOCK** watermark overlay on OOS variant cards + modal rows.
+- **Chat:** no sound/badge when the matching thread is already open (marks those notifs read); `"Seen"` under own private messages via `seen_at` + `GET /chat/seen`; sound + red FAB badge when closed/hidden.
+- **Admin Inventory:** Low stock merges legacy `tblinventory` + POS variants; Category field is smart autocomplete (type + pick existing).
+- **Purchase Orders:** `app-confirm-dialog` (no `window.confirm`); field labels above inputs; smart search returns **variants only** + product type + unit type fields.
+- **PO create form smart fields:** Product type, Unit type, Brand, and Category are smart-search textboxes (suggest existing; free-type new). New brand/category/unit type values are created on save when missing.
+- **PO draft detail form:** Same layout/labels as create — Variant, Product type, Unit type, Brand, Category are smart-search; Qty/Unit cost labeled. `getOnePO` returns separate `productName` + `unitType` (not coalesced display name). Selecting a variant autofills product type / unit / brand / category / cost.
+- **Reports (POS dashboard + completed sales):** search, sortable headers, Reference # column. Dashboard transactions search/sort are server-side; completed sales filter/sort/paginate client-side over the loaded period (up to 200 rows).
+- **Key PO files:** `frontend/.../purchase-orders/purchase-orders.component.*`, `frontend/.../inventory.service.ts`, `backend/src/inventory/inventory.service.ts` (`getOnePO` / create / update / receive).
+
 ## Key printer files
 - Panel: `frontend/.../pos-printer-settings-panel/*`
 - Print: `pos-receipt-print.service.ts`, `pos-printhub.service.ts`
@@ -179,23 +194,25 @@ Living notes for agents continuing this repo. Prefer this file over re-reading l
 - `tblpurchases_status_check`: drop constraint before UPDATE to `draft`; legacy check was `pending|received|cancelled`.
 
 ## Suggested next checks when continuing
-1. Login as POS user → PrintHub connects (silent if previously paired; picker once if first time).
-2. Reload dashboard → Bluetooth indicator goes green without clicking (if printer on + previously paired).
-3. Print receipt → store/company name + cashier name centered, with gaps matching template (logo → header → items → total → thank you).
-4. Drag template blocks farther apart → save → reprint → blank lines increase.
-5. Save printer settings → reload → connection type + template still in Network `item`.
-6. Receive PO linked to a POS variant → variant stock increases on cashier terminal.
-7. Chat delete/clear + notification mark-all.
-8. Login shows uploaded company logo.
-9. My Sales → Details modal + Re-print (watermark on thermal).
-10. Admin KPI transactions → Re-print icon in Actions column.
-11. Saved template align/spacing → reprint matches editor layout (items format `Qty - Name - Unit`).
-12. Re-print from My Sales → admin void code required.
-13. Purchase Orders page → full-width table; **+** opens create modal; icon actions; status `draft` OK.
-14. Cash drawer enabled → complete sale opens drawer before receipt (PrintHub/USB/network).
-15. Admin dashboard charts → donut view labels readable (white % on slices); custom chart stable (no infinite load).
-16. Tablet portrait → cart drawer above header/filters; checkout modal accordion + fixed footer.
-17. Offline sale → queues locally; Sync now uploads when online.
-18. Receipt items → name + total on line 1, qty x price on line 2 (no ₱ on thermal).
-19. My Sales → filter/pagination on recent sales table.
-20. BLE re-print of long receipts → no 512-byte GATT write error.
+1. Continuation 4.2 smoke: variants price/OOS watermark → checkout with GCash reference + custom discount → My Sales void restores stock → Reports search/Reference # → chat Seen + FAB badge → Inventory low stock + PO variant search.
+2. Purchase Orders → New PO + Draft PO: labels on all item fields; Product type / Unit type / Brand / Category smart search (pick or type new); Variant smart search autofills related fields.
+3. Login as POS user → PrintHub connects (silent if previously paired; picker once if first time).
+4. Reload dashboard → Bluetooth indicator goes green without clicking (if printer on + previously paired).
+5. Print receipt → store/company name + cashier name centered, with gaps matching template (logo → header → items → total → thank you).
+6. Drag template blocks farther apart → save → reprint → blank lines increase.
+7. Save printer settings → reload → connection type + template still in Network `item`.
+8. Receive PO linked to a POS variant → variant stock increases on cashier terminal.
+9. Chat delete/clear + notification mark-all.
+10. Login shows uploaded company logo.
+11. My Sales → Details modal + Re-print (watermark on thermal).
+12. Admin KPI transactions → Re-print icon in Actions column.
+13. Saved template align/spacing → reprint matches editor layout (items format `Qty - Name - Unit`).
+14. Re-print from My Sales → admin void code required.
+15. Purchase Orders page → full-width table; **+** opens create modal; icon actions; status `draft` OK.
+16. Cash drawer enabled → complete sale opens drawer before receipt (PrintHub/USB/network).
+17. Admin dashboard charts → donut view labels readable (white % on slices); custom chart stable (no infinite load).
+18. Tablet portrait → cart drawer above header/filters; checkout modal accordion + fixed footer.
+19. Offline sale → queues locally; Sync now uploads when online.
+20. Receipt items → name + total on line 1, qty x price on line 2 (no ₱ on thermal).
+21. My Sales → filter/pagination on recent sales table.
+22. BLE re-print of long receipts → no 512-byte GATT write error.

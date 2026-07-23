@@ -272,6 +272,29 @@
    - Make sure to finish line-by-line, do not start working on next line unless its a pre-requisite to the present one.
    - Make sure to check all taskss under this continuation before setting it to done because in the past there are tasks that has not been done so be sure to check if its all done properly and without errors and bugs. 
    - Make sure update the Memory.md.
-
-
+   //Continuation 4.2
+   -[x] In cashier dashboard, when the products view are in variants mode, make sure to show the price in the product card, make it big and readable same thing to the Variant name.
+   -[x] In cashier dashboardm when a product type or variant card was clicked, in the product popup, change the position of the variant price move it to the right side and make it large so it will be visible.
+   -[x] In cashier dashboard, in the cart, remove the void button and move it into the My sales page inside each products on each transactions so that even though the sale was already made, the cashier can still do a void when the customer suddenly changes their minds, make sure to update the inventory where there is a product that is voided.
+   -[x] In cashier dasboard My sales page, update the transaction table, add a sorting feature on the table header.
+   -[x] In cashier dasboard My sales page, add a total card for each payment methods, make it removable but also can be able to add or show the card.
+   -[x] In cashier dasboard My sales page, in the table, add the columns of payments types and reference #.
+   -[x] In cashier dasboard My sales page, set the default sales report period to show the present day, not whole month sales report.
+   -[x] In cashier dasboard, In Complete payment form, when the selected payment method was Gcash, maya, bank transfer or Food panda. Show make sure to show a Reference # text so that it will be the main key to monitor wheather payment was already recieved or not.
+   -[x] In cashier dasboard, In Complete payment form, add clickable amount cards amounting to 10, 20, 50, 100, 500 and 1000 so it will be more easier for the cashier to just pick the amount and not requiring to type manually the amount but still, make sure that cashier can still be able to input a custom amount.
+   -[x] In cashier dasboard, In Complete payment form, add a "Custom" discount in the dropdown, and when its picked show a input number where the cashier can type a custom amount of discout, make sure that after entering the amount to show confirmation alert before making the computation in the total amount.
+   -[x] In cashier dasboard, when a variant is not available currently its disabled which is right and I also want to add a big text like a watermark sayin "OUT OF STOCK".
+   -[x] In both dashboard, in chat feature, when the chat window is already open and he/she got a new message its ok not to throw a notification since the chatbox is already open and the message is already seen.
+   -[x] In both dashboard, in chat feature, when a message is seen, add a small text "seen" below the message of the sender not on my own message.
+   -[x] In both dashboard, in chat feature, add a sound when there is a new message, also other than the notification bell, when this is a new message and the chat box is close, show a circle in the chat icon below just like the notification bell so that the user will let know that there is a new message.
+   -[x] In posadmin dashboard, Inventory -> Low stock, it is not showing the low stocks items even there are already low stocks.
+   -[x] In posadmin dashboard -> Inventory, when adding a product in the Category text field, update it into a smart textbox not a dropdown so that It can already fetch existing categories and can be chosen yet can be typed a new category.
+   -[x] In posadmin dashboard -> Inventory -> Purchase Order, update the confirm aler box into something uniform that the web app is using, not like simple javascript alert.
+   -[x] In posadmin dashboard -> Inventory -> Purchase Order, update the items form, add a small label above each textbox so that the admin can know what field is that he/she needed to fill.
+   -[x] In posadmin dashboard -> Inventory -> Purchase Order, In the items form, when doing a smart seach, just fetch the variants not the product type so it will be just for a specific variant, also add the product type field when product is fetched its for the admin to make an order for a specific unit type of that variant.
+   -[x] In posadmin dashboard -> Reports page, add a search, sorting and filter feature on the table, also add the Reference # column for other payments other than cash.
+   -[x] Make sure to finish line-by-line, do not start working on next line unless its a pre-requisite to the present one.
+   -[x] Make sure to check all taskss under this continuation before setting it to done because in the past there are tasks that has not been done so be sure to check if its all done properly and without errors and bugs.
+   -[x] Make sure update the Memory.md.
+   -[x] Tick the checkbox once the task is done.
 

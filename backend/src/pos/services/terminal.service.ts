@@ -12,6 +12,7 @@ export type CheckoutPayload = {
   discountAmount?: number;
   amountPaid?: number;
   paymentMethodId?: number | null;
+  referenceNumber?: string | null;
 };
 
 @Injectable()
@@ -412,6 +413,13 @@ export class PosTerminalService {
     }
 
     const paymentStatus = paymentMethod?.settlementMode === 'floating' ? 'floating' : 'settled';
+    const referenceNumber = String(payload.referenceNumber ?? '').trim() || null;
+
+    // Ensure optional columns exist for newer checkout fields.
+    await this.db.query(`
+      ALTER TABLE public.tblsales_transactions
+        ADD COLUMN IF NOT EXISTS reference_number TEXT
+    `);
 
     try {
       type LineDraft = {
@@ -575,8 +583,8 @@ export class PosTerminalService {
             `INSERT INTO tblsales_transactions
                (org_id, variant_id, quantity_sold, unit_price, total_amount,
                 discount_amount, discount_id, amount_paid, change_amount,
-                payment_method_id, payment_status, sale_date, created_by, unit_type)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, (NOW() AT TIME ZONE 'Asia/Manila')::date, $12, $13)
+                payment_method_id, payment_status, sale_date, created_by, unit_type, reference_number)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, (NOW() AT TIME ZONE 'Asia/Manila')::date, $12, $13, $14)
              RETURNING id`,
             [
               orgId,
@@ -592,6 +600,7 @@ export class PosTerminalService {
               i === 0 ? paymentStatus : 'settled',
               userId || null,
               line.unitType,
+              i === 0 ? referenceNumber : null,
             ],
           );
 
