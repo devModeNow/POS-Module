@@ -48,6 +48,7 @@ export class PosDashboardComponent implements OnInit {
   cart: CartLine[] = [];
   cartOpen = false;
   isCheckingOut = false;
+  isOpeningCheckout = false;
 
   showVariantModal = false;
   selectedProduct: PosProduct | null = null;
@@ -56,6 +57,9 @@ export class PosDashboardComponent implements OnInit {
   variantQty: Record<number, number> = {};
   variantSelectedUnit: Record<number, string> = {};
   variantSearch = '';
+  /** product = multi-flavor picker; single = one variant (Variant Mode click) */
+  variantModalMode: 'product' | 'single' = 'product';
+  selectedModalVariantId: number | null = null;
 
   showCartUnitModal = false;
   editingCartLine: CartLine | null = null;
@@ -72,10 +76,17 @@ export class PosDashboardComponent implements OnInit {
   customDiscountApplied = 0;
   amountReceived = 0;
   readonly quickAmounts = [10, 20, 50, 100, 500, 1000];
-  checkoutSuccess: { changeDue: number; totalAmount: number } | null = null;
+  checkoutSuccess: {
+    changeDue: number;
+    totalAmount: number;
+    amountPaid: number;
+    itemCount: number;
+    subtotal: number;
+    discount: number;
+  } | null = null;
   cashDrawerEnabled = false;
   useCashDrawerThisSale = true;
-  checkoutSubtotalsOpen = false;
+  checkoutPrinting = false;
   offlineSyncing = false;
 
   confirmOpen = false;
@@ -225,7 +236,8 @@ export class PosDashboardComponent implements OnInit {
     return this.paymentMethods.find((m) => m.id === this.selectedPaymentMethodId) ?? null;
   }
 
-  get requiresPaymentReference(): boolean {
+  /** Show optional reference field for digital / partner payments. */
+  get showPaymentReference(): boolean {
     const code = String(this.selectedPaymentMethod?.code ?? '').toLowerCase().replace(/[\s_-]+/g, '');
     const name = String(this.selectedPaymentMethod?.name ?? '').toLowerCase().replace(/[\s_-]+/g, '');
     const haystack = `${code} ${name}`;
@@ -236,6 +248,24 @@ export class PosDashboardComponent implements OnInit {
       (haystack.includes('bank') && haystack.includes('transfer')) ||
       haystack.includes('foodpanda')
     );
+  }
+
+  /** Cash tends cash; digital/partner methods auto-pay exact total. */
+  get isCashPayment(): boolean {
+    const code = String(this.selectedPaymentMethod?.code ?? '').toLowerCase().replace(/[\s_-]+/g, '');
+    const name = String(this.selectedPaymentMethod?.name ?? '').toLowerCase().replace(/[\s_-]+/g, '');
+    const haystack = `${code} ${name}`;
+    if (!haystack.trim()) return true;
+    return haystack.includes('cash') && !this.showPaymentReference;
+  }
+
+  get showAmountReceived(): boolean {
+    return this.isCashPayment;
+  }
+
+  private syncExactAmountForNonCash(): void {
+    if (this.isCashPayment) return;
+    this.amountReceived = this.cartTotal();
   }
 
   onSearchFieldFocus(): void {
@@ -423,6 +453,8 @@ export class PosDashboardComponent implements OnInit {
       return;
     }
     this.selectedProduct = product;
+    this.variantModalMode = 'product';
+    this.selectedModalVariantId = null;
     this.showVariantModal = true;
     this.variantsLoading = true;
     this.variantQty = {};
@@ -432,6 +464,7 @@ export class PosDashboardComponent implements OnInit {
       const r = await this.posService.getVariants(product.id);
       this.variants = (r.data ?? []).map((v) => this.normalizeVariant(v));
       this.initVariantModalState();
+      this.autoSelectModalVariant();
     } catch {
       this.variants = [];
     } finally {
@@ -468,6 +501,8 @@ export class PosDashboardComponent implements OnInit {
       inStock: variant.stockQty > 0,
     };
     this.variants = [full];
+    this.variantModalMode = 'single';
+    this.selectedModalVariantId = full.id;
     this.showVariantModal = true;
     this.variantsLoading = false;
     this.variantSearch = '';
@@ -504,6 +539,8 @@ export class PosDashboardComponent implements OnInit {
     this.selectedProduct = null;
     this.variants = [];
     this.variantSearch = '';
+    this.selectedModalVariantId = null;
+    this.variantModalMode = 'product';
   }
 
   get filteredModalVariants(): PosVariant[] {
@@ -514,6 +551,43 @@ export class PosDashboardComponent implements OnInit {
         v.variantName.toLowerCase().includes(q) ||
         v.productName.toLowerCase().includes(q),
     );
+  }
+
+  get selectedModalVariant(): PosVariant | null {
+    if (this.selectedModalVariantId == null) return null;
+    return this.variants.find((v) => v.id === this.selectedModalVariantId) ?? null;
+  }
+
+  get showFlavorPicker(): boolean {
+    return this.variantModalMode === 'product' && this.variants.length > 1;
+  }
+
+  private autoSelectModalVariant(): void {
+    const firstInStock = this.variants.find((v) => v.stockQty > 0) ?? this.variants[0] ?? null;
+    this.selectedModalVariantId = firstInStock?.id ?? null;
+  }
+
+  selectModalVariant(variant: PosVariant): void {
+    if (variant.stockQty <= 0) {
+      this.notify.warning('Out of stock', `${variant.variantName} is unavailable.`);
+      return;
+    }
+    this.selectedModalVariantId = variant.id;
+    if (this.variantSelectedUnit[variant.id] == null) {
+      this.variantSelectedUnit[variant.id] = this.defaultUnitType(variant);
+    }
+    if (this.variantQty[variant.id] == null) {
+      this.variantQty[variant.id] = this.defaultVariantQty(variant);
+    }
+  }
+
+  addSelectedVariantToCart(): void {
+    const variant = this.selectedModalVariant;
+    if (!variant) {
+      this.notify.warning('Select a flavor', 'Choose a variant before adding to cart.');
+      return;
+    }
+    this.addVariantToCart(variant);
   }
 
   selectedUnitFor(variant: PosVariant): PosVariantUnit {
@@ -532,6 +606,12 @@ export class PosDashboardComponent implements OnInit {
   onVariantUnitChange(variant: PosVariant): void {
     const unit = this.selectedUnitFor(variant);
     this.variantQty[variant.id] = unit.isManualEntry ? 100 : 1;
+  }
+
+  selectVariantUnit(variant: PosVariant, unitType: string): void {
+    if (this.variantSelectedUnit[variant.id] === unitType) return;
+    this.variantSelectedUnit[variant.id] = unitType;
+    this.onVariantUnitChange(variant);
   }
 
   incrementVariantQty(variant: PosVariant): void {
@@ -843,14 +923,10 @@ export class PosDashboardComponent implements OnInit {
 
   canConfirmCheckout(): boolean {
     const received = Number(this.amountReceived) || 0;
-    const referenceOk =
-      !this.requiresPaymentReference || !!this.paymentReferenceNumber.trim();
     return (
       received >= this.cartTotal() &&
       this.cart.length > 0 &&
-      !this.isCheckingOut &&
-      !!this.selectedPaymentMethodId &&
-      referenceOk
+      !!this.selectedPaymentMethodId
     );
   }
 
@@ -872,37 +948,73 @@ export class PosDashboardComponent implements OnInit {
       this.notify.warning('Empty cart', 'Add products before checking out.');
       return;
     }
-    await this.loadCashDrawerSettings();
-    this.selectedDiscountId = null;
-    this.customDiscountDraft = 0;
-    this.customDiscountApplied = 0;
-    this.paymentReferenceNumber = '';
-    this.amountReceived = 0;
-    this.checkoutSuccess = null;
-    this.checkoutSubtotalsOpen = false;
-    this.useCashDrawerThisSale = this.cashDrawerEnabled;
-    this.showCheckoutModal = true;
+    if (this.isOpeningCheckout || this.isCheckingOut) return;
+    this.isOpeningCheckout = true;
+    try {
+      await this.loadCashDrawerSettings();
+      this.selectedDiscountId = null;
+      this.customDiscountDraft = 0;
+      this.customDiscountApplied = 0;
+      this.paymentReferenceNumber = '';
+      this.amountReceived = 0;
+      this.checkoutSuccess = null;
+      this.checkoutPrinting = false;
+      this.useCashDrawerThisSale = this.cashDrawerEnabled;
+      this.showCheckoutModal = true;
+    } finally {
+      this.isOpeningCheckout = false;
+    }
   }
 
   closeCheckoutModal(): void {
-    if (!this.isCheckingOut) {
-      this.showCheckoutModal = false;
-      this.checkoutSuccess = null;
+    if (this.isCheckingOut || this.checkoutPrinting) return;
+    this.showCheckoutModal = false;
+    this.checkoutSuccess = null;
+  }
+
+  dismissCheckoutSuccess(): void {
+    this.showCheckoutModal = false;
+    this.checkoutSuccess = null;
+    this.checkoutPrinting = false;
+  }
+
+  selectPaymentMethod(id: number): void {
+    this.selectedPaymentMethodId = id;
+    if (this.isCashPayment) {
+      this.amountReceived = 0;
+    } else {
+      this.syncExactAmountForNonCash();
     }
+  }
+
+  paymentMethodTone(m: PosPaymentMethod): string {
+    const key = `${m.code} ${m.name}`.toLowerCase();
+    if (key.includes('gcash') || key.includes('maya') || key.includes('wallet') || key.includes('e-wallet') || key.includes('ewallet')) {
+      return 'wallet';
+    }
+    if (key.includes('card') || key.includes('credit') || key.includes('debit') || key.includes('visa') || key.includes('master')) {
+      return 'card';
+    }
+    if (key.includes('bank') || key.includes('transfer')) {
+      return 'bank';
+    }
+    return 'cash';
   }
 
   onDiscountChange(): void {
     if (this.selectedDiscountId !== 'custom') {
       this.customDiscountDraft = 0;
       this.customDiscountApplied = 0;
+      this.syncExactAmountForNonCash();
       return;
     }
     this.customDiscountApplied = 0;
     this.customDiscountDraft = 0;
+    this.syncExactAmountForNonCash();
   }
 
   applyQuickAmount(amount: number): void {
-    this.amountReceived = Math.round(((Number(this.amountReceived) || 0) + amount) * 100) / 100;
+    this.amountReceived = Math.round((Number(amount) || 0) * 100) / 100;
   }
 
   clearAmountReceived(): void {
@@ -924,6 +1036,7 @@ export class PosDashboardComponent implements OnInit {
       `Apply a ₱${this.formatCurrency(amount)} discount to this sale?`,
       () => {
         this.customDiscountApplied = amount;
+        this.syncExactAmountForNonCash();
       },
     );
   }
@@ -942,14 +1055,28 @@ export class PosDashboardComponent implements OnInit {
   requestConfirmCheckout(): void {
     this.openConfirm(
       'Complete sale?',
-      `Confirm sale  ₱${this.formatCurrency(this.cartTotal())}?`,
-      () => void this.confirmCheckout(),
+      `Confirm sale for ₱${this.formatCurrency(this.cartTotal())}?`,
+      () => {
+        this.isCheckingOut = true;
+        void this.confirmCheckout();
+      },
     );
   }
 
   async confirmCheckout(): Promise<void> {
-    if (!this.canConfirmCheckout() || this.isCheckingOut) return;
+    if (!this.canConfirmCheckout()) {
+      this.isCheckingOut = false;
+      return;
+    }
     this.isCheckingOut = true;
+    const snapshot = {
+      itemCount: this.cartCount(),
+      subtotal: this.cartSubtotal(),
+      discount: this.cartOrderDiscount(),
+      totalAmount: this.cartTotal(),
+      amountPaid: Number(this.amountReceived) || 0,
+      changeDue: this.changeDue(),
+    };
     try {
       await this.actionBusy.run('pos-checkout', async () => {
         const payload = {
@@ -960,19 +1087,14 @@ export class PosDashboardComponent implements OnInit {
           })),
           discountId: this.selectedDiscountId === 'custom' ? null : this.selectedDiscountId,
           discountAmount: this.selectedDiscountId === 'custom' ? this.customDiscountApplied : undefined,
-          amountPaid: Number(this.amountReceived) || 0,
+          amountPaid: snapshot.amountPaid,
           paymentMethodId: this.selectedPaymentMethodId,
-          referenceNumber: this.requiresPaymentReference
-            ? this.paymentReferenceNumber.trim()
-            : undefined,
+          referenceNumber: this.paymentReferenceNumber.trim() || undefined,
         };
 
         if (!this.offline.isOnline()) {
-          this.offline.queueCheckout(this.orgId(), payload, this.cartTotal());
-          this.checkoutSuccess = {
-            changeDue: this.changeDue(),
-            totalAmount: this.cartTotal(),
-          };
+          this.offline.queueCheckout(this.orgId(), payload, snapshot.totalAmount);
+          this.checkoutSuccess = { ...snapshot, changeDue: Math.max(0, snapshot.changeDue) };
           this.notify.success('Saved offline', 'Sale queued. Tap Sync when internet is back.');
           this.cart = [];
           this.cartService.clear(this.orgId());
@@ -982,8 +1104,6 @@ export class PosDashboardComponent implements OnInit {
           this.customDiscountApplied = 0;
           this.paymentReferenceNumber = '';
           this.amountReceived = 0;
-          this.showCheckoutModal = false;
-          this.checkoutSuccess = null;
           return;
         }
 
@@ -993,10 +1113,13 @@ export class PosDashboardComponent implements OnInit {
           return;
         }
         this.checkoutSuccess = {
-          changeDue: r.data.changeDue ?? this.changeDue(),
+          changeDue: Math.max(0, r.data.changeDue ?? snapshot.changeDue),
           totalAmount: r.data.totalAmount,
+          amountPaid: r.data.amountPaid ?? snapshot.amountPaid,
+          itemCount: r.data.itemCount ?? snapshot.itemCount,
+          subtotal: r.data.subtotal ?? snapshot.subtotal,
+          discount: r.data.discountAmount ?? snapshot.discount,
         };
-        this.notify.success('Sale complete', `Change: ₱${this.formatCurrency(this.checkoutSuccess.changeDue)}`);
         const saleId = r.data.saleIds?.[0];
         this.cart = [];
         this.cartService.clear(this.orgId());
@@ -1007,19 +1130,21 @@ export class PosDashboardComponent implements OnInit {
         this.paymentReferenceNumber = '';
         this.amountReceived = 0;
         await this.loadCatalog();
-        this.showCheckoutModal = false;
-        this.checkoutSuccess = null;
+
         if (saleId) {
-          const printResult = await this.receiptPrint.printSaleReceipt(saleId, {
-            openCashDrawer: this.useCashDrawerThisSale,
-          });
-          if (!printResult.success) {
-            this.notify.warning(
-              'Receipt not printed',
-              printResult.message ?? 'Connect PrintHub (Bluetooth icon), then try again.',
-            );
-          } else if (printResult.connectionType === 'printhub') {
-            this.notify.success('Receipt printed', 'Sent to PrintHub thermal printer.');
+          this.checkoutPrinting = true;
+          try {
+            const printResult = await this.receiptPrint.printSaleReceipt(saleId, {
+              openCashDrawer: this.cashDrawerEnabled,
+            });
+            if (!printResult.success) {
+              this.notify.warning(
+                'Receipt not printed',
+                printResult.message ?? 'Connect PrintHub (Bluetooth icon), then try again.',
+              );
+            }
+          } finally {
+            this.checkoutPrinting = false;
           }
         }
       });
