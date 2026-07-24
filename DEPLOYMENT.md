@@ -53,13 +53,18 @@ Backend will be available at your Render URL, for example `https://cbis-backend.
 - Root directory: `frontend`
 - `frontend/vercel.json` is already configured.
 
-### 2.2 Set environment variable in Vercel
-In Vercel Project Settings -> Environment Variables:
+### 2.2 Set environment variable in Vercel (required)
+In Vercel → Project Settings → Environment Variables (Production):
 
-- `NG_APP_API_BASE_URL` = your backend public URL
-  - Example: `https://sts-incorporated-cdis-backend-6upj7.ondigitalocean.app`
+- `NG_APP_API_BASE_URL` = your backend public URL  
+  Example: `https://cbis-backend-production.up.railway.app`
 
-Redeploy after setting env vars.
+Angular cannot read `.env` in the browser. `@ngx-env/builder` injects `NG_APP_*` **at build time**.  
+After changing the variable, click **Redeploy**.
+
+Alternatively, `frontend/.env.production` is committed with the Railway URL as a default.
+
+Also ensure backend `CORS_ORIGINS` includes your Vercel domain.
 
 ### 2.3 SPA routing
 `frontend/vercel.json` includes rewrite to `index.html`, so Angular routes work.

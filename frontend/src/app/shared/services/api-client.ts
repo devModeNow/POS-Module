@@ -11,28 +11,37 @@ import {
 
 type RetryConfig = InternalAxiosRequestConfig & { _retry?: boolean };
 
+/**
+ * API base URL resolution (build-time via @ngx-env/builder / dotenv):
+ * 1) NG_APP_API_BASE_URL from .env / .env.production / Vercel env
+ * 2) localhost → http://localhost:3000
+ * 3) production fallback → same-origin (Vercel /api proxy)
+ *
+ * Note: `dotenv` cannot run in the browser. Values must be present at build time.
+ */
 const appEnv = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
-const rawConfiguredApiBaseUrl = String(appEnv?.['NG_APP_API_BASE_URL'] ?? '').trim();
-const nodeEnv = String(appEnv?.['NODE_ENV'] ?? '').trim().toLowerCase();
+const rawConfiguredApiBaseUrl = String(appEnv?.['NG_APP_API_BASE_URL'] ?? '').trim().replace(/\/+$/, '');
 const hostName = String(globalThis.location?.hostname ?? '').trim().toLowerCase();
 const isLocalHost = hostName === 'localhost' || hostName === '127.0.0.1';
-const isProductionBuild = nodeEnv === 'production' || !isLocalHost;
-const fallbackProductionApiBaseUrl = `${globalThis.location?.origin ?? ''}/api`.replace(/\/+$/, '');
 const isLocalApiUrl =
   rawConfiguredApiBaseUrl.includes('localhost') || rawConfiguredApiBaseUrl.includes('127.0.0.1');
-const configuredApiBaseUrl =
-  rawConfiguredApiBaseUrl && !(isProductionBuild && isLocalApiUrl) ? rawConfiguredApiBaseUrl : '';
 
-if (!configuredApiBaseUrl && isProductionBuild) {
+// Never ship a localhost API URL to a real deployed host.
+const configuredApiBaseUrl =
+  rawConfiguredApiBaseUrl && !( !isLocalHost && isLocalApiUrl) ? rawConfiguredApiBaseUrl : '';
+
+if (!configuredApiBaseUrl && !isLocalHost) {
   console.warn(
-    'NG_APP_API_BASE_URL is missing. Falling back to the configured production API URL.',
+    '[api-client] NG_APP_API_BASE_URL is missing in this build. Using same-origin /api proxy. ' +
+      'Set NG_APP_API_BASE_URL in Vercel (or frontend/.env.production) to your Railway/Render backend URL.',
   );
 }
 
 export const API_BASE_URL = (
-  configuredApiBaseUrl || (isLocalHost ? 'http://localhost:3000' : fallbackProductionApiBaseUrl)
+  configuredApiBaseUrl || (isLocalHost ? 'http://localhost:3000' : `${globalThis.location?.origin ?? ''}/api`)
 ).replace(/\/+$/, '');
-const ACTIVE_BRANCH_STORAGE_KEY = 'activeBranchId';
+
+console.info('[api-client] API_BASE_URL =', API_BASE_URL);const ACTIVE_BRANCH_STORAGE_KEY = 'activeBranchId';
 
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
