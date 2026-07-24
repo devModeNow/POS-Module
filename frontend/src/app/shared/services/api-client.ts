@@ -12,12 +12,12 @@ import {
 type RetryConfig = InternalAxiosRequestConfig & { _retry?: boolean };
 
 /**
- * API base URL resolution (build-time via @ngx-env/builder / dotenv):
- * 1) NG_APP_API_BASE_URL from .env / .env.production / Vercel env
+ * API base URL resolution (build-time via @ngx-env/builder):
+ * 1) NG_APP_API_BASE_URL from .env / .env.production / Docker build-arg
  * 2) localhost → http://localhost:3000
- * 3) production fallback → same-origin (Vercel /api proxy)
+ * 3) production fallback → same-origin /api (only if env was missing at build)
  *
- * Note: `dotenv` cannot run in the browser. Values must be present at build time.
+ * Browsers cannot read .env at runtime. Rebuild the frontend image after changing the API URL.
  */
 const appEnv = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
 const rawConfiguredApiBaseUrl = String(appEnv?.['NG_APP_API_BASE_URL'] ?? '').trim().replace(/\/+$/, '');
@@ -28,12 +28,12 @@ const isLocalApiUrl =
 
 // Never ship a localhost API URL to a real deployed host.
 const configuredApiBaseUrl =
-  rawConfiguredApiBaseUrl && !( !isLocalHost && isLocalApiUrl) ? rawConfiguredApiBaseUrl : '';
+  rawConfiguredApiBaseUrl && !(!isLocalHost && isLocalApiUrl) ? rawConfiguredApiBaseUrl : '';
 
 if (!configuredApiBaseUrl && !isLocalHost) {
   console.warn(
-    '[api-client] NG_APP_API_BASE_URL is missing in this build. Using same-origin /api proxy. ' +
-      'Set NG_APP_API_BASE_URL in Vercel (or frontend/.env.production) to your Railway/Render backend URL.',
+    '[api-client] NG_APP_API_BASE_URL is missing in this build. Using same-origin /api fallback. ' +
+      'Rebuild frontend with NG_APP_API_BASE_URL=https://api-pcmazepos.pcmazing.com',
   );
 }
 
@@ -41,8 +41,9 @@ export const API_BASE_URL = (
   configuredApiBaseUrl || (isLocalHost ? 'http://localhost:3000' : `${globalThis.location?.origin ?? ''}/api`)
 ).replace(/\/+$/, '');
 
-console.info('[api-client] API_BASE_URL =', API_BASE_URL);const ACTIVE_BRANCH_STORAGE_KEY = 'activeBranchId';
+console.info('[api-client] API_BASE_URL =', API_BASE_URL);
 
+const ACTIVE_BRANCH_STORAGE_KEY = 'activeBranchId';
 export const apiClient = axios.create({
   baseURL: API_BASE_URL,
   headers: {
