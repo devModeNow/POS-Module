@@ -20,10 +20,11 @@
               "zone.js"
             ],
             "allowedCommonJsDependencies": [
-               "prismjs",
+              "prismjs",
               "polylabel",
               "pako",
-              "exceljs"
+              "exceljs",
+              "printhub"
             ],
             "tsConfig": "tsconfig.app.json",
             "assets": [
@@ -47,8 +48,8 @@
               "budgets": [
                 {
                   "type": "initial",
-                  "maximumWarning": "4mb",
-                  "maximumError": "5MB"
+                  "maximumWarning": "5mb",
+                  "maximumError": "6mb"
                 },
                 {
                   "type": "anyComponentStyle",
