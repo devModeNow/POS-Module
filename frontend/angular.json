@@ -11,7 +11,7 @@
       "prefix": "app",
       "architect": {
         "build": {
-          "builder": "@angular/build:application",
+          "builder": "@ngx-env/builder:application",
           "options": {
             "outputPath": "dist/ng-tailadmin",
             "index": "src/index.html",
@@ -37,7 +37,10 @@
             ],
             "scripts": [
               "node_modules/apexcharts/dist/apexcharts.min.js"
-            ]
+            ],
+            "ngxEnv": {
+              "prefix": "NG_APP_"
+            }
           },
           "configurations": {
             "production": {
@@ -64,7 +67,7 @@
           "defaultConfiguration": "production"
         },
         "serve": {
-          "builder": "@angular/build:dev-server",
+          "builder": "@ngx-env/builder:dev-server",
           "configurations": {
             "production": {
               "buildTarget": "ng-tailadmin:build:production"
@@ -76,10 +79,10 @@
           "defaultConfiguration": "development"
         },
         "extract-i18n": {
-          "builder": "@angular/build:extract-i18n"
+          "builder": "@ngx-env/builder:extract-i18n"
         },
         "test": {
-          "builder": "@angular/build:karma",
+          "builder": "@ngx-env/builder:karma",
           "options": {
             "polyfills": [
               "zone.js",
@@ -95,7 +98,10 @@
             "styles": [
               "src/styles.css"
             ],
-            "scripts": []
+            "scripts": [],
+            "ngxEnv": {
+              "prefix": "NG_APP_"
+            }
           }
         }
       }
