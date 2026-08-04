@@ -56,6 +56,11 @@ export class PosStoreReportsController {
     return this.reportsService.lowStock(orgId(req));
   }
 
+  @Get('product-logs')
+  productLogs(@Req() req: AuthReq) {
+    return this.reportsService.productLogs(orgId(req));
+  }
+
   @Get('transactions')
   transactions(
     @Query('from') from: string,

@@ -4,7 +4,12 @@ import { PosDiscountsService } from './discounts.service';
 import { PosNotificationsService } from './pos-notifications.service';
 import { PosPaymentMethodsService } from './payment-methods.service';
 
-export type CheckoutItem = { variantId: number; quantity: number; unitType?: string };
+export type CheckoutItem = {
+  variantId: number;
+  quantity: number;
+  unitType?: string;
+  subVariantId?: number | null;
+};
 
 export type CheckoutPayload = {
   items: CheckoutItem[];
@@ -13,11 +18,30 @@ export type CheckoutPayload = {
   amountPaid?: number;
   paymentMethodId?: number | null;
   referenceNumber?: string | null;
+  customerFullName?: string | null;
+};
+
+type PosSubVariant = {
+  id: number;
+  sortOrder: number;
+  tempType: string | null;
+  sizeLabel: string;
+  sellingPrice: number;
+  salePrice: number | null;
+};
+
+type PosVariantUnitRow = {
+  unitType: string;
+  sellingPrice: number;
+  salePrice: number | null;
+  isManualEntry: boolean;
+  isDefault: boolean;
 };
 
 @Injectable()
 export class PosTerminalService {
   private readonly logger = new Logger(PosTerminalService.name);
+  private beverageSchemaReady = false;
 
   constructor(
     private readonly db: DatabaseService,
@@ -25,6 +49,171 @@ export class PosTerminalService {
     private readonly paymentMethodsService: PosPaymentMethodsService,
     private readonly notificationsService: PosNotificationsService,
   ) {}
+
+  private isBankTransferMethod(method: { code?: string | null; name?: string | null } | null | undefined): boolean {
+    const code = String(method?.code ?? '').toLowerCase().replace(/[\s_-]+/g, '');
+    const name = String(method?.name ?? '').toLowerCase().replace(/[\s_-]+/g, '');
+    const haystack = `${code} ${name}`;
+    return haystack.includes('banktransfer') || (haystack.includes('bank') && haystack.includes('transfer'));
+  }
+
+  private isCashMethod(method: { code?: string | null; name?: string | null } | null | undefined): boolean {
+    const code = String(method?.code ?? '').toLowerCase().replace(/[\s_-]+/g, '');
+    const name = String(method?.name ?? '').toLowerCase().replace(/[\s_-]+/g, '');
+    const haystack = `${code} ${name}`;
+    if (!haystack.trim()) return true;
+    if (haystack.includes('gcash')) return false;
+    return code === 'cash' || name === 'cash' || haystack.includes('cash payment');
+  }
+
+  private async ensureBeverageSchema(): Promise<void> {
+    if (this.beverageSchemaReady) return;
+    try {
+      await this.db.query(`
+        ALTER TABLE public.tblinventory_variants
+        ADD COLUMN IF NOT EXISTS has_sugar_level BOOLEAN NOT NULL DEFAULT FALSE
+      `);
+      await this.db.query(`
+        CREATE TABLE IF NOT EXISTS public.tblinventory_variant_subvariants (
+          id            BIGSERIAL PRIMARY KEY,
+          org_id        BIGINT NOT NULL REFERENCES public.tblorganizations(id) ON DELETE CASCADE,
+          variant_id    BIGINT NOT NULL REFERENCES public.tblinventory_variants(id) ON DELETE CASCADE,
+          temp_type     TEXT,
+          size_label    TEXT NOT NULL,
+          selling_price NUMERIC(12,2) NOT NULL DEFAULT 0,
+          sale_price    NUMERIC(12,2),
+          sort_order    INTEGER NOT NULL DEFAULT 0,
+          is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+          created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      this.beverageSchemaReady = true;
+    } catch (e) {
+      this.logger.warn(`Beverage schema ensure skipped: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+
+  private async loadUnitsMap(orgId: number, variantIds: number[]): Promise<Map<number, PosVariantUnitRow[]>> {
+    const unitsMap = new Map<number, PosVariantUnitRow[]>();
+    if (!variantIds.length) return unitsMap;
+    const unitsResult = await this.db.query<{
+      variantId: number;
+      unitType: string;
+      sellingPrice: string;
+      salePrice: string | null;
+      isManualEntry: boolean;
+      isDefault: boolean;
+    }>(
+      `SELECT vu.variant_id AS "variantId", vu.unit_type AS "unitType",
+              vu.selling_price AS "sellingPrice", vu.sale_price AS "salePrice",
+              vu.is_manual_entry AS "isManualEntry",
+              vu.is_default AS "isDefault"
+       FROM tblinventory_variant_units vu
+       WHERE vu.variant_id = ANY($1::bigint[]) AND vu.is_active = TRUE
+         AND (
+           NOT EXISTS (SELECT 1 FROM tblorg_unit_types WHERE org_id = $2)
+           OR EXISTS (
+             SELECT 1 FROM tblorg_unit_types ut
+             WHERE ut.org_id = $2
+               AND lower(ut.code) = lower(vu.unit_type)
+               AND ut.is_active = TRUE
+           )
+         )
+       ORDER BY vu.is_default DESC, vu.sort_order ASC, vu.unit_type ASC`,
+      [variantIds, orgId],
+    );
+    for (const u of unitsResult.rows) {
+      const list = unitsMap.get(u.variantId) ?? [];
+      list.push({
+        unitType: u.unitType,
+        sellingPrice: Number(u.sellingPrice ?? 0),
+        salePrice: u.salePrice != null ? Number(u.salePrice) : null,
+        isManualEntry: u.isManualEntry,
+        isDefault: u.isDefault,
+      });
+      unitsMap.set(u.variantId, list);
+    }
+    return unitsMap;
+  }
+
+  private async loadBeverageExtras(orgId: number, variantIds: number[]): Promise<{
+    sugarMap: Map<number, boolean>;
+    subMap: Map<number, PosSubVariant[]>;
+  }> {
+    const sugarMap = new Map<number, boolean>();
+    const subMap = new Map<number, PosSubVariant[]>();
+    if (!variantIds.length) return { sugarMap, subMap };
+    await this.ensureBeverageSchema();
+    try {
+      const sugarResult = await this.db.query<{ id: number; hasSugarLevel: boolean }>(
+        `SELECT id, COALESCE(has_sugar_level, FALSE) AS "hasSugarLevel"
+         FROM tblinventory_variants
+         WHERE org_id = $1 AND id = ANY($2::bigint[])`,
+        [orgId, variantIds],
+      );
+      for (const row of sugarResult.rows) {
+        sugarMap.set(row.id, Boolean(row.hasSugarLevel));
+      }
+    } catch {
+      /* column may be missing mid-deploy */
+    }
+    try {
+      const subResult = await this.db.query<{
+        id: number;
+        variantId: number;
+        sortOrder: number;
+        tempType: string | null;
+        sizeLabel: string;
+        sellingPrice: string;
+        salePrice: string | null;
+      }>(
+        `SELECT id,
+                variant_id AS "variantId",
+                sort_order AS "sortOrder",
+                temp_type AS "tempType",
+                size_label AS "sizeLabel",
+                selling_price AS "sellingPrice",
+                sale_price AS "salePrice"
+         FROM tblinventory_variant_subvariants
+         WHERE org_id = $1
+           AND variant_id = ANY($2::bigint[])
+           AND is_active = TRUE
+         ORDER BY sort_order ASC, id ASC`,
+        [orgId, variantIds],
+      );
+      for (const row of subResult.rows) {
+        const list = subMap.get(row.variantId) ?? [];
+        list.push({
+          id: row.id,
+          sortOrder: Number(row.sortOrder ?? 0),
+          tempType: row.tempType,
+          sizeLabel: row.sizeLabel,
+          sellingPrice: Number(row.sellingPrice ?? 0),
+          salePrice: row.salePrice != null ? Number(row.salePrice) : null,
+        });
+        subMap.set(row.variantId, list);
+      }
+    } catch {
+      /* table may be missing mid-deploy */
+    }
+    return { sugarMap, subMap };
+  }
+
+  private resolveUnits(
+    row: { id: number; sellingPrice: string | number; salePrice: string | number | null },
+    unitsMap: Map<number, PosVariantUnitRow[]>,
+  ): PosVariantUnitRow[] {
+    const units = unitsMap.get(row.id) ?? [];
+    if (units.length) return units;
+    return [{
+      unitType: 'piece',
+      sellingPrice: Number(row.sellingPrice ?? 0),
+      salePrice: row.salePrice != null ? Number(row.salePrice) : null,
+      isManualEntry: false,
+      isDefault: true,
+    }];
+  }
 
   async listCategories(orgId: number) {
     try {
@@ -85,13 +274,63 @@ export class PosTerminalService {
                 p.brand,
                 p.image_url AS "imageUrl",
                 COUNT(v.id)::text AS "variantCount",
-                COALESCE(MIN(v.selling_price), 0)::text AS "minPrice",
-                COALESCE(MAX(v.selling_price), 0)::text AS "maxPrice",
-                MIN(CASE WHEN v.sale_price > 0 AND v.sale_price < v.selling_price THEN v.sale_price END)::text AS "minSalePrice",
+                COALESCE(
+                  MIN(
+                    CASE
+                      WHEN COALESCE(v.selling_price, 0) <= 0 AND svp."firstSellingPrice" IS NOT NULL
+                        THEN svp."firstSellingPrice"
+                      ELSE COALESCE(svp."minSellingPrice", v.selling_price)
+                    END
+                  ),
+                  0
+                )::text AS "minPrice",
+                COALESCE(
+                  MAX(
+                    CASE
+                      WHEN COALESCE(v.selling_price, 0) <= 0 AND svp."firstSellingPrice" IS NOT NULL
+                        THEN svp."firstSellingPrice"
+                      ELSE COALESCE(svp."maxSellingPrice", v.selling_price)
+                    END
+                  ),
+                  0
+                )::text AS "maxPrice",
+                MIN(
+                  CASE
+                    WHEN COALESCE(v.selling_price, 0) <= 0 AND svp."firstSalePrice" IS NOT NULL
+                      THEN svp."firstSalePrice"
+                    ELSE COALESCE(
+                      svp."minSalePrice",
+                      CASE WHEN v.sale_price > 0 AND v.sale_price < v.selling_price THEN v.sale_price END
+                    )
+                  )
+                )::text AS "minSalePrice",
                 COALESCE(SUM(v.stock_qty), 0)::text AS "totalStock",
-                BOOL_OR(v.sale_price IS NOT NULL AND v.sale_price > 0 AND v.sale_price < v.selling_price) AS "hasSale"
+                BOOL_OR(
+                  (
+                    COALESCE(v.selling_price, 0) <= 0
+                    AND svp."firstSalePrice" IS NOT NULL
+                  )
+                  OR COALESCE(svp."hasSale", FALSE)
+                  OR (v.sale_price IS NOT NULL AND v.sale_price > 0 AND v.sale_price < v.selling_price)
+                ) AS "hasSale"
          FROM tblinventory_products p
          LEFT JOIN tblinventory_variants v ON v.product_id = p.id AND v.is_active = TRUE
+         LEFT JOIN (
+           SELECT sv.variant_id AS "variantId",
+                  (
+                    ARRAY_AGG(sv.selling_price ORDER BY sv.sort_order ASC, sv.id ASC)
+                  )[1] AS "firstSellingPrice",
+                  (
+                    ARRAY_AGG(sv.sale_price ORDER BY sv.sort_order ASC, sv.id ASC)
+                  )[1] AS "firstSalePrice",
+                  MIN(sv.selling_price) AS "minSellingPrice",
+                  MAX(sv.selling_price) AS "maxSellingPrice",
+                  MIN(CASE WHEN sv.sale_price > 0 AND sv.sale_price < sv.selling_price THEN sv.sale_price END) AS "minSalePrice",
+                  BOOL_OR(sv.sale_price IS NOT NULL AND sv.sale_price > 0 AND sv.sale_price < sv.selling_price) AS "hasSale"
+           FROM tblinventory_variant_subvariants sv
+           WHERE sv.is_active = TRUE
+           GROUP BY sv.variant_id
+         ) svp ON svp."variantId" = v.id
          LEFT JOIN (
            SELECT v2.product_id, COALESCE(SUM(st.quantity_sold), 0)::bigint AS total_sold
            FROM tblsales_transactions st
@@ -164,66 +403,15 @@ export class PosTerminalService {
       );
 
       const variantIds = result.rows.map((r) => r.id);
-      const unitsMap = new Map<number, Array<{
-        unitType: string;
-        sellingPrice: number;
-        salePrice: number | null;
-        isManualEntry: boolean;
-        isDefault: boolean;
-      }>>();
-      if (variantIds.length) {
-        const unitsResult = await this.db.query<{
-          variantId: number;
-          unitType: string;
-          sellingPrice: string;
-          salePrice: string | null;
-          isManualEntry: boolean;
-          isDefault: boolean;
-        }>(
-          `SELECT vu.variant_id AS "variantId", vu.unit_type AS "unitType",
-                  vu.selling_price AS "sellingPrice", vu.sale_price AS "salePrice",
-                  vu.is_manual_entry AS "isManualEntry",
-                  vu.is_default AS "isDefault"
-           FROM tblinventory_variant_units vu
-           WHERE vu.variant_id = ANY($1::bigint[]) AND vu.is_active = TRUE
-             AND (
-               NOT EXISTS (SELECT 1 FROM tblorg_unit_types WHERE org_id = $2)
-               OR EXISTS (
-                 SELECT 1 FROM tblorg_unit_types ut
-                 WHERE ut.org_id = $2
-                   AND lower(ut.code) = lower(vu.unit_type)
-                   AND ut.is_active = TRUE
-               )
-             )
-           ORDER BY vu.is_default DESC, vu.sort_order ASC, vu.unit_type ASC`,
-          [variantIds, orgId],
-        );
-        for (const u of unitsResult.rows) {
-          const list = unitsMap.get(u.variantId) ?? [];
-          list.push({
-            unitType: u.unitType,
-            sellingPrice: Number(u.sellingPrice ?? 0),
-            salePrice: u.salePrice != null ? Number(u.salePrice) : null,
-            isManualEntry: u.isManualEntry,
-            isDefault: u.isDefault,
-          });
-          unitsMap.set(u.variantId, list);
-        }
-      }
+      const [unitsMap, beverageExtras] = await Promise.all([
+        this.loadUnitsMap(orgId, variantIds),
+        this.loadBeverageExtras(orgId, variantIds),
+      ]);
 
       return {
         success: true,
         data: result.rows.map((row) => {
-          const units = unitsMap.get(row.id) ?? [];
-          const resolvedUnits = units.length
-            ? units
-            : [{
-                unitType: 'piece',
-                sellingPrice: Number(row.sellingPrice ?? 0),
-                salePrice: row.salePrice != null ? Number(row.salePrice) : null,
-                isManualEntry: false,
-                isDefault: true,
-              }];
+          const resolvedUnits = this.resolveUnits(row, unitsMap);
           const primary = resolvedUnits[0];
           return {
             ...row,
@@ -231,6 +419,8 @@ export class PosTerminalService {
             salePrice: primary.salePrice,
             unitType: primary.unitType,
             units: resolvedUnits,
+            hasSugarLevel: beverageExtras.sugarMap.get(row.id) ?? false,
+            subVariants: beverageExtras.subMap.get(row.id) ?? [],
             inStock: row.stockQty > 0,
           };
         }),
@@ -299,64 +489,13 @@ export class PosTerminalService {
       );
 
       const variantIds = result.rows.map((r) => r.id);
-      const unitsMap = new Map<number, Array<{
-        unitType: string;
-        sellingPrice: number;
-        salePrice: number | null;
-        isManualEntry: boolean;
-        isDefault: boolean;
-      }>>();
-      if (variantIds.length) {
-        const unitsResult = await this.db.query<{
-          variantId: number;
-          unitType: string;
-          sellingPrice: string;
-          salePrice: string | null;
-          isManualEntry: boolean;
-          isDefault: boolean;
-        }>(
-          `SELECT vu.variant_id AS "variantId", vu.unit_type AS "unitType",
-                  vu.selling_price AS "sellingPrice", vu.sale_price AS "salePrice",
-                  vu.is_manual_entry AS "isManualEntry",
-                  vu.is_default AS "isDefault"
-           FROM tblinventory_variant_units vu
-           WHERE vu.variant_id = ANY($1::bigint[]) AND vu.is_active = TRUE
-             AND (
-               NOT EXISTS (SELECT 1 FROM tblorg_unit_types WHERE org_id = $2)
-               OR EXISTS (
-                 SELECT 1 FROM tblorg_unit_types ut
-                 WHERE ut.org_id = $2
-                   AND lower(ut.code) = lower(vu.unit_type)
-                   AND ut.is_active = TRUE
-               )
-             )
-           ORDER BY vu.is_default DESC, vu.sort_order ASC, vu.unit_type ASC`,
-          [variantIds, orgId],
-        );
-        for (const u of unitsResult.rows) {
-          const list = unitsMap.get(u.variantId) ?? [];
-          list.push({
-            unitType: u.unitType,
-            sellingPrice: Number(u.sellingPrice ?? 0),
-            salePrice: u.salePrice != null ? Number(u.salePrice) : null,
-            isManualEntry: u.isManualEntry,
-            isDefault: u.isDefault,
-          });
-          unitsMap.set(u.variantId, list);
-        }
-      }
+      const [unitsMap, beverageExtras] = await Promise.all([
+        this.loadUnitsMap(orgId, variantIds),
+        this.loadBeverageExtras(orgId, variantIds),
+      ]);
 
       const data = result.rows.map((row) => {
-        const units = unitsMap.get(row.id) ?? [];
-        const resolvedUnits = units.length
-          ? units
-          : [{
-              unitType: 'piece',
-              sellingPrice: Number(row.sellingPrice ?? 0),
-              salePrice: row.salePrice != null ? Number(row.salePrice) : null,
-              isManualEntry: false,
-              isDefault: true,
-            }];
+        const resolvedUnits = this.resolveUnits(row, unitsMap);
         const primary = resolvedUnits[0];
         return {
           id: row.id,
@@ -371,6 +510,8 @@ export class PosTerminalService {
           imageUrl: row.imageUrl,
           productImageUrl: row.productImageUrl,
           units: resolvedUnits,
+          hasSugarLevel: beverageExtras.sugarMap.get(row.id) ?? false,
+          subVariants: beverageExtras.subMap.get(row.id) ?? [],
           inStock: row.stockQty > 0,
         };
       });
@@ -414,16 +555,26 @@ export class PosTerminalService {
 
     const paymentStatus = paymentMethod?.settlementMode === 'floating' ? 'floating' : 'settled';
     const referenceNumber = String(payload.referenceNumber ?? '').trim() || null;
+    const customerFullName = String(payload.customerFullName ?? '').trim() || null;
+    if (!this.isCashMethod(paymentMethod) && !referenceNumber) {
+      return { success: false, message: 'Reference number is required for non-cash payments' };
+    }
+    if (this.isBankTransferMethod(paymentMethod) && !customerFullName) {
+      return { success: false, message: 'Customer/buyer fullname is required for Bank Transfer payments' };
+    }
 
     // Ensure optional columns exist for newer checkout fields.
     await this.db.query(`
       ALTER TABLE public.tblsales_transactions
-        ADD COLUMN IF NOT EXISTS reference_number TEXT
+        ADD COLUMN IF NOT EXISTS reference_number TEXT,
+        ADD COLUMN IF NOT EXISTS customer_full_name TEXT,
+        ADD COLUMN IF NOT EXISTS sub_variant_id INTEGER
     `);
 
     try {
       type LineDraft = {
         variantId: number;
+        subVariantId: number | null;
         unitType: string;
         qty: number;
         regularUnitPrice: number;
@@ -439,8 +590,13 @@ export class PosTerminalService {
         if (!variantId || rawQty <= 0) {
           return { success: false, message: 'Invalid product in cart' };
         }
+        const subVariantId =
+          line.subVariantId != null && Number(line.subVariantId) > 0
+            ? Number(line.subVariantId)
+            : null;
         lineDrafts.push({
           variantId,
+          subVariantId,
           unitType: String(line.unitType ?? 'piece'),
           qty: rawQty,
           regularUnitPrice: 0,
@@ -510,6 +666,57 @@ export class PosTerminalService {
             isManual = u.isManualEntry;
           }
 
+          let sizeLabel: string | null = null;
+          let tempType: string | null = null;
+          if (draft.subVariantId != null) {
+            const subRow = await client.query<{
+              sizeLabel: string;
+              tempType: string | null;
+              sellingPrice: string;
+              salePrice: string | null;
+            }>(
+              `SELECT size_label AS "sizeLabel",
+                      temp_type AS "tempType",
+                      selling_price AS "sellingPrice",
+                      sale_price AS "salePrice"
+               FROM tblinventory_variant_subvariants
+               WHERE id = $1
+                 AND variant_id = $2
+                 AND org_id = $3
+                 AND is_active = TRUE
+               LIMIT 1`,
+              [draft.subVariantId, draft.variantId, orgId],
+            );
+            if (!subRow.rowCount) {
+              throw new Error(
+                `Selected size/option not found for ${row.productName} (${row.variantName})`,
+              );
+            }
+            const sub = subRow.rows[0];
+            sellingPrice = Number(sub.sellingPrice ?? 0);
+            salePrice = sub.salePrice != null ? Number(sub.salePrice) : null;
+            sizeLabel = sub.sizeLabel;
+            tempType = sub.tempType;
+          } else if (sellingPrice <= 0) {
+            const hasSubVariants = await client.query<{ count: string }>(
+              `SELECT COUNT(*)::text AS count
+               FROM tblinventory_variant_subvariants
+               WHERE variant_id = $1 AND org_id = $2 AND is_active = TRUE`,
+              [draft.variantId, orgId],
+            );
+            if (Number(hasSubVariants.rows[0]?.count ?? 0) > 0) {
+              throw new Error(
+                `Size/option is required for ${row.productName} (${row.variantName})`,
+              );
+            }
+          }
+
+          if (sellingPrice <= 0) {
+            throw new Error(
+              `No selling price configured for ${row.productName} (${row.variantName})`,
+            );
+          }
+
           const qty = isManual
             ? Math.round(Math.max(0.01, draft.qty) * 1000) / 1000
             : Math.max(1, Math.floor(draft.qty));
@@ -527,14 +734,18 @@ export class PosTerminalService {
             draft.qty,
           );
 
+          const detailParts = [tempType, sizeLabel].filter(Boolean);
+          const detailSuffix = detailParts.length ? ` · ${detailParts.join(' / ')}` : '';
+
           resolved.push({
             variantId: draft.variantId,
+            subVariantId: draft.subVariantId,
             unitType,
             qty: draft.qty,
             regularUnitPrice: sellingPrice,
             unitPrice,
             lineTotal: unitPrice * draft.qty,
-            label: `${row.productName} (${row.variantName})`,
+            label: `${row.productName} (${row.variantName})${detailSuffix}`,
           });
         }
 
@@ -583,8 +794,9 @@ export class PosTerminalService {
             `INSERT INTO tblsales_transactions
                (org_id, variant_id, quantity_sold, unit_price, total_amount,
                 discount_amount, discount_id, amount_paid, change_amount,
-                payment_method_id, payment_status, sale_date, created_by, unit_type, reference_number)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, (NOW() AT TIME ZONE 'Asia/Manila')::date, $12, $13, $14)
+                payment_method_id, payment_status, sale_date, created_by, unit_type,
+                reference_number, customer_full_name, sub_variant_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, (NOW() AT TIME ZONE 'Asia/Manila')::date, $12, $13, $14, $15, $16)
              RETURNING id`,
             [
               orgId,
@@ -601,6 +813,8 @@ export class PosTerminalService {
               userId || null,
               line.unitType,
               i === 0 ? referenceNumber : null,
+              i === 0 ? customerFullName : null,
+              line.subVariantId,
             ],
           );
 

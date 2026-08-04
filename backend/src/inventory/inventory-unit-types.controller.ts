@@ -16,7 +16,10 @@ export class InventoryUnitTypesController {
   }
 
   @Post()
-  create(@Body() body: { code: string; label: string; isManualEntry?: boolean; sortOrder?: number }, @Req() req: AuthReq) {
+  create(
+    @Body() body: { code: string; label: string; isManualEntry?: boolean; sortOrder?: number; usageScope?: string },
+    @Req() req: AuthReq,
+  ) {
     return this.svc.create(orgId(req), body);
   }
 

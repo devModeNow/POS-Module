@@ -12,7 +12,7 @@ import {
   NgApexchartsModule,
 } from 'ng-apexcharts';
 import { PageBreadcrumbComponent } from '../../shared/components/common/page-breadcrumb/page-breadcrumb.component';
-import { PosCompletedSale, PosDashboardReport, PosSaleTransaction, PosService } from '../../shared/services/pos.service';
+import { PosCompletedSale, PosDashboardReport, PosProductLogRow, PosSaleTransaction, PosService } from '../../shared/services/pos.service';
 import {
   ReportsService,
   SalesReportRow,
@@ -32,7 +32,8 @@ import ExcelJS from 'exceljs/dist/exceljs.min.js';
 
 type ReportType =
   | 'sales' | 'jobs' | 'inventory' | 'low-stock' | 'payables-receivables'
-  | 'pos-dashboard' | 'pos-completed-sales' | 'pos-top-products' | 'pos-sales-by-category' | 'pos-inventory-valuation' | 'pos-low-stock';
+  | 'pos-dashboard' | 'pos-completed-sales' | 'pos-top-products' | 'pos-sales-by-category' | 'pos-inventory-valuation' | 'pos-low-stock'
+  | 'pos-product-logs';
 
 @Component({
   selector: 'app-reports',
@@ -74,6 +75,7 @@ export class ReportsComponent implements OnInit {
   posInventoryValuation: Array<{ category: string; itemCount: number; totalStock: number; retailValue: number }> = [];
   posLowStock: Array<{ partName: string; category: string | null; stockQty: number; stockWarning: number; sellingPrice: number }> = [];
   posCompletedSales: PosCompletedSale[] = [];
+  posProductLogs: PosProductLogRow[] = [];
 
   salesChartSeries: ApexAxisChartSeries = [{ name: 'Sales', data: [] }];
   salesChartCategories: string[] = [];
@@ -104,6 +106,7 @@ export class ReportsComponent implements OnInit {
     { value: 'pos-sales-by-category', label: 'Sales by Category' },
     { value: 'pos-inventory-valuation', label: 'Inventory Valuation' },
     { value: 'pos-low-stock', label: 'Low Stock Alert' },
+    { value: 'pos-product-logs', label: 'Product Logs' },
   ];
 
   get reportTypes() { return this.isPosOrg ? this.posReportTypes : this.autoRepairReportTypes; }
@@ -294,6 +297,7 @@ export class ReportsComponent implements OnInit {
       case 'pos-sales-by-category': return this.posCategorySales.length > 0;
       case 'pos-inventory-valuation': return this.posInventoryValuation.length > 0;
       case 'pos-low-stock': return this.posLowStock.length > 0;
+      case 'pos-product-logs': return this.posProductLogs.length > 0;
       case 'sales': return this.salesRows.length > 0 || !!this.salesSummary;
       case 'jobs': return this.jobsRows.length > 0 || !!this.jobsSummary;
       case 'payables-receivables': return this.payablesRows.length > 0 || !!this.payablesSummary;
@@ -357,6 +361,10 @@ export class ReportsComponent implements OnInit {
           const r = await this.posSvc.getLowStockReport();
           this.posLowStock = r.data ?? [];
           this.totalItems = this.posLowStock.length;
+        } else if (this.reportType === 'pos-product-logs') {
+          const r = await this.posSvc.getProductLogsReport();
+          this.posProductLogs = r.data ?? [];
+          this.totalItems = this.posProductLogs.length;
         } else if (this.reportType === 'sales') {
           const r = await this.svc.getSalesReport(this.fromDate, this.toDate);
           this.salesRows = r.data ?? []; this.salesSummary = r.summary ?? null;
@@ -537,6 +545,17 @@ export class ReportsComponent implements OnInit {
         return {
           headers: ['Product', 'Category', 'Stock', 'Warning', 'Price'],
           rows: this.posLowStock.map((r) => [r.partName, r.category || '—', r.stockQty, r.stockWarning, this.exportMoney(r.sellingPrice)]),
+        };
+      case 'pos-product-logs':
+        return {
+          headers: ['Product', 'Category', 'Brand', 'Added', 'Last Updated'],
+          rows: this.posProductLogs.map((r) => [
+            r.productName,
+            r.category || '—',
+            r.brand || '—',
+            this.formatDateTime(r.createdAt),
+            this.formatDateTime(r.updatedAt),
+          ]),
         };
       default:
         return { headers: [], rows: [] };

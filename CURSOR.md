@@ -297,4 +297,14 @@
    -[x] Make sure to check all taskss under this continuation before setting it to done because in the past there are tasks that has not been done so be sure to check if its all done properly and without errors and bugs.
    -[x] Make sure update the Memory.md.
    -[x] Tick the checkbox once the task is done.
+   //Continuation 4.3
+   -[x] In pos admin dashboard, In adding inventory, when the product type is "Bevarages", add a checkbox for each variant asking If the product has to have a sugar level.
+   -[x] In pos admin dashboard, In adding inventory, when the product type is "Bevarages", add feature for each variant to have a sub-variants, for example I entered a milk tea product or a chocolate drink product, there should be a sub-variant where I can insert like If its hot or iced and sizes like small, regular, medium or large. Something like that.
+   -[x] When the product unit type is in grams, make the default quantity into 200.
+   -[x] In posadmin dashboard->settings->Unit types, when adding a unit type, add a selector where the unit type can be use, for now just use these 2 choices [Beverages,Others].
+   -[x] In pos cashier dashboard, separate the Bevarages to other product cards, like you can add a selector along side with the Product View type and List/card view selector.
+   -[x] Make sure to finish line-by-line, do not start working on next line unless its a pre-requisite to the present one.
+   -[x] Make sure to check all taskss under this continuation before setting it to done because in the past there are tasks that has not been done so be sure to check if its all done properly and without errors and bugs.
+   -[x] Make sure update the Memory.md.
+   -[x] Tick the checkbox once the task is done.
 

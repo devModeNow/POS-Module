@@ -104,7 +104,9 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
   unitTypes: OrgUnitType[] = [];
   isLoadingUnitTypes = false;
   isSavingUnitType = false;
-  unitTypeForm = { code: '', label: '', isManualEntry: false };
+  unitTypeForm = { code: '', label: '', isManualEntry: false, usageScope: 'Others' as 'Beverages' | 'Others' };
+  editingUnitTypeId: number | null = null;
+  unitTypeEditForm = { label: '', usageScope: 'Others' as 'Beverages' | 'Others' };
 
   voidCodes: Array<{ id: number; label: string; isActive: boolean }> = [];
   voidCodeForm = { label: '', code: '' };
@@ -512,13 +514,14 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
         code,
         label,
         isManualEntry: this.unitTypeForm.isManualEntry,
+        usageScope: this.unitTypeForm.usageScope,
         sortOrder: this.unitTypes.filter((u) => u.isActive).length + 1,
       });
       if (!r.success) {
         this.uiError = r.message ?? 'Failed to add unit type.';
         return;
       }
-      this.unitTypeForm = { code: '', label: '', isManualEntry: false };
+      this.unitTypeForm = { code: '', label: '', isManualEntry: false, usageScope: 'Others' };
       this.uiMessage = r.message ?? (r.reactivated ? 'Unit type reactivated.' : 'Unit type added.');
       await this.loadUnitTypes();
     } catch (error: unknown) {
@@ -550,6 +553,7 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
         return;
       }
       this.uiMessage = r.message ?? `"${row.label}" reactivated.`;
+      this.cancelEditUnitType();
       await this.loadUnitTypes();
     } catch (error: unknown) {
       this.uiError = this.resolveErrorMessage(error, 'Failed to reactivate unit type.');
@@ -568,6 +572,61 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
     );
   }
 
+  startEditUnitType(row: OrgUnitType): void {
+    if (!this.canUpdateSettings) return;
+    this.editingUnitTypeId = row.id;
+    this.unitTypeEditForm = {
+      label: row.label,
+      usageScope: row.usageScope === 'Beverages' ? 'Beverages' : 'Others',
+    };
+    this.uiError = '';
+  }
+
+  cancelEditUnitType(): void {
+    this.editingUnitTypeId = null;
+    this.unitTypeEditForm = { label: '', usageScope: 'Others' };
+  }
+
+  async saveEditUnitType(row: OrgUnitType): Promise<void> {
+    if (!this.canUpdateSettings || this.editingUnitTypeId !== row.id) return;
+    const label = this.unitTypeEditForm.label.trim();
+    if (!label) {
+      this.uiError = 'Label is required.';
+      return;
+    }
+    const duplicate = this.unitTypes.find(
+      (u) =>
+        u.id !== row.id &&
+        u.isActive &&
+        u.label.trim().toLowerCase() === label.toLowerCase(),
+    );
+    if (duplicate) {
+      this.uiError = `A unit type with label "${duplicate.label}" already exists (code: ${duplicate.code}).`;
+      return;
+    }
+
+    this.isSavingUnitType = true;
+    this.uiError = '';
+    this.uiMessage = '';
+    try {
+      const r = await this.inventoryService.updateUnitType(row.id, {
+        label,
+        usageScope: this.unitTypeEditForm.usageScope,
+      });
+      if (!r.success) {
+        this.uiError = r.message ?? 'Failed to update unit type.';
+        return;
+      }
+      this.uiMessage = `"${label}" updated.`;
+      this.cancelEditUnitType();
+      await this.loadUnitTypes();
+    } catch (error: unknown) {
+      this.uiError = this.resolveErrorMessage(error, 'Failed to update unit type.');
+    } finally {
+      this.isSavingUnitType = false;
+    }
+  }
+
   async deactivateUnitType(row: OrgUnitType): Promise<void> {
     if (!this.canUpdateSettings) return;
     this.isSavingUnitType = true;
@@ -578,6 +637,7 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
         return;
       }
       this.uiMessage = `"${row.label}" removed from active list.`;
+      this.cancelEditUnitType();
       await this.loadUnitTypes();
     } catch (error: unknown) {
       this.uiError = this.resolveErrorMessage(error, 'Failed to remove unit type.');

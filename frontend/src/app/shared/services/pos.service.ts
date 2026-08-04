@@ -24,6 +24,15 @@ export interface PosVariantUnit {
   isDefault?: boolean;
 }
 
+export interface PosSubVariant {
+  id: number;
+  sortOrder?: number;
+  tempType?: string | null;
+  sizeLabel: string;
+  sellingPrice: number;
+  salePrice?: number | null;
+}
+
 export interface PosVariant {
   id: number;
   productId: number;
@@ -37,6 +46,8 @@ export interface PosVariant {
   imageUrl?: string | null;
   productImageUrl?: string | null;
   units: PosVariantUnit[];
+  hasSugarLevel?: boolean;
+  subVariants?: PosSubVariant[];
   inStock: boolean;
 }
 
@@ -73,6 +84,10 @@ export interface CartLine {
   unitType: string;
   isManualEntry?: boolean;
   units?: PosVariantUnit[];
+  subVariantId?: number | null;
+  tempType?: string | null;
+  sizeLabel?: string | null;
+  sugarLevel?: string | null;
 }
 
 export interface CheckoutResult {
@@ -114,6 +129,15 @@ export interface PosCompletedSale {
   itemCount: number;
 }
 
+export interface PosProductLogRow {
+  id: number;
+  productName: string;
+  category?: string | null;
+  brand?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PosDashboardReport {
   summary: {
     totalSales: number;
@@ -142,6 +166,22 @@ export interface InventoryVariantRow {
   unitType?: string | null;
   marginPercent?: number | null;
   imageUrl?: string | null;
+  hasSugarLevel?: boolean;
+  units?: Array<{
+    unitType: string;
+    sellingPrice: number;
+    salePrice?: number | null;
+    isManualEntry?: boolean;
+    isDefault?: boolean;
+  }>;
+  subVariants?: Array<{
+    id?: number;
+    sortOrder?: number;
+    tempType?: string | null;
+    sizeLabel: string;
+    sellingPrice: number;
+    salePrice?: number | null;
+  }>;
 }
 
 export interface InventoryProductRow {
@@ -173,11 +213,21 @@ export interface InventoryProductPayload {
     salePrice?: number | null;
     unitType?: string;
     marginPercent?: number | null;
+    hasSugarLevel?: boolean;
     units?: Array<{
       unitType: string;
       sellingPrice?: number;
       salePrice?: number | null;
       isManualEntry?: boolean;
+      isDefault?: boolean;
+    }>;
+    subVariants?: Array<{
+      id?: number;
+      sortOrder?: number;
+      tempType?: string | null;
+      sizeLabel: string;
+      sellingPrice?: number;
+      salePrice?: number | null;
     }>;
   }>;
 }
@@ -231,12 +281,18 @@ export class PosService {
   }
 
   async checkout(payload: {
-    items: Array<{ variantId: number; quantity: number; unitType?: string }>;
+    items: Array<{
+      variantId: number;
+      quantity: number;
+      unitType?: string;
+      subVariantId?: number | null;
+    }>;
     discountId?: number | null;
     discountAmount?: number;
     amountPaid?: number;
     paymentMethodId?: number | null;
     referenceNumber?: string | null;
+    customerFullName?: string | null;
   }) {
     const r = await apiClient.post<{ success: boolean; data?: CheckoutResult; message?: string }>(
       '/api/pos/checkout',
@@ -366,6 +422,13 @@ export class PosService {
     return r.data;
   }
 
+  async getProductLogsReport() {
+    const r = await apiClient.get<{ success: boolean; data?: PosProductLogRow[]; message?: string }>(
+      '/api/pos/reports/product-logs',
+    );
+    return r.data;
+  }
+
   async getCompletedSalesReport(from?: string, to?: string, limit = 100, offset = 0) {
     const params: Record<string, string> = {
       limit: String(limit),
@@ -414,6 +477,15 @@ export class PosService {
       `/inventory/products/variant/${variantId}`,
       payload,
     );
+    return r.data;
+  }
+
+  async duplicateInventoryVariant(variantId: number) {
+    const r = await apiClient.post<{
+      success: boolean;
+      data?: InventoryVariantRow;
+      message?: string;
+    }>(`/inventory/products/variant/${variantId}/duplicate`, {});
     return r.data;
   }
 

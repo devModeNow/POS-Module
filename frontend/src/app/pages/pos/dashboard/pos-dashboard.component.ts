@@ -8,6 +8,7 @@ import {
   PosPaymentMethod,
   PosProduct,
   PosService,
+  PosSubVariant,
   PosVariant,
   PosVariantUnit,
 } from '../../../shared/services/pos.service';
@@ -42,6 +43,7 @@ export class PosDashboardComponent implements OnInit {
   variantCatalog: PosVariant[] = [];
   catalogMode: 'types' | 'variants' = 'variants';
   productViewMode: 'grid' | 'list' = 'grid';
+  catalogGroup: 'all' | 'beverages' | 'others' = 'all';
   readonly isCashierMode: boolean;
   discounts: PosDiscount[] = [];
   paymentMethods: PosPaymentMethod[] = [];
@@ -56,6 +58,10 @@ export class PosDashboardComponent implements OnInit {
   variantsLoading = false;
   variantQty: Record<number, number> = {};
   variantSelectedUnit: Record<number, string> = {};
+  variantSelectedTemp: Record<number, string> = {};
+  variantSelectedSubId: Record<number, number | null> = {};
+  variantSelectedSugar: Record<number, string> = {};
+  readonly sugarLevelOptions = ['0%', '25%', '50%', '75%', '100%'];
   variantSearch = '';
   /** product = multi-flavor picker; single = one variant (Variant Mode click) */
   variantModalMode: 'product' | 'single' = 'product';
@@ -72,6 +78,7 @@ export class PosDashboardComponent implements OnInit {
   selectedDiscountId: number | null | 'custom' = null;
   selectedPaymentMethodId: number | null = null;
   paymentReferenceNumber = '';
+  bankTransferCustomerFullName = '';
   customDiscountDraft = 0;
   customDiscountApplied = 0;
   amountReceived = 0;
@@ -121,6 +128,30 @@ export class PosDashboardComponent implements OnInit {
     return this.catalogMode === 'variants' || this.search.trim().length > 0;
   }
 
+  private isBeveragesCategory(category?: string | null): boolean {
+    const n = String(category ?? '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+    return n === 'beverages' || n === 'bevarages';
+  }
+
+  private matchesCatalogGroup(category?: string | null): boolean {
+    if (this.catalogGroup === 'all') return true;
+    const isBev = this.isBeveragesCategory(category);
+    return this.catalogGroup === 'beverages' ? isBev : !isBev;
+  }
+
+  get displayedVariants(): PosVariant[] {
+    return this.variantCatalog.filter((v) => this.matchesCatalogGroup(v.category));
+  }
+
+  get displayedProducts(): PosProduct[] {
+    return this.products.filter((p) => this.matchesCatalogGroup(p.category));
+  }
+
+  setCatalogGroup(group: 'all' | 'beverages' | 'others'): void {
+    this.catalogGroup = group;
+    sessionStorage.setItem('posCatalogGroup', group);
+  }
+
   get searchSuggestions(): Array<{
     kind: 'product' | 'variant';
     id: number;
@@ -133,19 +164,17 @@ export class PosDashboardComponent implements OnInit {
     const q = this.search.trim();
     if (!q || this.catalogLoading) return [];
     if (this.isVariantCatalogView) {
-      return this.variantCatalog.slice(0, 8).map((v) => ({
+      return this.displayedVariants.slice(0, 8).map((v) => ({
         kind: 'variant' as const,
         id: v.id,
         label: v.variantName,
         sub: v.productName,
         imageUrl: v.imageUrl ?? v.productImageUrl,
         stock: v.stockQty,
-        priceLabel: v.salePrice && v.salePrice < v.sellingPrice
-          ? `₱${v.salePrice.toFixed(2)}`
-          : `₱${v.sellingPrice.toFixed(2)}`,
+        priceLabel: this.variantPriceLabelForCatalog(v),
       }));
     }
-    return this.products.slice(0, 8).map((p) => ({
+    return this.displayedProducts.slice(0, 8).map((p) => ({
       kind: 'product' as const,
       id: p.id,
       label: p.name,
@@ -192,6 +221,10 @@ export class PosDashboardComponent implements OnInit {
     if (savedCatalog === 'types' || savedCatalog === 'variants') {
       this.catalogMode = savedCatalog;
     }
+    const savedGroup = sessionStorage.getItem('posCatalogGroup');
+    if (savedGroup === 'all' || savedGroup === 'beverages' || savedGroup === 'others') {
+      this.catalogGroup = savedGroup;
+    }
     this.cart = this.cartService.load(this.orgId()).map((line) => ({
       ...line,
       cartKey: line.cartKey ?? this.cartService.cartKey(line.variantId, line.unitType ?? 'piece'),
@@ -236,31 +269,30 @@ export class PosDashboardComponent implements OnInit {
     return this.paymentMethods.find((m) => m.id === this.selectedPaymentMethodId) ?? null;
   }
 
-  /** Show optional reference field for digital / partner payments. */
+  /** Show required reference field for all non-cash payments. */
   get showPaymentReference(): boolean {
-    const code = String(this.selectedPaymentMethod?.code ?? '').toLowerCase().replace(/[\s_-]+/g, '');
-    const name = String(this.selectedPaymentMethod?.name ?? '').toLowerCase().replace(/[\s_-]+/g, '');
-    const haystack = `${code} ${name}`;
-    return (
-      haystack.includes('gcash') ||
-      haystack.includes('maya') ||
-      haystack.includes('banktransfer') ||
-      (haystack.includes('bank') && haystack.includes('transfer')) ||
-      haystack.includes('foodpanda')
-    );
+    return !!this.selectedPaymentMethod && !this.isCashPayment;
   }
 
-  /** Cash tends cash; digital/partner methods auto-pay exact total. */
+  /** Cash tends cash; all other methods auto-pay exact total. */
   get isCashPayment(): boolean {
     const code = String(this.selectedPaymentMethod?.code ?? '').toLowerCase().replace(/[\s_-]+/g, '');
     const name = String(this.selectedPaymentMethod?.name ?? '').toLowerCase().replace(/[\s_-]+/g, '');
     const haystack = `${code} ${name}`;
     if (!haystack.trim()) return true;
-    return haystack.includes('cash') && !this.showPaymentReference;
+    if (haystack.includes('gcash')) return false;
+    return code === 'cash' || name === 'cash' || haystack.includes('cash payment');
   }
 
   get showAmountReceived(): boolean {
     return this.isCashPayment;
+  }
+
+  get isBankTransferPayment(): boolean {
+    const code = String(this.selectedPaymentMethod?.code ?? '').toLowerCase().replace(/[\s_-]+/g, '');
+    const name = String(this.selectedPaymentMethod?.name ?? '').toLowerCase().replace(/[\s_-]+/g, '');
+    const haystack = `${code} ${name}`;
+    return haystack.includes('banktransfer') || (haystack.includes('bank') && haystack.includes('transfer'));
   }
 
   private syncExactAmountForNonCash(): void {
@@ -341,14 +373,42 @@ export class PosDashboardComponent implements OnInit {
     }
   }
 
-  private applyCachedCatalog(): boolean {
+  private applyCachedCatalog(preferredMode?: 'types' | 'variants'): boolean {
     const cached = this.offline.getCachedCatalog(this.orgId());
     if (!cached) return false;
-    if (cached.mode === 'variants' && cached.variantCatalog?.length) {
-      this.variantCatalog = (cached.variantCatalog as PosVariant[]).map((v) => this.normalizeVariant(v));
+
+    const cachedVariants = cached.variantCatalog?.length
+      ? (cached.variantCatalog as PosVariant[]).map((v) => this.normalizeVariant(v))
+      : [];
+    const cachedProducts = cached.products?.length
+      ? (cached.products as PosProduct[])
+      : [];
+
+    if (preferredMode === 'types') {
+      if (cachedProducts.length) {
+        this.products = cachedProducts;
+        this.variantCatalog = [];
+      } else if (cachedVariants.length) {
+        this.products = this.productsFromVariantCatalog(cachedVariants);
+        this.variantCatalog = [];
+      } else {
+        return false;
+      }
+    } else if (preferredMode === 'variants') {
+      if (cachedVariants.length) {
+        this.variantCatalog = cachedVariants;
+        this.products = [];
+      } else {
+        return false;
+      }
+    } else if (cached.mode === 'variants' && cachedVariants.length) {
+      this.variantCatalog = cachedVariants;
       this.products = [];
-    } else if (cached.products?.length) {
-      this.products = cached.products as PosProduct[];
+    } else if (cachedProducts.length) {
+      this.products = cachedProducts;
+      this.variantCatalog = [];
+    } else if (cachedVariants.length) {
+      this.products = this.productsFromVariantCatalog(cachedVariants);
       this.variantCatalog = [];
     } else {
       return false;
@@ -367,18 +427,18 @@ export class PosDashboardComponent implements OnInit {
     try {
       const r = await this.posService.getProducts(this.search, this.selectedCategory || undefined);
       if (!r.success || !r.data) {
-        if (this.applyCachedCatalog()) return;
+        if (this.applyCachedCatalog('types')) return;
         this.state = 'error';
         this.errorMessage = r.message ?? 'Failed to load products.';
         return;
       }
-      this.products = r.data;
+      this.products = this.hydrateProductCardPrices(r.data);
       this.variantCatalog = [];
       this.offline.cacheCatalog(this.orgId(), { mode: 'types', products: this.products });
       this.syncCartStock();
       this.state = 'loaded';
     } catch {
-      if (this.applyCachedCatalog()) return;
+      if (this.applyCachedCatalog('types')) return;
       this.state = 'error';
       this.errorMessage = 'Failed to load products. Please try again.';
     } finally {
@@ -394,7 +454,7 @@ export class PosDashboardComponent implements OnInit {
     try {
       const r = await this.posService.getVariantsCatalog(this.search, this.selectedCategory || undefined);
       if (!r.success || !r.data) {
-        if (this.applyCachedCatalog()) return;
+        if (this.applyCachedCatalog('variants')) return;
         this.state = 'error';
         this.errorMessage = r.message ?? 'Failed to load variants.';
         return;
@@ -405,7 +465,7 @@ export class PosDashboardComponent implements OnInit {
       this.syncCartStock();
       this.state = 'loaded';
     } catch {
-      if (this.applyCachedCatalog()) return;
+      if (this.applyCachedCatalog('variants')) return;
       this.state = 'error';
       this.errorMessage = 'Failed to load variants. Please try again.';
     } finally {
@@ -459,6 +519,9 @@ export class PosDashboardComponent implements OnInit {
     this.variantsLoading = true;
     this.variantQty = {};
     this.variantSelectedUnit = {};
+    this.variantSelectedTemp = {};
+    this.variantSelectedSubId = {};
+    this.variantSelectedSugar = {};
     this.variantSearch = '';
     try {
       const r = await this.posService.getVariants(product.id);
@@ -478,13 +541,11 @@ export class PosDashboardComponent implements OnInit {
       return;
     }
     let full = variant;
-    if (!variant.units?.length) {
-      try {
-        const r = await this.posService.getVariants(variant.productId);
-        full = (r.data ?? []).find((v) => v.id === variant.id) ?? variant;
-      } catch {
-        full = variant;
-      }
+    try {
+      const r = await this.posService.getVariants(variant.productId);
+      full = (r.data ?? []).find((v) => v.id === variant.id) ?? variant;
+    } catch {
+      full = variant;
     }
     full = this.normalizeVariant(full);
     this.selectedProduct = {
@@ -512,6 +573,10 @@ export class PosDashboardComponent implements OnInit {
   private normalizeVariant(v: PosVariant): PosVariant {
     return {
       ...v,
+      hasSugarLevel: Boolean(v.hasSugarLevel),
+      subVariants: (Array.isArray(v.subVariants) ? v.subVariants : []).slice().sort(
+        (a, b) => Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0),
+      ),
       units: v.units?.length ? v.units : [{
         unitType: v.unitType === 'manual' ? 'grams' : (v.unitType ?? 'piece'),
         sellingPrice: v.sellingPrice,
@@ -524,9 +589,13 @@ export class PosDashboardComponent implements OnInit {
   private initVariantModalState(): void {
     this.variantQty = {};
     this.variantSelectedUnit = {};
+    this.variantSelectedTemp = {};
+    this.variantSelectedSubId = {};
+    this.variantSelectedSugar = {};
     for (const v of this.variants) {
       this.variantQty[v.id] = this.defaultVariantQty(v);
       this.variantSelectedUnit[v.id] = this.defaultUnitType(v);
+      this.ensureBeverageSelections(v);
     }
   }
 
@@ -576,9 +645,96 @@ export class PosDashboardComponent implements OnInit {
     if (this.variantSelectedUnit[variant.id] == null) {
       this.variantSelectedUnit[variant.id] = this.defaultUnitType(variant);
     }
+    this.ensureBeverageSelections(variant);
     if (this.variantQty[variant.id] == null) {
       this.variantQty[variant.id] = this.defaultVariantQty(variant);
     }
+  }
+
+  private ensureBeverageSelections(variant: PosVariant): void {
+    const subs = variant.subVariants ?? [];
+    if (subs.length) {
+      const temps = this.tempOptionsFor(variant);
+      if (temps.length && !this.variantSelectedTemp[variant.id]) {
+        this.variantSelectedTemp[variant.id] = temps[0];
+      }
+      const currentId = this.variantSelectedSubId[variant.id];
+      const stillValid = currentId != null && subs.some((s) => s.id === currentId);
+      if (!stillValid) {
+        const preferred = this.subVariantsForTemp(variant)[0] ?? subs[0];
+        this.variantSelectedSubId[variant.id] = preferred?.id ?? null;
+      }
+    } else {
+      this.variantSelectedSubId[variant.id] = null;
+    }
+    if (variant.hasSugarLevel && !this.variantSelectedSugar[variant.id]) {
+      this.variantSelectedSugar[variant.id] = '50%';
+    }
+  }
+
+  hasSubVariants(variant: PosVariant): boolean {
+    return (variant.subVariants?.length ?? 0) > 0;
+  }
+
+  tempOptionsFor(variant: PosVariant): string[] {
+    const set = new Set<string>();
+    for (const s of variant.subVariants ?? []) {
+      const t = String(s.tempType ?? '').trim().toLowerCase();
+      if (t === 'hot' || t === 'iced') set.add(t);
+    }
+    return Array.from(set);
+  }
+
+  subVariantsForTemp(variant: PosVariant): PosSubVariant[] {
+    const temp = this.variantSelectedTemp[variant.id];
+    const all = [...(variant.subVariants ?? [])].sort(
+      (a, b) => Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0),
+    );
+    if (!temp) return all;
+    const filtered = all.filter((s) => {
+      const t = String(s.tempType ?? '').trim().toLowerCase();
+      return !t || t === temp;
+    });
+    return filtered.length ? filtered : all;
+  }
+
+  selectedSubVariant(variant: PosVariant): PosSubVariant | null {
+    const id = this.variantSelectedSubId[variant.id];
+    if (id == null) return null;
+    return (variant.subVariants ?? []).find((s) => s.id === id) ?? null;
+  }
+
+  selectVariantTemp(variant: PosVariant, temp: string): void {
+    this.variantSelectedTemp[variant.id] = temp;
+    const next = this.subVariantsForTemp(variant)[0];
+    this.variantSelectedSubId[variant.id] = next?.id ?? null;
+  }
+
+  selectSubVariant(variant: PosVariant, sub: PosSubVariant): void {
+    this.variantSelectedSubId[variant.id] = sub.id;
+    const t = String(sub.tempType ?? '').trim().toLowerCase();
+    if (t === 'hot' || t === 'iced') {
+      this.variantSelectedTemp[variant.id] = t;
+    }
+  }
+
+  selectSugarLevel(variant: PosVariant, sugar: string): void {
+    this.variantSelectedSugar[variant.id] = sugar;
+  }
+
+  selectedPriceFor(variant: PosVariant): { sellingPrice: number; salePrice: number | null } {
+    const sub = this.selectedSubVariant(variant);
+    if (sub) {
+      return {
+        sellingPrice: Number(sub.sellingPrice ?? 0),
+        salePrice: sub.salePrice != null ? Number(sub.salePrice) : null,
+      };
+    }
+    const unit = this.selectedUnitFor(variant);
+    return {
+      sellingPrice: unit.sellingPrice,
+      salePrice: unit.salePrice ?? null,
+    };
   }
 
   addSelectedVariantToCart(): void {
@@ -605,7 +761,7 @@ export class PosDashboardComponent implements OnInit {
 
   onVariantUnitChange(variant: PosVariant): void {
     const unit = this.selectedUnitFor(variant);
-    this.variantQty[variant.id] = unit.isManualEntry ? 100 : 1;
+    this.variantQty[variant.id] = unit.isManualEntry || unit.unitType === 'grams' ? 200 : 1;
   }
 
   selectVariantUnit(variant: PosVariant, unitType: string): void {
@@ -650,17 +806,34 @@ export class PosDashboardComponent implements OnInit {
       return;
     }
 
-    const cartKey = this.cartService.cartKey(variant.id, unit.unitType);
+    if (this.hasSubVariants(variant) && !this.selectedSubVariant(variant)) {
+      this.notify.warning('Select size', 'Choose a size / sub-variant before adding to cart.');
+      return;
+    }
+    if (variant.hasSugarLevel && !this.variantSelectedSugar[variant.id]) {
+      this.notify.warning('Select sugar', 'Choose a sugar level before adding to cart.');
+      return;
+    }
+
+    const price = this.selectedPriceFor(variant);
+    const sub = this.selectedSubVariant(variant);
+    const sugar = variant.hasSugarLevel ? (this.variantSelectedSugar[variant.id] ?? null) : null;
+    const cartKey = this.cartService.cartKey(variant.id, unit.unitType, {
+      subVariantId: sub?.id ?? null,
+      sugarLevel: sugar,
+    });
     const existing = this.cart.find((l) => l.cartKey === cartKey);
     const imageUrl = variant.imageUrl ?? variant.productImageUrl ?? this.selectedProduct?.imageUrl ?? null;
+    const displayName = this.beverageDisplayName(variant, sub, sugar);
     if (existing) {
       if (existing.quantity + qty > variant.stockQty) {
         this.notify.warning('Stock limit', `Only ${variant.stockQty} ${this.unitLabel(unit.unitType)} available.`);
         return;
       }
       existing.quantity = Math.round((existing.quantity + qty) * 1000) / 1000;
-      existing.sellingPrice = unit.sellingPrice;
-      existing.salePrice = unit.salePrice;
+      existing.sellingPrice = price.sellingPrice;
+      existing.salePrice = price.salePrice;
+      existing.variantName = displayName;
     } else {
       this.cart = [
         ...this.cart,
@@ -669,20 +842,39 @@ export class PosDashboardComponent implements OnInit {
           variantId: variant.id,
           productId: variant.productId,
           productName: variant.productName,
-          variantName: variant.variantName,
-          sellingPrice: unit.sellingPrice,
-          salePrice: unit.salePrice,
+          variantName: displayName,
+          sellingPrice: price.sellingPrice,
+          salePrice: price.salePrice,
           quantity: qty,
           stockQty: variant.stockQty,
           imageUrl,
           unitType: unit.unitType,
           isManualEntry: unit.isManualEntry,
           units: variant.units,
+          subVariantId: sub?.id ?? null,
+          tempType: sub?.tempType ?? null,
+          sizeLabel: sub?.sizeLabel ?? null,
+          sugarLevel: sugar,
         },
       ];
     }
     this.persistCart();
     this.openCartDrawerOnAdd();
+  }
+
+  private beverageDisplayName(
+    variant: PosVariant,
+    sub: PosSubVariant | null,
+    sugar: string | null,
+  ): string {
+    const parts = [variant.variantName];
+    if (sub) {
+      const temp = String(sub.tempType ?? '').trim();
+      if (temp) parts.push(temp.charAt(0).toUpperCase() + temp.slice(1));
+      if (sub.sizeLabel) parts.push(sub.sizeLabel);
+    }
+    if (sugar) parts.push(sugar);
+    return parts.join(' · ');
   }
 
   incrementLine(line: CartLine): void {
@@ -773,7 +965,7 @@ export class PosDashboardComponent implements OnInit {
   onCartEditUnitChange(): void {
     const unit = this.selectedCartEditUnit();
     if (!unit) return;
-    this.editCartQty = unit.isManualEntry ? 100 : 1;
+    this.editCartQty = unit.isManualEntry || unit.unitType === 'grams' ? 200 : 1;
     setTimeout(() => this.focusCartEditQty(), 0);
   }
 
@@ -923,10 +1115,14 @@ export class PosDashboardComponent implements OnInit {
 
   canConfirmCheckout(): boolean {
     const received = Number(this.amountReceived) || 0;
+    const hasBuyerName = !this.isBankTransferPayment || !!this.bankTransferCustomerFullName.trim();
+    const hasReference = this.isCashPayment || !!this.paymentReferenceNumber.trim();
     return (
       received >= this.cartTotal() &&
       this.cart.length > 0 &&
-      !!this.selectedPaymentMethodId
+      !!this.selectedPaymentMethodId &&
+      hasBuyerName &&
+      hasReference
     );
   }
 
@@ -956,6 +1152,7 @@ export class PosDashboardComponent implements OnInit {
       this.customDiscountDraft = 0;
       this.customDiscountApplied = 0;
       this.paymentReferenceNumber = '';
+      this.bankTransferCustomerFullName = '';
       this.amountReceived = 0;
       this.checkoutSuccess = null;
       this.checkoutPrinting = false;
@@ -980,6 +1177,9 @@ export class PosDashboardComponent implements OnInit {
 
   selectPaymentMethod(id: number): void {
     this.selectedPaymentMethodId = id;
+    if (!this.isBankTransferPayment) {
+      this.bankTransferCustomerFullName = '';
+    }
     if (this.isCashPayment) {
       this.amountReceived = 0;
     } else {
@@ -1048,6 +1248,124 @@ export class PosDashboardComponent implements OnInit {
     return { price: product.minPrice };
   }
 
+  private hydrateProductCardPrices(products: PosProduct[]): PosProduct[] {
+    if (!this.variantCatalog.length) {
+      return products;
+    }
+
+    const variantsByProduct = new Map<number, PosVariant[]>();
+    for (const raw of this.variantCatalog) {
+      const variant = this.normalizeVariant(raw);
+      const list = variantsByProduct.get(variant.productId) ?? [];
+      list.push(variant);
+      variantsByProduct.set(variant.productId, list);
+    }
+
+    return products.map((product) => {
+      if (product.minPrice > 0) {
+        return product;
+      }
+      const variants = variantsByProduct.get(product.id) ?? [];
+      const priceSummary = this.computeProductPriceSummary(variants);
+      if (!priceSummary) {
+        return product;
+      }
+      return {
+        ...product,
+        minPrice: priceSummary.minPrice,
+        maxPrice: priceSummary.maxPrice,
+        minSalePrice: priceSummary.minSalePrice,
+        hasSale: priceSummary.hasSale,
+      };
+    });
+  }
+
+  private computeProductPriceSummary(
+    variants: PosVariant[],
+  ): { minPrice: number; maxPrice: number; minSalePrice: number | null; hasSale: boolean } | null {
+    const effectivePrices: number[] = [];
+    const effectiveSalePrices: number[] = [];
+
+    for (const variant of variants) {
+      const effective = this.effectiveVariantCardPrice(variant);
+      if (!effective || effective.sellingPrice <= 0) {
+        continue;
+      }
+      effectivePrices.push(effective.sellingPrice);
+      if (effective.salePrice != null && effective.salePrice > 0 && effective.salePrice < effective.sellingPrice) {
+        effectiveSalePrices.push(effective.salePrice);
+      }
+    }
+
+    if (!effectivePrices.length) {
+      return null;
+    }
+
+    return {
+      minPrice: Math.min(...effectivePrices),
+      maxPrice: Math.max(...effectivePrices),
+      minSalePrice: effectiveSalePrices.length ? Math.min(...effectiveSalePrices) : null,
+      hasSale: effectiveSalePrices.length > 0,
+    };
+  }
+
+  private productsFromVariantCatalog(variants: PosVariant[]): PosProduct[] {
+    const grouped = new Map<number, PosVariant[]>();
+    for (const variant of variants) {
+      const list = grouped.get(variant.productId) ?? [];
+      list.push(variant);
+      grouped.set(variant.productId, list);
+    }
+
+    return Array.from(grouped.entries()).map(([productId, productVariants]) => {
+      const first = productVariants[0];
+      const priceSummary = this.computeProductPriceSummary(productVariants);
+      const totalStock = productVariants.reduce((sum, variant) => sum + (Number(variant.stockQty) || 0), 0);
+      return {
+        id: productId,
+        name: first?.productName ?? 'Unnamed product',
+        category: first?.category ?? null,
+        brand: null,
+        imageUrl: first?.productImageUrl ?? first?.imageUrl ?? null,
+        variantCount: productVariants.length,
+        minPrice: priceSummary?.minPrice ?? 0,
+        maxPrice: priceSummary?.maxPrice ?? 0,
+        minSalePrice: priceSummary?.minSalePrice ?? null,
+        totalStock,
+        hasSale: priceSummary?.hasSale ?? false,
+        inStock: totalStock > 0,
+      };
+    });
+  }
+
+  private effectiveVariantCardPrice(variant: PosVariant): { sellingPrice: number; salePrice: number | null } | null {
+    const unitPrices = (variant.units ?? []).filter((unit) => Number(unit.sellingPrice) > 0);
+    if (unitPrices.length) {
+      const defaultUnit = unitPrices.find((unit) => unit.isDefault) ?? unitPrices[0];
+      return {
+        sellingPrice: Number(defaultUnit.sellingPrice) || 0,
+        salePrice: defaultUnit.salePrice != null ? Number(defaultUnit.salePrice) : null,
+      };
+    }
+
+    const firstSubVariant = (variant.subVariants ?? []).find((sub) => Number(sub.sellingPrice) > 0);
+    if (firstSubVariant) {
+      return {
+        sellingPrice: Number(firstSubVariant.sellingPrice) || 0,
+        salePrice: firstSubVariant.salePrice != null ? Number(firstSubVariant.salePrice) : null,
+      };
+    }
+
+    if (Number(variant.sellingPrice) > 0) {
+      return {
+        sellingPrice: Number(variant.sellingPrice) || 0,
+        salePrice: variant.salePrice != null ? Number(variant.salePrice) : null,
+      };
+    }
+
+    return null;
+  }
+
   hasSalePrice(line: CartLine): boolean {
     return line.salePrice != null && line.salePrice > 0 && line.salePrice < line.sellingPrice;
   }
@@ -1084,12 +1402,14 @@ export class PosDashboardComponent implements OnInit {
             variantId: line.variantId,
             quantity: line.quantity,
             unitType: line.unitType,
+            subVariantId: line.subVariantId ?? null,
           })),
           discountId: this.selectedDiscountId === 'custom' ? null : this.selectedDiscountId,
           discountAmount: this.selectedDiscountId === 'custom' ? this.customDiscountApplied : undefined,
           amountPaid: snapshot.amountPaid,
           paymentMethodId: this.selectedPaymentMethodId,
           referenceNumber: this.paymentReferenceNumber.trim() || undefined,
+          customerFullName: this.bankTransferCustomerFullName.trim() || undefined,
         };
 
         if (!this.offline.isOnline()) {
@@ -1103,6 +1423,7 @@ export class PosDashboardComponent implements OnInit {
           this.customDiscountDraft = 0;
           this.customDiscountApplied = 0;
           this.paymentReferenceNumber = '';
+          this.bankTransferCustomerFullName = '';
           this.amountReceived = 0;
           return;
         }
@@ -1128,6 +1449,7 @@ export class PosDashboardComponent implements OnInit {
         this.customDiscountDraft = 0;
         this.customDiscountApplied = 0;
         this.paymentReferenceNumber = '';
+        this.bankTransferCustomerFullName = '';
         this.amountReceived = 0;
         await this.loadCatalog();
 
@@ -1181,7 +1503,8 @@ export class PosDashboardComponent implements OnInit {
 
   defaultVariantQty(variant: PosVariant): number {
     const unit = this.selectedUnitFor(variant);
-    return unit.isManualEntry ? 100 : 1;
+    if (unit.unitType === 'grams' || unit.isManualEntry) return 200;
+    return 1;
   }
 
   variantQtyLabel(variant: PosVariant): string {
@@ -1199,6 +1522,23 @@ export class PosDashboardComponent implements OnInit {
   formatQuantityWithUnit(line: CartLine): string {
     const qty = line.quantity % 1 === 0 ? String(line.quantity) : line.quantity.toFixed(2);
     return `${qty} ${this.unitLabel(line.unitType)}`;
+  }
+
+  cartLineDetails(line: CartLine): string[] {
+    const details: string[] = [];
+    const temp = String(line.tempType ?? '').trim();
+    const size = String(line.sizeLabel ?? '').trim();
+    const sugar = String(line.sugarLevel ?? '').trim();
+    if (temp) {
+      details.push(temp.charAt(0).toUpperCase() + temp.slice(1));
+    }
+    if (size) {
+      details.push(size);
+    }
+    if (sugar) {
+      details.push(sugar);
+    }
+    return details;
   }
 
   variantPriceLabel(variant: PosVariant): string {
@@ -1247,11 +1587,27 @@ export class PosDashboardComponent implements OnInit {
   }
 
   variantHasSale(variant: PosVariant): boolean {
-    return variant.salePrice != null && variant.salePrice > 0 && variant.salePrice < variant.sellingPrice;
+    const price = this.catalogVariantPrice(variant);
+    return price.salePrice != null && price.salePrice > 0 && price.salePrice < price.sellingPrice;
   }
 
   catalogVariantImage(variant: PosVariant): string | null {
     return variant.imageUrl ?? variant.productImageUrl ?? null;
+  }
+
+  catalogVariantPrice(variant: PosVariant): { sellingPrice: number; salePrice: number | null } {
+    return this.effectiveVariantCardPrice(variant) ?? {
+      sellingPrice: Number(variant.sellingPrice) || 0,
+      salePrice: variant.salePrice != null ? Number(variant.salePrice) : null,
+    };
+  }
+
+  variantPriceLabelForCatalog(variant: PosVariant): string {
+    const price = this.catalogVariantPrice(variant);
+    const amount = price.salePrice != null && price.salePrice > 0 && price.salePrice < price.sellingPrice
+      ? price.salePrice
+      : price.sellingPrice;
+    return `₱${amount.toFixed(2)}`;
   }
 
   private syncCartStock(): void {

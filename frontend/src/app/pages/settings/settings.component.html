@@ -407,7 +407,7 @@
       <p class="text-sm text-gray-600 dark:text-gray-300">
         Manage unit types available when adding product variants (e.g. Piece, Pack, Kilo).
       </p>
-      <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div class="grid grid-cols-1 gap-3 md:grid-cols-4">
         <div>
           <label class="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Code</label>
           <input [(ngModel)]="unitTypeForm.code" placeholder="e.g. bundle"
@@ -418,6 +418,14 @@
           <input [(ngModel)]="unitTypeForm.label" placeholder="e.g. Bundle"
             class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white" />
         </div>
+        <div>
+          <label class="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Can be used for</label>
+          <select [(ngModel)]="unitTypeForm.usageScope"
+            class="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white">
+            <option value="Others">Others</option>
+            <option value="Beverages">Beverages</option>
+          </select>
+        </div>
         <div class="flex items-end">
           <button type="button" (click)="createUnitType()" [disabled]="!canUpdateSettings || isSavingUnitType"
             class="w-full rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:opacity-50">
@@ -427,11 +435,12 @@
       </div>
       <div *ngIf="isLoadingUnitTypes" class="text-sm text-gray-500">Loading unit types...</div>
       <div *ngIf="!isLoadingUnitTypes" class="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
-        <table class="w-full min-w-[480px] text-sm">
+        <table class="w-full min-w-[560px] text-sm">
           <thead>
             <tr class="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800">
               <th class="px-4 py-3 text-left font-semibold text-gray-600 dark:text-gray-300">Label</th>
               <th class="px-4 py-3 text-left font-semibold text-gray-600 dark:text-gray-300">Code</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-600 dark:text-gray-300">Used for</th>
               <th class="px-4 py-3 text-left font-semibold text-gray-600 dark:text-gray-300">Status</th>
               <th class="px-4 py-3 text-right font-semibold text-gray-600 dark:text-gray-300">Actions</th>
             </tr>
@@ -439,27 +448,66 @@
           <tbody>
             <tr *ngFor="let row of unitTypes" class="border-b border-gray-100 dark:border-gray-800"
               [class.opacity-60]="!row.isActive">
-              <td class="px-4 py-3 text-gray-800 dark:text-gray-200">{{ row.label }}</td>
+              <td class="px-4 py-3 text-gray-800 dark:text-gray-200">
+                <ng-container *ngIf="editingUnitTypeId === row.id; else unitLabelView">
+                  <input [(ngModel)]="unitTypeEditForm.label"
+                    class="w-full min-w-[8rem] rounded-lg border border-gray-200 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                    [disabled]="isSavingUnitType" />
+                </ng-container>
+                <ng-template #unitLabelView>{{ row.label }}</ng-template>
+              </td>
               <td class="px-4 py-3 text-gray-500">{{ row.code }}</td>
+              <td class="px-4 py-3 text-gray-600 dark:text-gray-300">
+                <ng-container *ngIf="editingUnitTypeId === row.id; else unitScopeView">
+                  <select [(ngModel)]="unitTypeEditForm.usageScope"
+                    class="w-full min-w-[7rem] rounded-lg border border-gray-200 px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                    [disabled]="isSavingUnitType">
+                    <option value="Others">Others</option>
+                    <option value="Beverages">Beverages</option>
+                  </select>
+                </ng-container>
+                <ng-template #unitScopeView>{{ row.usageScope || 'Others' }}</ng-template>
+              </td>
               <td class="px-4 py-3">
                 <span *ngIf="row.isActive" class="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">Active</span>
                 <span *ngIf="!row.isActive" class="inline-flex rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-400">Inactive</span>
               </td>
               <td class="px-4 py-3 text-right">
-                <button *ngIf="row.isActive" type="button" (click)="requestDeactivateUnitType(row)"
-                  [disabled]="!canUpdateSettings || isSavingUnitType"
-                  class="rounded-md px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10">
-                  Remove
-                </button>
-                <button *ngIf="!row.isActive" type="button" (click)="requestReactivateUnitType(row)"
-                  [disabled]="!canUpdateSettings || isSavingUnitType"
-                  class="rounded-md px-3 py-1.5 text-xs font-medium text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10">
-                  Reactivate
-                </button>
+                <div class="flex flex-wrap items-center justify-end gap-1">
+                  <ng-container *ngIf="editingUnitTypeId === row.id; else unitActionsView">
+                    <button type="button" (click)="saveEditUnitType(row)"
+                      [disabled]="!canUpdateSettings || isSavingUnitType"
+                      class="rounded-md px-3 py-1.5 text-xs font-medium text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-500/10">
+                      Save
+                    </button>
+                    <button type="button" (click)="cancelEditUnitType()"
+                      [disabled]="isSavingUnitType"
+                      class="rounded-md px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800">
+                      Cancel
+                    </button>
+                  </ng-container>
+                  <ng-template #unitActionsView>
+                    <button *ngIf="row.isActive" type="button" (click)="startEditUnitType(row)"
+                      [disabled]="!canUpdateSettings || isSavingUnitType"
+                      class="rounded-md px-3 py-1.5 text-xs font-medium text-brand-600 hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-500/10">
+                      Edit
+                    </button>
+                    <button *ngIf="row.isActive" type="button" (click)="requestDeactivateUnitType(row)"
+                      [disabled]="!canUpdateSettings || isSavingUnitType"
+                      class="rounded-md px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 dark:hover:bg-red-500/10">
+                      Remove
+                    </button>
+                    <button *ngIf="!row.isActive" type="button" (click)="requestReactivateUnitType(row)"
+                      [disabled]="!canUpdateSettings || isSavingUnitType"
+                      class="rounded-md px-3 py-1.5 text-xs font-medium text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10">
+                      Reactivate
+                    </button>
+                  </ng-template>
+                </div>
               </td>
             </tr>
             <tr *ngIf="unitTypes.length === 0">
-              <td colspan="4" class="px-4 py-8 text-center text-gray-500">No unit types yet.</td>
+              <td colspan="5" class="px-4 py-8 text-center text-gray-500">No unit types yet.</td>
             </tr>
           </tbody>
         </table>

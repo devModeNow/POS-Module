@@ -143,6 +143,34 @@ Living notes for agents continuing this repo. Prefer this file over re-reading l
 - **Reports (POS dashboard + completed sales):** search, sortable headers, Reference # column. Dashboard transactions search/sort are server-side; completed sales filter/sort/paginate client-side over the loaded period (up to 200 rows).
 - **Key PO files:** `frontend/.../purchase-orders/purchase-orders.component.*`, `frontend/.../inventory.service.ts`, `backend/src/inventory/inventory.service.ts` (`getOnePO` / create / update / receive).
 
+### 4.3
+- **Beverages gate = category** (not product name). Match `beverages` / typo `bevarages`; normalize saved category to `"Beverages"`.
+- **Inventory (admin):** when category is Beverages, each variant gets:
+  - `hasSugarLevel` checkbox
+  - Sub-variants editor: temperature (`hot` / `iced` / N/A) + size (small/regular/medium/large datalist) + selling/sale price
+  - **Duplicate variant** copies units, sugar flag, sub-variants, prices, image; stock starts at 0; new row inserts at top as `Name (copy)`
+  - New sub-variant rows insert at the **top** of the list
+  - Variants and sub-variants can be reordered in the form with up/down controls; saved order persists through existing `sort_order` handling
+  - Sub-variants panel is collapsible per variant in the inventory form
+  - Sub-variant order is now carried explicitly as `sortOrder` from admin save through cashier load, so cashier size button order matches POS admin reordering
+- **Schema:** `tblinventory_variants.has_sugar_level`; `tblinventory_variant_subvariants`; `tblorg_unit_types.usage_scope` (`Beverages` | `Others`). Auto-ensured in Nest + SQL `20260804_pos_continuation_4_3.sql`.
+- **Unit types (Settings):** create form has **Can be used for** selector [Beverages, Others]; table shows scope. Active rows are **editable** (label + scope) via Edit → Save; code stays fixed. Liter/bottle/can seeded to Beverages.
+- **Inventory unit dropdown:** only shows units whose `usageScope` matches the product category (`Beverages` → Beverages units; anything else → Others units). Changing category re-filters and sanitizes selected units.
+- **Cashier catalog:** All / Beverages / Others selector beside Product/Variants + grid/list toggles (`catalogGroup`, sessionStorage).
+- **Cashier beverage picker:** loads `hasSugarLevel` + `subVariants` from terminal API; modal shows Temperature / Size / Sugar level; price follows selected sub-variant; cart line name includes those choices.
+- **Cashier product cards:** in Products view, beverage cards now derive min/max/sale price from sub-variant pricing when present, instead of falling back to base variant price `0`.
+- **Variant catalog cards:** when base/unit price is `0`, card price falls back to first priced sub-variant.
+- **Checkout beverage pricing:** cart now sends `subVariantId`; backend resolves `unit_price` from `tblinventory_variant_subvariants` (not zero base/unit price). Also stores `sub_variant_id` on `tblsales_transactions`. Rejects checkout if beverage has sub-variants but none selected, or if resolved price is still `0`.
+- **Inventory Product variants table:** Duplicate action copies units/sub-variants/settings/image; stock starts at `0`; name becomes `Name (copy)`. Fixed bigint id Map lookup so sub-variants actually copy.
+- **Beverage product form:** Unit types section is collapsed by default for Beverages (pricing comes from sub-variants); use the Unit types header / + button to expand and add unit types when needed.
+- **Inventory product form:** Variant cards are collapsible (header shows name when collapsed). Opening a product expands the first variant; add/duplicate expands the new card and collapses the others.
+- **Cashier cart beverage details:** beverage lines now show plain order details on separate lines (e.g. `Iced`, `Large`, `75%`) for quicker cashier scanning.
+- **Grams / manual entry:** default qty **200** on add-to-cart, unit change, and cart edit (`defaultVariantQty`).
+- **POS Reports:** new **Product Logs** report lists product name, category, brand, added timestamp (`created_at`), and last updated timestamp (`updated_at`) from `tblinventory_products`.
+- **Checkout (Bank Transfer):** cashier must enter buyer/customer fullname before submit. Saved on `tblsales_transactions.customer_full_name`; backend also enforces it so offline/queued or manual requests cannot bypass the rule.
+- **Checkout references:** `Reference #` is now required for every **non-cash** payment method; cash stays exempt. Backend validates this too.
+- **Key files:** `inventory.component.*`, `pos-dashboard.component.*`, `settings.component.*`, `inventory-products.service.ts`, `inventory-unit-types.service.ts`, `pos.service.ts` types.
+
 ## Key printer files
 - Panel: `frontend/.../pos-printer-settings-panel/*`
 - Print: `pos-receipt-print.service.ts`, `pos-printhub.service.ts`
@@ -194,7 +222,7 @@ Living notes for agents continuing this repo. Prefer this file over re-reading l
 - `tblpurchases_status_check`: drop constraint before UPDATE to `draft`; legacy check was `pending|received|cancelled`.
 
 ## Suggested next checks when continuing
-1. Continuation 4.2 smoke: variants price/OOS watermark → checkout with GCash reference + custom discount → My Sales void restores stock → Reports search/Reference # → chat Seen + FAB badge → Inventory low stock + PO variant search.
+1. Continuation 4.3 smoke: Inventory category Beverages → sugar checkbox + sub-variants save/reload; Settings unit type scope Beverages/Others; cashier All/Beverages/Others filter; grams unit defaults qty to 200.
 2. Purchase Orders → New PO + Draft PO: labels on all item fields; Product type / Unit type / Brand / Category smart search (pick or type new); Variant smart search autofills related fields.
 3. Login as POS user → PrintHub connects (silent if previously paired; picker once if first time).
 4. Reload dashboard → Bluetooth indicator goes green without clicking (if printer on + previously paired).

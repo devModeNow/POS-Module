@@ -2,12 +2,18 @@ import { Injectable } from '@angular/core';
 import { BehaviorSubject } from 'rxjs';
 
 export type OfflineCheckoutPayload = {
-  items: Array<{ variantId: number; quantity: number; unitType?: string }>;
+  items: Array<{
+    variantId: number;
+    quantity: number;
+    unitType?: string;
+    subVariantId?: number | null;
+  }>;
   discountId?: number | null;
   discountAmount?: number;
   amountPaid?: number;
   paymentMethodId?: number | null;
   referenceNumber?: string | null;
+  customerFullName?: string | null;
 };
 
 export type QueuedCheckout = {

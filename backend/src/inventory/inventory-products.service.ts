@@ -128,7 +128,7 @@ export class InventoryProductsService {
     if (!variantIds.length) return map;
     const activeClause = activeOnly ? 'AND vu.is_active = TRUE' : '';
     const result = await this.db.query<{
-      variantId: number;
+      variantId: number | string;
       unitType: string;
       sellingPrice: string;
       salePrice: string | null;
@@ -154,7 +154,9 @@ export class InventoryProductsService {
       [variantIds, orgId],
     );
     for (const row of result.rows) {
-      const list = map.get(row.variantId) ?? [];
+      const variantId = Number(row.variantId);
+      if (!Number.isFinite(variantId) || variantId <= 0) continue;
+      const list = map.get(variantId) ?? [];
       list.push({
         unitType: row.unitType,
         sellingPrice: Number(row.sellingPrice ?? 0),
@@ -162,16 +164,206 @@ export class InventoryProductsService {
         isManualEntry: row.isManualEntry,
         isDefault: row.isDefault,
       });
-      map.set(row.variantId, list);
+      map.set(variantId, list);
     }
     return map;
   }
 
-  private attachUnits<T extends { id: number }>(rows: T[], unitsMap: Map<number, VariantUnitRow[]>) {
+  private attachUnits<T extends { id: number | string }>(rows: T[], unitsMap: Map<number, VariantUnitRow[]>) {
     return rows.map((row) => ({
       ...row,
-      units: unitsMap.get(row.id) ?? [],
+      units: unitsMap.get(Number(row.id)) ?? [],
     }));
+  }
+
+  private async ensureBeverageSchema(): Promise<void> {
+    await this.db.query(`
+      ALTER TABLE public.tblinventory_variants
+        ADD COLUMN IF NOT EXISTS has_sugar_level BOOLEAN NOT NULL DEFAULT FALSE
+    `);
+    await this.db.query(`
+      CREATE TABLE IF NOT EXISTS public.tblinventory_variant_subvariants (
+        id            BIGSERIAL PRIMARY KEY,
+        org_id        BIGINT NOT NULL REFERENCES public.tblorganizations(id) ON DELETE CASCADE,
+        variant_id    BIGINT NOT NULL REFERENCES public.tblinventory_variants(id) ON DELETE CASCADE,
+        temp_type     TEXT,
+        size_label    TEXT NOT NULL,
+        selling_price NUMERIC(12,2) NOT NULL DEFAULT 0,
+        sale_price    NUMERIC(12,2),
+        sort_order    INTEGER NOT NULL DEFAULT 0,
+        is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await this.db.query(`
+      CREATE INDEX IF NOT EXISTS idx_inv_subvariants_variant
+        ON public.tblinventory_variant_subvariants(variant_id)
+        WHERE is_active = TRUE
+    `);
+  }
+
+  private normalizeTempType(value: unknown): string | null {
+    const raw = String(value ?? '').trim().toLowerCase();
+    if (raw === 'hot' || raw === 'iced') return raw;
+    return null;
+  }
+
+  private normalizeSubvariants(
+    rows?: Array<{
+      id?: number;
+      sortOrder?: number;
+      tempType?: string | null;
+      sizeLabel?: string;
+      sellingPrice?: number;
+      salePrice?: number | null;
+    }>,
+  ) {
+    if (!Array.isArray(rows)) return [] as Array<{
+      id?: number;
+      tempType: string | null;
+      sizeLabel: string;
+      sellingPrice: number;
+      salePrice: number | null;
+    }>;
+    return rows
+      .map((r, index) => ({
+        id: r.id,
+        sortOrder: Number(r.sortOrder ?? index + 1) || (index + 1),
+        tempType: this.normalizeTempType(r.tempType),
+        sizeLabel: String(r.sizeLabel ?? '').trim(),
+        sellingPrice: this.toFiniteNumber(r.sellingPrice, 0),
+        salePrice: this.toOptionalNumber(r.salePrice),
+      }))
+      .filter((r) => r.sizeLabel.length > 0);
+  }
+
+  private async loadSubvariantsMap(variantIds: number[], orgId: number) {
+    const map = new Map<number, Array<{
+      id: number;
+      sortOrder: number;
+      tempType: string | null;
+      sizeLabel: string;
+      sellingPrice: number;
+      salePrice: number | null;
+    }>>();
+    if (!variantIds.length) return map;
+    try {
+      await this.ensureBeverageSchema();
+      const result = await this.db.query<{
+        id: number | string;
+        variantId: number | string;
+        sortOrder: number | string | null;
+        tempType: string | null;
+        sizeLabel: string;
+        sellingPrice: string;
+        salePrice: string | null;
+      }>(
+        `SELECT id,
+                variant_id AS "variantId",
+                sort_order AS "sortOrder",
+                temp_type AS "tempType",
+                size_label AS "sizeLabel",
+                selling_price AS "sellingPrice",
+                sale_price AS "salePrice"
+         FROM tblinventory_variant_subvariants
+         WHERE org_id = $1
+           AND variant_id = ANY($2::bigint[])
+           AND is_active = TRUE
+         ORDER BY sort_order ASC, id ASC`,
+        [orgId, variantIds],
+      );
+      for (const row of result.rows) {
+        const variantId = Number(row.variantId);
+        if (!Number.isFinite(variantId) || variantId <= 0) continue;
+        const list = map.get(variantId) ?? [];
+        list.push({
+          id: Number(row.id),
+          sortOrder: Number(row.sortOrder ?? 0),
+          tempType: row.tempType,
+          sizeLabel: row.sizeLabel,
+          sellingPrice: Number(row.sellingPrice ?? 0),
+          salePrice: row.salePrice != null ? Number(row.salePrice) : null,
+        });
+        map.set(variantId, list);
+      }
+    } catch {
+      /* table may not exist yet on older DBs mid-deploy */
+    }
+    return map;
+  }
+
+  private attachSubvariants<T extends { id: number | string }>(
+    rows: T[],
+    subMap: Map<number, Array<{
+      id: number;
+      sortOrder?: number;
+      tempType: string | null;
+      sizeLabel: string;
+      sellingPrice: number;
+      salePrice: number | null;
+    }>>,
+  ) {
+    return rows.map((row) => ({
+      ...row,
+      subVariants: subMap.get(Number(row.id)) ?? [],
+    }));
+  }
+
+  private async saveVariantSubvariants(
+    client: { query: DatabaseService['query'] },
+    orgId: number,
+    variantId: number,
+    subVariants: Array<{
+      id?: number;
+      sortOrder?: number;
+      tempType: string | null;
+      sizeLabel: string;
+      sellingPrice: number;
+      salePrice: number | null;
+    }>,
+  ) {
+    const keptIds: number[] = [];
+    const orderedSubVariants = [...subVariants].sort(
+      (a, b) => Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0),
+    );
+    for (let i = 0; i < orderedSubVariants.length; i++) {
+      const s = orderedSubVariants[i];
+      if (s.id) {
+        await client.query(
+          `UPDATE tblinventory_variant_subvariants
+           SET temp_type = $1, size_label = $2, selling_price = $3, sale_price = $4,
+               sort_order = $5, is_active = TRUE, updated_at = NOW()
+           WHERE id = $6 AND org_id = $7 AND variant_id = $8`,
+          [s.tempType, s.sizeLabel, s.sellingPrice, s.salePrice, i + 1, s.id, orgId, variantId],
+        );
+        keptIds.push(s.id);
+      } else {
+        const ins = await client.query<{ id: number }>(
+          `INSERT INTO tblinventory_variant_subvariants
+             (org_id, variant_id, temp_type, size_label, selling_price, sale_price, sort_order)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)
+           RETURNING id`,
+          [orgId, variantId, s.tempType, s.sizeLabel, s.sellingPrice, s.salePrice, i + 1],
+        );
+        keptIds.push(ins.rows[0].id);
+      }
+    }
+    if (keptIds.length) {
+      await client.query(
+        `UPDATE tblinventory_variant_subvariants
+         SET is_active = FALSE, updated_at = NOW()
+         WHERE variant_id = $1 AND org_id = $2 AND id != ALL($3::bigint[])`,
+        [variantId, orgId, keptIds],
+      );
+    } else {
+      await client.query(
+        `UPDATE tblinventory_variant_subvariants
+         SET is_active = FALSE, updated_at = NOW()
+         WHERE variant_id = $1 AND org_id = $2`,
+        [variantId, orgId],
+      );
+    }
   }
 
   private async saveVariantUnits(
@@ -337,6 +529,7 @@ export class InventoryProductsService {
 
   async listVariantsByProduct(productId: number, orgId: number) {
     try {
+      await this.ensureBeverageSchema();
       const result = await this.db.query(
         `SELECT v.id,
                 v.product_id AS "productId",
@@ -351,6 +544,7 @@ export class InventoryProductsService {
                 v.sale_price AS "salePrice",
                 v.unit_type AS "unitType",
                 v.margin_percent AS "marginPercent",
+                v.has_sugar_level AS "hasSugarLevel",
                 v.image_url AS "imageUrl",
                 p.image_url AS "productImageUrl"
          FROM tblinventory_variants v
@@ -365,12 +559,14 @@ export class InventoryProductsService {
         sellingPrice: Number(r['sellingPrice'] ?? 0),
         salePrice: r['salePrice'] != null ? Number(r['salePrice']) : null,
         marginPercent: r['marginPercent'] != null ? Number(r['marginPercent']) : null,
+        hasSugarLevel: Boolean(r['hasSugarLevel']),
         imageUrl: r['imageUrl'] ?? null,
       })) as Array<{ id: number } & Record<string, unknown>>;
       const unitsMap = await this.loadUnitsMap(rows.map((r) => r.id), orgId);
+      const subMap = await this.loadSubvariantsMap(rows.map((r) => r.id), orgId);
       return {
         success: true,
-        data: this.attachUnits(rows, unitsMap),
+        data: this.attachSubvariants(this.attachUnits(rows, unitsMap), subMap),
       };
     } catch (e) {
       return { success: false, message: e instanceof Error ? e.message : 'Failed to load variants' };
@@ -468,11 +664,20 @@ export class InventoryProductsService {
         salePrice?: number | null;
         unitType?: string;
         marginPercent?: number | null;
+        hasSugarLevel?: boolean;
         units?: Array<{
           unitType?: string;
           sellingPrice?: number;
           salePrice?: number | null;
           isManualEntry?: boolean;
+        }>;
+        subVariants?: Array<{
+          id?: number;
+          sortOrder?: number;
+          tempType?: string | null;
+          sizeLabel?: string;
+          sellingPrice?: number;
+          salePrice?: number | null;
         }>;
       }>;
     },
@@ -485,6 +690,7 @@ export class InventoryProductsService {
     if (variantNameError) return { success: false, message: variantNameError };
 
     try {
+      await this.ensureBeverageSchema();
       let productId = dto.id;
       await this.db.withTransaction(async (client) => {
         if (productId) {
@@ -556,6 +762,8 @@ export class InventoryProductsService {
           const sellingPrice = this.toFiniteNumber(primary?.sellingPrice, 0);
           const salePrice = this.toOptionalNumber(primary?.salePrice);
           const marginPercent = this.computeMarginPercent(costPrice, sellingPrice);
+          const hasSugarLevel = Boolean(v.hasSugarLevel);
+          const subVariants = this.normalizeSubvariants(v.subVariants);
 
           let variantId: number;
           if (v.id) {
@@ -564,12 +772,14 @@ export class InventoryProductsService {
               `UPDATE tblinventory_variants
                SET variant_name = $1, stock_qty = $2, stock_warning = $3,
                    cost_price = $4, selling_price = $5, sale_price = $6,
-                   unit_type = $7, margin_percent = $8, sort_order = $9, updated_at = NOW()
-               WHERE id = $10 AND org_id = $11 AND product_id = $12`,
+                   unit_type = $7, margin_percent = $8, sort_order = $9,
+                   has_sugar_level = $10, updated_at = NOW()
+               WHERE id = $11 AND org_id = $12 AND product_id = $13`,
               [
                 vName, stockQty, stockWarning,
                 costPrice, sellingPrice, salePrice,
                 primary?.unitType ?? null, marginPercent, i + 1,
+                hasSugarLevel,
                 variantId, orgId, productId,
               ],
             );
@@ -578,18 +788,20 @@ export class InventoryProductsService {
             const ins = await client.query<{ id: number }>(
               `INSERT INTO tblinventory_variants
                  (org_id, product_id, variant_name, stock_qty, stock_warning,
-                  cost_price, selling_price, sale_price, unit_type, margin_percent, sort_order)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+                  cost_price, selling_price, sale_price, unit_type, margin_percent,
+                  sort_order, has_sugar_level)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
               [
                 orgId, productId, vName, stockQty, stockWarning,
                 costPrice, sellingPrice, salePrice,
-                primary?.unitType ?? null, marginPercent, i + 1,
+                primary?.unitType ?? null, marginPercent, i + 1, hasSugarLevel,
               ],
             );
             variantId = ins.rows[0].id;
             keptIds.push(variantId);
           }
           await this.saveVariantUnits(client, orgId, variantId, units);
+          await this.saveVariantSubvariants(client, orgId, variantId, subVariants);
         }
 
         if (keptIds.length) {
@@ -844,11 +1056,20 @@ export class InventoryProductsService {
       sellingPrice?: number;
       salePrice?: number | null;
       unitType?: string;
+      hasSugarLevel?: boolean;
       units?: Array<{
         unitType?: string;
         sellingPrice?: number;
         salePrice?: number | null;
         isManualEntry?: boolean;
+      }>;
+      subVariants?: Array<{
+        id?: number;
+        sortOrder?: number;
+        tempType?: string | null;
+        sizeLabel?: string;
+        sellingPrice?: number;
+        salePrice?: number | null;
       }>;
     },
   ) {
@@ -856,6 +1077,7 @@ export class InventoryProductsService {
     if (!vName) return { success: false, message: 'Variant name is required' };
 
     try {
+      await this.ensureBeverageSchema();
       await this.db.withTransaction(async (client) => {
         const existing = await client.query<{ productId: number }>(
           `SELECT product_id AS "productId"
@@ -886,23 +1108,187 @@ export class InventoryProductsService {
         const sellingPrice = this.toFiniteNumber(primary?.sellingPrice ?? dto.sellingPrice, 0);
         const salePrice = this.toOptionalNumber(primary?.salePrice ?? dto.salePrice);
         const marginPercent = this.computeMarginPercent(costPrice, sellingPrice);
+        const hasSugarLevel = Boolean(dto.hasSugarLevel);
+        const subVariants = this.normalizeSubvariants(dto.subVariants);
 
         await client.query(
           `UPDATE tblinventory_variants
            SET variant_name = $1, stock_qty = $2, stock_warning = $3,
                cost_price = $4, selling_price = $5, sale_price = $6,
-               unit_type = $7, margin_percent = $8, updated_at = NOW()
-           WHERE id = $9 AND org_id = $10`,
+               unit_type = $7, margin_percent = $8, has_sugar_level = $9, updated_at = NOW()
+           WHERE id = $10 AND org_id = $11`,
           [
             vName, stockQty, stockWarning,
             costPrice, sellingPrice, salePrice,
-            primary?.unitType ?? null, marginPercent,
+            primary?.unitType ?? null, marginPercent, hasSugarLevel,
             variantId, orgId,
           ],
         );
         await this.saveVariantUnits(client, orgId, variantId, units);
+        await this.saveVariantSubvariants(client, orgId, variantId, subVariants);
       });
       return { success: true, id: variantId };
+    } catch (e) {
+      return { success: false, message: this.formatSaveError(e) };
+    }
+  }
+
+  async duplicateVariant(variantId: number, orgId: number) {
+    try {
+      await this.ensureBeverageSchema();
+
+      const source = await this.db.query<{
+        id: number;
+        productId: number;
+        productName: string;
+        category: string | null;
+        brand: string | null;
+        variantName: string;
+        stockWarning: string;
+        costPrice: string;
+        sellingPrice: string;
+        salePrice: string | null;
+        unitType: string | null;
+        marginPercent: string | null;
+        imageUrl: string | null;
+        hasSugarLevel: boolean;
+        sortOrder: number | null;
+      }>(
+        `SELECT v.id,
+                v.product_id AS "productId",
+                p.name AS "productName",
+                p.category,
+                p.brand,
+                v.variant_name AS "variantName",
+                v.stock_warning::text AS "stockWarning",
+                v.cost_price::text AS "costPrice",
+                v.selling_price::text AS "sellingPrice",
+                v.sale_price::text AS "salePrice",
+                v.unit_type AS "unitType",
+                v.margin_percent::text AS "marginPercent",
+                v.image_url AS "imageUrl",
+                COALESCE(v.has_sugar_level, FALSE) AS "hasSugarLevel",
+                v.sort_order AS "sortOrder"
+         FROM tblinventory_variants v
+         INNER JOIN tblinventory_products p ON p.id = v.product_id
+         WHERE v.id = $1 AND v.org_id = $2 AND v.is_active = TRUE AND p.is_active = TRUE
+         LIMIT 1`,
+        [variantId, orgId],
+      );
+      if (!source.rowCount) {
+        return { success: false, message: 'Variant not found' };
+      }
+
+      const row = source.rows[0];
+      const unitsMap = await this.loadUnitsMap([variantId], orgId, true);
+      const subMap = await this.loadSubvariantsMap([variantId], orgId);
+      const units = unitsMap.get(variantId) ?? [];
+      const subVariants = (subMap.get(variantId) ?? []).map((s) => ({
+        sortOrder: s.sortOrder,
+        tempType: s.tempType,
+        sizeLabel: s.sizeLabel,
+        sellingPrice: s.sellingPrice,
+        salePrice: s.salePrice,
+      }));
+
+      const existingNames = await this.db.query<{ variantName: string }>(
+        `SELECT variant_name AS "variantName"
+         FROM tblinventory_variants
+         WHERE product_id = $1 AND org_id = $2 AND is_active = TRUE`,
+        [row.productId, orgId],
+      );
+      const used = new Set(existingNames.rows.map((r) => r.variantName.trim().toLowerCase()));
+      const baseName = String(row.variantName ?? '').trim() || 'Variant';
+      let copyName = `${baseName} (copy)`;
+      let suffix = 2;
+      while (used.has(copyName.toLowerCase())) {
+        copyName = `${baseName} (copy ${suffix})`;
+        suffix += 1;
+      }
+
+      const primary = units[0];
+      const costPrice = Number(row.costPrice ?? 0);
+      const sellingPrice = Number(primary?.sellingPrice ?? row.sellingPrice ?? 0);
+      const salePrice =
+        primary?.salePrice != null
+          ? Number(primary.salePrice)
+          : row.salePrice != null
+            ? Number(row.salePrice)
+            : null;
+      const marginPercent = this.computeMarginPercent(costPrice, sellingPrice);
+      const stockWarning = Number(row.stockWarning ?? 0);
+      const unitType = primary?.unitType ?? row.unitType ?? null;
+      const hasSugarLevel = Boolean(row.hasSugarLevel);
+      const sortOrder = Number(row.sortOrder ?? 0) || 1;
+
+      let newId = 0;
+      await this.db.withTransaction(async (client) => {
+        const inserted = await client.query<{ id: number }>(
+          `INSERT INTO tblinventory_variants
+             (org_id, product_id, variant_name, stock_qty, stock_warning,
+              cost_price, selling_price, sale_price, unit_type, margin_percent,
+              sort_order, has_sugar_level, image_url)
+           VALUES ($1,$2,$3,0,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+           RETURNING id`,
+          [
+            orgId,
+            row.productId,
+            copyName,
+            stockWarning,
+            costPrice,
+            sellingPrice,
+            salePrice,
+            unitType,
+            marginPercent,
+            sortOrder,
+            hasSugarLevel,
+            row.imageUrl,
+          ],
+        );
+        newId = inserted.rows[0].id;
+        await this.saveVariantUnits(
+          client,
+          orgId,
+          newId,
+          units.length
+            ? units
+            : [{
+                unitType: unitType ?? 'piece',
+                sellingPrice,
+                salePrice,
+                isManualEntry: false,
+                isDefault: true,
+              }],
+        );
+        await this.saveVariantSubvariants(client, orgId, newId, subVariants);
+        await client.query(
+          `UPDATE tblinventory_products SET updated_at = NOW() WHERE id = $1 AND org_id = $2`,
+          [row.productId, orgId],
+        );
+      });
+
+      return {
+        success: true,
+        data: {
+          id: newId,
+          productId: row.productId,
+          productName: row.productName,
+          variantName: copyName,
+          category: row.category,
+          brand: row.brand,
+          stockQty: 0,
+          stockWarning,
+          costPrice,
+          sellingPrice,
+          salePrice,
+          unitType,
+          marginPercent,
+          imageUrl: row.imageUrl,
+          hasSugarLevel,
+          units,
+          subVariants,
+        },
+      };
     } catch (e) {
       return { success: false, message: this.formatSaveError(e) };
     }

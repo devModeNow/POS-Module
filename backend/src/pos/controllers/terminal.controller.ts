@@ -64,11 +64,18 @@ export class PosTerminalController {
   checkout(
     @Body()
     body: {
-      items: Array<{ variantId: number; quantity: number }>;
+      items: Array<{
+        variantId: number;
+        quantity: number;
+        unitType?: string;
+        subVariantId?: number | null;
+      }>;
       discountId?: number | null;
       discountAmount?: number;
       amountPaid?: number;
       paymentMethodId?: number | null;
+      referenceNumber?: string | null;
+      customerFullName?: string | null;
     },
     @Req() req: AuthReq,
   ) {

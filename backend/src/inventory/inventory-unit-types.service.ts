@@ -8,6 +8,7 @@ export type OrgUnitTypeRow = {
   isManualEntry: boolean;
   sortOrder: number;
   isActive: boolean;
+  usageScope: 'Beverages' | 'Others';
 };
 
 @Injectable()
@@ -45,6 +46,10 @@ export class InventoryUnitTypesService implements OnModuleInit {
         ADD COLUMN IF NOT EXISTS is_default BOOLEAN NOT NULL DEFAULT FALSE
     `);
     await this.db.query(`
+      ALTER TABLE public.tblorg_unit_types
+        ADD COLUMN IF NOT EXISTS usage_scope TEXT NOT NULL DEFAULT 'Others'
+    `);
+    await this.db.query(`
       INSERT INTO public.tblorg_unit_types (org_id, code, label, is_manual_entry, sort_order)
       SELECT o.id, v.code, v.label, v.is_manual, v.ord
       FROM public.tblorganizations o
@@ -64,7 +69,20 @@ export class InventoryUnitTypesService implements OnModuleInit {
       WHERE o.code IN ('point-of-sales', 'pos')
       ON CONFLICT (org_id, code) DO NOTHING
     `);
+    // Sensible beverage defaults for common drink units.
+    await this.db.query(`
+      UPDATE public.tblorg_unit_types
+      SET usage_scope = 'Beverages'
+      WHERE lower(code) IN ('liter', 'bottle', 'can')
+        AND usage_scope = 'Others'
+    `);
     this.schemaReady = true;
+  }
+
+  private normalizeUsageScope(value: unknown): 'Beverages' | 'Others' {
+    const raw = String(value ?? '').trim().toLowerCase();
+    if (raw === 'beverages' || raw === 'bevarages') return 'Beverages';
+    return 'Others';
   }
 
   async list(orgId: number, includeInactive = false) {
@@ -78,17 +96,25 @@ export class InventoryUnitTypesService implements OnModuleInit {
         isManualEntry: boolean;
         sortOrder: number;
         isActive: boolean;
+        usageScope: string;
       }>(
         `SELECT id, code, label,
                 is_manual_entry AS "isManualEntry",
                 sort_order AS "sortOrder",
-                is_active AS "isActive"
+                is_active AS "isActive",
+                COALESCE(NULLIF(TRIM(usage_scope), ''), 'Others') AS "usageScope"
          FROM tblorg_unit_types
          WHERE org_id = $1 ${activeClause}
          ORDER BY sort_order ASC, label ASC`,
         [orgId],
       );
-      return { success: true, data: result.rows };
+      return {
+        success: true,
+        data: result.rows.map((r) => ({
+          ...r,
+          usageScope: this.normalizeUsageScope(r.usageScope),
+        })),
+      };
     } catch (e) {
       return {
         success: false,
@@ -97,9 +123,16 @@ export class InventoryUnitTypesService implements OnModuleInit {
     }
   }
 
-  async create(orgId: number, dto: { code: string; label: string; isManualEntry?: boolean; sortOrder?: number }) {
+  async create(orgId: number, dto: {
+    code: string;
+    label: string;
+    isManualEntry?: boolean;
+    sortOrder?: number;
+    usageScope?: string;
+  }) {
     const code = this.normalizeCode(dto.code);
     const label = String(dto.label ?? '').trim();
+    const usageScope = this.normalizeUsageScope(dto.usageScope);
     if (!code || !label) {
       return { success: false, message: 'Code and label are required.' };
     }
@@ -124,9 +157,9 @@ export class InventoryUnitTypesService implements OnModuleInit {
         }
         await this.db.query(
           `UPDATE tblorg_unit_types
-           SET is_active = TRUE, label = $1, is_manual_entry = $2, updated_at = NOW()
-           WHERE org_id = $3 AND id = $4`,
-          [label, Boolean(dto.isManualEntry), orgId, row.id],
+           SET is_active = TRUE, label = $1, is_manual_entry = $2, usage_scope = $3, updated_at = NOW()
+           WHERE org_id = $4 AND id = $5`,
+          [label, Boolean(dto.isManualEntry), usageScope, orgId, row.id],
         );
         return {
           success: true,
@@ -153,10 +186,10 @@ export class InventoryUnitTypesService implements OnModuleInit {
 
       const sortOrder = Number.isFinite(Number(dto.sortOrder)) ? Number(dto.sortOrder) : 0;
       const result = await this.db.query<{ id: number }>(
-        `INSERT INTO tblorg_unit_types (org_id, code, label, is_manual_entry, sort_order)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO tblorg_unit_types (org_id, code, label, is_manual_entry, sort_order, usage_scope)
+         VALUES ($1, $2, $3, $4, $5, $6)
          RETURNING id`,
-        [orgId, code, label, Boolean(dto.isManualEntry), sortOrder],
+        [orgId, code, label, Boolean(dto.isManualEntry), sortOrder, usageScope],
       );
       return { success: true, id: result.rows[0]?.id, message: 'Unit type added.' };
     } catch (e) {
@@ -168,7 +201,13 @@ export class InventoryUnitTypesService implements OnModuleInit {
     }
   }
 
-  async update(orgId: number, id: number, dto: Partial<{ label: string; isManualEntry: boolean; sortOrder: number; isActive: boolean }>) {
+  async update(orgId: number, id: number, dto: Partial<{
+    label: string;
+    isManualEntry: boolean;
+    sortOrder: number;
+    isActive: boolean;
+    usageScope: string;
+  }>) {
     try {
       const fields: string[] = [];
       const params: unknown[] = [orgId, id];
@@ -187,6 +226,10 @@ export class InventoryUnitTypesService implements OnModuleInit {
       if (dto.isActive != null) {
         params.push(Boolean(dto.isActive));
         fields.push(`is_active = $${params.length}`);
+      }
+      if (dto.usageScope != null) {
+        params.push(this.normalizeUsageScope(dto.usageScope));
+        fields.push(`usage_scope = $${params.length}`);
       }
       if (!fields.length) {
         return { success: false, message: 'No fields to update.' };

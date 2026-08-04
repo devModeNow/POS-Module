@@ -237,12 +237,24 @@ export class InventoryService {
     return r.data;
   }
 
-  async createUnitType(payload: { code: string; label: string; isManualEntry?: boolean; sortOrder?: number }): Promise<{ success: boolean; id?: number; reactivated?: boolean; message?: string }> {
+  async createUnitType(payload: {
+    code: string;
+    label: string;
+    isManualEntry?: boolean;
+    sortOrder?: number;
+    usageScope?: 'Beverages' | 'Others';
+  }): Promise<{ success: boolean; id?: number; reactivated?: boolean; message?: string }> {
     const r = await apiClient.post<{ success: boolean; id?: number; reactivated?: boolean; message?: string }>('/inventory/unit-types', payload);
     return r.data;
   }
 
-  async updateUnitType(id: number, payload: Partial<{ label: string; isManualEntry: boolean; sortOrder: number; isActive: boolean }>): Promise<{ success: boolean; message?: string }> {
+  async updateUnitType(id: number, payload: Partial<{
+    label: string;
+    isManualEntry: boolean;
+    sortOrder: number;
+    isActive: boolean;
+    usageScope: 'Beverages' | 'Others';
+  }>): Promise<{ success: boolean; message?: string }> {
     const r = await apiClient.patch<{ success: boolean; message?: string }>(`/inventory/unit-types/${id}`, payload);
     return r.data;
   }
@@ -265,4 +277,5 @@ export interface OrgUnitType {
   isManualEntry: boolean;
   sortOrder: number;
   isActive: boolean;
+  usageScope?: 'Beverages' | 'Others';
 }

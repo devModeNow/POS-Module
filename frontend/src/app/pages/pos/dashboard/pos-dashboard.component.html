@@ -56,6 +56,17 @@
               <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" /></svg>
             </button>
           </div>
+          <div class="inline-flex shrink-0 rounded-md border border-gray-300 p-0.5 dark:border-gray-700">
+            <button type="button" (click)="setCatalogGroup('all')" title="All products"
+              class="inline-flex min-h-11 items-center justify-center rounded-sm px-2.5 text-xs font-semibold transition"
+              [ngClass]="catalogGroup === 'all' ? 'bg-emerald-600 text-white' : 'text-gray-600 dark:text-gray-400'">All</button>
+            <button type="button" (click)="setCatalogGroup('beverages')" title="Beverages"
+              class="inline-flex min-h-11 items-center justify-center rounded-sm px-2.5 text-xs font-semibold transition"
+              [ngClass]="catalogGroup === 'beverages' ? 'bg-emerald-600 text-white' : 'text-gray-600 dark:text-gray-400'">Beverages</button>
+            <button type="button" (click)="setCatalogGroup('others')" title="Other products"
+              class="inline-flex min-h-11 items-center justify-center rounded-sm px-2.5 text-xs font-semibold transition"
+              [ngClass]="catalogGroup === 'others' ? 'bg-emerald-600 text-white' : 'text-gray-600 dark:text-gray-400'">Others</button>
+          </div>
         </div>
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
         @if (categories.length > 0) {
@@ -126,11 +137,11 @@
     @if (state === 'loaded') {
       <div class="relative z-0 min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-auto p-4 md:p-6">
         @if (isVariantCatalogView) {
-          @if (variantCatalog.length === 0) {
+          @if (displayedVariants.length === 0) {
             <div class="flex h-full min-h-[20rem] flex-col items-center justify-center text-center text-gray-500">No variants found.</div>
           } @else if (productViewMode === 'grid') {
             <div class="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4">
-              @for (variant of variantCatalog; track variant.id) {
+              @for (variant of displayedVariants; track variant.id) {
                 <button type="button" (click)="openVariantFromCatalog(variant)" [disabled]="variant.stockQty <= 0"
                   class="group relative touch-manipulation overflow-hidden rounded-md border border-gray-200 bg-white text-left shadow-sm transition active:scale-[0.98] disabled:opacity-80 dark:border-gray-800 dark:bg-gray-900">
                   <div class="relative aspect-[4/3] w-full overflow-hidden bg-gray-100 dark:bg-gray-800">
@@ -154,10 +165,10 @@
                     <div class="absolute inset-x-0 bottom-0 bg-linear-to-t from-black/90 via-black/55 to-transparent px-3 pb-3 pt-14">
                       <p class="text-xl font-extrabold leading-tight tracking-tight text-white sm:text-2xl">{{ variant.variantName }}</p>
                       @if (variantHasSale(variant)) {
-                        <p class="mt-1 text-xs text-white/60 line-through">₱{{ formatCurrency(variant.sellingPrice) }}</p>
-                        <p class="text-2xl font-extrabold leading-none text-amber-300 sm:text-3xl">₱{{ formatCurrency(variant.salePrice!) }}</p>
+                        <p class="mt-1 text-xs text-white/60 line-through">₱{{ formatCurrency(catalogVariantPrice(variant).sellingPrice) }}</p>
+                        <p class="text-2xl font-extrabold leading-none text-amber-300 sm:text-3xl">₱{{ formatCurrency(catalogVariantPrice(variant).salePrice!) }}</p>
                       } @else {
-                        <p class="mt-1 text-2xl font-extrabold leading-none text-emerald-300 sm:text-3xl">₱{{ formatCurrency(variant.sellingPrice) }}</p>
+                        <p class="mt-1 text-2xl font-extrabold leading-none text-emerald-300 sm:text-3xl">₱{{ formatCurrency(catalogVariantPrice(variant).sellingPrice) }}</p>
                       }
                       <p class="mt-1 text-xs text-white/70">{{ variant.productName }} · {{ formatStock(variant.stockQty) }} in stock</p>
                     </div>
@@ -167,7 +178,7 @@
             </div>
           } @else {
             <div class="space-y-2">
-              @for (variant of variantCatalog; track variant.id) {
+              @for (variant of displayedVariants; track variant.id) {
                 <button type="button" (click)="openVariantFromCatalog(variant)" [disabled]="variant.stockQty <= 0"
                   class="relative flex w-full touch-manipulation items-center gap-4 overflow-hidden rounded-md border border-gray-200 bg-white p-3 text-left shadow-sm transition active:scale-[0.99] disabled:opacity-80 dark:border-gray-800 dark:bg-gray-900">
                   @if (variant.stockQty <= 0) {
@@ -191,22 +202,22 @@
                   </div>
                   <div class="shrink-0 text-right">
                     @if (variantHasSale(variant)) {
-                      <p class="text-xs text-gray-400 line-through">₱{{ formatCurrency(variant.sellingPrice) }}</p>
-                      <p class="text-2xl font-extrabold leading-none text-red-600 sm:text-3xl">₱{{ formatCurrency(variant.salePrice!) }}</p>
+                      <p class="text-xs text-gray-400 line-through">₱{{ formatCurrency(catalogVariantPrice(variant).sellingPrice) }}</p>
+                      <p class="text-2xl font-extrabold leading-none text-red-600 sm:text-3xl">₱{{ formatCurrency(catalogVariantPrice(variant).salePrice!) }}</p>
                     } @else {
-                      <p class="text-2xl font-extrabold leading-none text-emerald-600 sm:text-3xl">₱{{ formatCurrency(variant.sellingPrice) }}</p>
+                      <p class="text-2xl font-extrabold leading-none text-emerald-600 sm:text-3xl">₱{{ formatCurrency(catalogVariantPrice(variant).sellingPrice) }}</p>
                     }
                   </div>
                 </button>
               }
             </div>
           }
-        } @else if (products.length === 0) {
+        } @else if (displayedProducts.length === 0) {
           <div class="flex h-full min-h-[20rem] flex-col items-center justify-center text-center text-gray-500">No products found.</div>
         } @else {
           @if (productViewMode === 'grid') {
           <div class="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4">
-            @for (product of products; track product.id) {
+            @for (product of displayedProducts; track product.id) {
               <button type="button" (click)="openProduct(product)" [disabled]="product.totalStock <= 0"
                 class="group relative touch-manipulation overflow-hidden rounded-md border border-gray-200 bg-white text-left shadow-sm transition active:scale-[0.98] disabled:opacity-80 dark:border-gray-800 dark:bg-gray-900">
                 <div class="relative aspect-[4/3] w-full overflow-hidden bg-gray-100 dark:bg-gray-800">
@@ -237,7 +248,7 @@
           </div>
           } @else {
           <div class="space-y-2">
-            @for (product of products; track product.id) {
+            @for (product of displayedProducts; track product.id) {
               <button type="button" (click)="openProduct(product)" [disabled]="product.totalStock <= 0"
                 class="relative flex w-full touch-manipulation items-center gap-4 overflow-hidden rounded-md border border-gray-200 bg-white p-3 text-left shadow-sm transition active:scale-[0.99] disabled:opacity-80 dark:border-gray-800 dark:bg-gray-900">
                 @if (product.totalStock <= 0) {
@@ -320,6 +331,13 @@
                   class="text-left text-xs text-gray-500 underline decoration-dotted underline-offset-2 hover:text-emerald-600 dark:hover:text-emerald-400">
                   {{ line.productName }} · {{ formatQuantityWithUnit(line) }}
                 </button>
+                @if (cartLineDetails(line).length) {
+                  <div class="mt-1 space-y-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+                    @for (detail of cartLineDetails(line); track detail) {
+                      <p>{{ detail }}</p>
+                    }
+                  </div>
+                }
                 @if (hasSalePrice(line)) {
                   <p class="text-[10px] text-gray-400 line-through">₱{{ formatCurrency(line.sellingPrice * line.quantity) }}</p>
                   <p class="text-sm font-semibold text-red-600">₱{{ formatCurrency(lineTotal(line)) }}</p>
@@ -496,21 +514,94 @@
 
           @if (selectedModalVariant; as v) {
             <div class="rounded-md border border-gray-200 p-3 dark:border-gray-700">
-              <div class="flex items-start justify-between gap-3">
-                <div class="min-w-0">
-                  <p class="truncate text-lg font-bold text-gray-900 dark:text-white">{{ v.variantName }}</p>
-                  <p class="text-xs text-gray-500">{{ formatStock(v.stockQty) }} in stock</p>
-                </div>
-                <div class="shrink-0 text-right">
-                  @if (selectedUnitFor(v).salePrice && selectedUnitFor(v).salePrice! < selectedUnitFor(v).sellingPrice) {
-                    <p class="text-xs text-gray-400 line-through">₱{{ formatCurrency(selectedUnitFor(v).sellingPrice) }}{{ variantPriceLabel(v) }}</p>
-                    <p class="text-2xl font-extrabold leading-none text-red-600">₱{{ formatCurrency(selectedUnitFor(v).salePrice!) }}{{ variantPriceLabel(v) }}</p>
+              <div class="flex items-start gap-3">
+                <div class="h-20 w-20 shrink-0 overflow-hidden rounded-md bg-gray-100 dark:bg-gray-800">
+                  @if (variantImage(v)) {
+                    <img [src]="variantImage(v)!" [alt]="v.variantName" class="h-full w-full object-cover" />
                   } @else {
-                    <p class="text-2xl font-extrabold leading-none text-emerald-600">₱{{ formatCurrency(selectedUnitFor(v).sellingPrice) }}{{ variantPriceLabel(v) }}</p>
+                    <div class="flex h-full w-full items-center justify-center text-gray-400">
+                      <svg class="h-8 w-8" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                    </div>
                   }
+                </div>
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-start justify-between gap-3">
+                    <div class="min-w-0">
+                      <p class="truncate text-lg font-bold text-gray-900 dark:text-white">{{ v.variantName }}</p>
+                      <p class="text-xs text-gray-500">{{ formatStock(v.stockQty) }} in stock</p>
+                    </div>
+                    <div class="shrink-0 text-right">
+                      @if (selectedPriceFor(v).salePrice != null && selectedPriceFor(v).salePrice! < selectedPriceFor(v).sellingPrice) {
+                        <p class="text-xs text-gray-400 line-through">₱{{ formatCurrency(selectedPriceFor(v).sellingPrice) }}{{ variantPriceLabel(v) }}</p>
+                        <p class="text-2xl font-extrabold leading-none text-red-600">₱{{ formatCurrency(selectedPriceFor(v).salePrice!) }}{{ variantPriceLabel(v) }}</p>
+                      } @else {
+                        <p class="text-2xl font-extrabold leading-none text-emerald-600">₱{{ formatCurrency(selectedPriceFor(v).sellingPrice) }}{{ variantPriceLabel(v) }}</p>
+                      }
+                    </div>
+                  </div>
                 </div>
               </div>
 
+              @if (tempOptionsFor(v).length) {
+                <div class="mt-3">
+                  <label class="mb-2 block text-[10px] font-medium uppercase tracking-wide text-gray-500">Temperature</label>
+                  <div class="flex flex-wrap gap-2">
+                    @for (t of tempOptionsFor(v); track t) {
+                      <button type="button"
+                        (click)="selectVariantTemp(v, t)"
+                        [disabled]="v.stockQty <= 0"
+                        class="touch-manipulation min-w-[4.5rem] rounded-md border px-3 py-2 text-center text-sm font-semibold capitalize transition disabled:opacity-50"
+                        [ngClass]="variantSelectedTemp[v.id] === t
+                          ? 'border-emerald-500 bg-emerald-50 text-emerald-700 ring-2 ring-emerald-500/30 dark:border-emerald-400 dark:bg-emerald-500/10 dark:text-emerald-300'
+                          : 'border-gray-200 bg-white text-gray-800 hover:border-emerald-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-emerald-600'">
+                        {{ t }}
+                      </button>
+                    }
+                  </div>
+                </div>
+              }
+
+              @if (hasSubVariants(v)) {
+                <div class="mt-3">
+                  <label class="mb-2 block text-[10px] font-medium uppercase tracking-wide text-gray-500">Size</label>
+                  <div class="flex flex-wrap gap-2">
+                    @for (s of subVariantsForTemp(v); track s.id) {
+                      <button type="button"
+                        (click)="selectSubVariant(v, s)"
+                        [disabled]="v.stockQty <= 0"
+                        class="touch-manipulation min-w-[4.5rem] rounded-md border px-3 py-2 text-center text-sm font-semibold capitalize transition disabled:opacity-50"
+                        [ngClass]="variantSelectedSubId[v.id] === s.id
+                          ? 'border-emerald-500 bg-emerald-50 text-emerald-700 ring-2 ring-emerald-500/30 dark:border-emerald-400 dark:bg-emerald-500/10 dark:text-emerald-300'
+                          : 'border-gray-200 bg-white text-gray-800 hover:border-emerald-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-emerald-600'">
+                        {{ s.sizeLabel }}
+                      </button>
+                    }
+                  </div>
+                </div>
+              }
+
+              @if (v.hasSugarLevel) {
+                <div class="mt-3">
+                  <label class="mb-2 block text-[10px] font-medium uppercase tracking-wide text-gray-500">Sugar level</label>
+                  <div class="flex flex-wrap gap-2">
+                    @for (sugar of sugarLevelOptions; track sugar) {
+                      <button type="button"
+                        (click)="selectSugarLevel(v, sugar)"
+                        [disabled]="v.stockQty <= 0"
+                        class="touch-manipulation min-w-[3.5rem] rounded-md border px-3 py-2 text-center text-sm font-semibold transition disabled:opacity-50"
+                        [ngClass]="variantSelectedSugar[v.id] === sugar
+                          ? 'border-emerald-500 bg-emerald-50 text-emerald-700 ring-2 ring-emerald-500/30 dark:border-emerald-400 dark:bg-emerald-500/10 dark:text-emerald-300'
+                          : 'border-gray-200 bg-white text-gray-800 hover:border-emerald-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:border-emerald-600'">
+                        {{ sugar }}
+                      </button>
+                    }
+                  </div>
+                </div>
+              }
+
+              @if (v.units.length > 1 || (!hasSubVariants(v) && v.units.length > 0)) {
               <div class="mt-3">
                 <label class="mb-2 block text-[10px] font-medium uppercase tracking-wide text-gray-500">Unit</label>
                 <div class="flex flex-wrap gap-2">
@@ -527,6 +618,7 @@
                   }
                 </div>
               </div>
+              }
 
               <div class="mt-3">
                 <label class="mb-1 block text-[10px] font-medium uppercase tracking-wide text-gray-500">{{ variantQtyLabel(v) }}</label>
@@ -691,9 +783,19 @@
 
           @if (showPaymentReference) {
             <label class="block">
-              <span class="mb-2 block text-sm font-medium">Reference # <span class="font-normal text-gray-400">(optional)</span></span>
+              <span class="mb-2 block text-sm font-medium">Reference # <span class="text-error-600">*</span></span>
               <input type="text" [(ngModel)]="paymentReferenceNumber" placeholder="Enter payment reference number"
                 class="w-full rounded-md border px-3 py-3 text-sm dark:border-gray-700 dark:bg-gray-800" />
+              <p class="mt-1 text-xs text-gray-500">Required for non-cash payments.</p>
+            </label>
+          }
+
+          @if (isBankTransferPayment) {
+            <label class="block">
+              <span class="mb-2 block text-sm font-medium">Buyer Fullname <span class="text-error-600">*</span></span>
+              <input type="text" [(ngModel)]="bankTransferCustomerFullName" placeholder="Enter full name of the customer/buyer"
+                class="w-full rounded-md border px-3 py-3 text-sm dark:border-gray-700 dark:bg-gray-800" />
+              <p class="mt-1 text-xs text-gray-500">Required for Bank Transfer payments.</p>
             </label>
           }
 

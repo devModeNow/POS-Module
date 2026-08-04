@@ -779,6 +779,45 @@ export class PosStoreReportsService {
     }
   }
 
+  async productLogs(orgId: number) {
+    try {
+      const result = await this.db.query<{
+        id: number;
+        productName: string;
+        category: string | null;
+        brand: string | null;
+        createdAt: string;
+        updatedAt: string;
+      }>(
+        `SELECT p.id,
+                p.name AS "productName",
+                p.category,
+                p.brand,
+                p.created_at AS "createdAt",
+                p.updated_at AS "updatedAt"
+         FROM tblinventory_products p
+         WHERE p.org_id = $1
+           AND p.is_active = TRUE
+         ORDER BY p.updated_at DESC, p.created_at DESC, p.name ASC`,
+        [orgId],
+      );
+
+      return {
+        success: true,
+        data: result.rows.map((row) => ({
+          id: row.id,
+          productName: row.productName,
+          category: row.category,
+          brand: row.brand,
+          createdAt: row.createdAt,
+          updatedAt: row.updatedAt,
+        })),
+      };
+    } catch (e) {
+      return { success: false, message: e instanceof Error ? e.message : 'Failed to load product logs report' };
+    }
+  }
+
   async cashierSales(
     orgId: number,
     cashierId: number,

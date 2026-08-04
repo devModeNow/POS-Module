@@ -36,6 +36,48 @@ type VariantUnitFormRow = {
   isDefault: boolean;
 };
 
+type VariantSubVariantFormRow = {
+  id?: number;
+  sortOrder?: number;
+  tempType: 'hot' | 'iced' | '';
+  sizeLabel: string;
+  sellingPrice: number;
+  salePrice: number | null;
+};
+
+type VariantFormRow = {
+  id?: number;
+  variantName: string;
+  stockQty: number;
+  stockWarning: number;
+  costPrice: number;
+  sellingPrice: number;
+  salePrice: number | null;
+  marginPercent: number | null;
+  unitType: string;
+  hasSugarLevel: boolean;
+  collapsed: boolean;
+  subVariantsCollapsed: boolean;
+  unitsCollapsed: boolean;
+  units: VariantUnitFormRow[];
+  subVariants: VariantSubVariantFormRow[];
+  imageUrl: string | null;
+  imagePreview: string | null;
+  imageFile: File | null;
+};
+
+type ProductFormState = {
+  id: number | null;
+  name: string;
+  category: string;
+  brand: string;
+  description: string;
+  imageUrl: string | null;
+  imagePreview: string | null;
+  imageFile: File | null;
+  variants: VariantFormRow[];
+};
+
 type PosImportProductGroup = {
   name: string;
   category?: string;
@@ -68,8 +110,9 @@ export class InventoryComponent implements OnInit, OnDestroy {
   productItems: InventoryProductRow[] = [];
   posInventoryView: PosInventoryView = 'products';
   inventoryItemFilter: InventoryItemFilter = 'active';
-  unitTypeOptions: { value: string; label: string }[] = [];
-  productForm = this.emptyProductForm();
+  unitTypeOptions: { value: string; label: string; usageScope: 'Beverages' | 'Others' }[] = [];
+  allUnitTypeOptions: { value: string; label: string; usageScope: 'Beverages' | 'Others' }[] = [];
+  productForm: ProductFormState = this.emptyProductForm();
   editingProductId: number | null = null;
   editingVariantOnly = false;
   editingVariantId: number | null = null;
@@ -495,15 +538,51 @@ export class InventoryComponent implements OnInit, OnDestroy {
     try {
       const r = await this.svc.getUnitTypes();
       if (r.success && r.data) {
-        this.unitTypeOptions = r.data
+        this.allUnitTypeOptions = r.data
           .filter((u) => u.isActive !== false)
-          .map((u) => ({ value: u.code, label: u.label }));
+          .map((u) => ({
+            value: u.code,
+            label: u.label,
+            usageScope: (u.usageScope === 'Beverages' ? 'Beverages' : 'Others') as 'Beverages' | 'Others',
+          }));
       } else {
-        this.unitTypeOptions = [];
+        this.allUnitTypeOptions = [];
       }
     } catch {
-      this.unitTypeOptions = [];
+      this.allUnitTypeOptions = [];
     }
+    this.refreshUnitTypeOptionsForCategory();
+  }
+
+  isBeveragesCategory(category?: string | null): boolean {
+    const n = String(category ?? '').trim().toLowerCase().replace(/[\s_-]+/g, '');
+    return n === 'beverages' || n === 'bevarages';
+  }
+
+  normalizeBeveragesCategory(category: string): string {
+    return this.isBeveragesCategory(category) ? 'Beverages' : category.trim();
+  }
+
+  refreshUnitTypeOptionsForCategory(): void {
+    const scope: 'Beverages' | 'Others' = this.isBeveragesCategory(this.productForm.category)
+      ? 'Beverages'
+      : 'Others';
+    this.unitTypeOptions = this.allUnitTypeOptions.filter((u) => u.usageScope === scope);
+  }
+
+  onProductCategoryPickedOrTyped(): void {
+    if (this.isBeveragesCategory(this.productForm.category)) {
+      this.productForm.category = 'Beverages';
+      for (const v of this.productForm.variants) {
+        v.unitsCollapsed = true;
+      }
+    } else {
+      for (const v of this.productForm.variants) {
+        v.unitsCollapsed = false;
+      }
+    }
+    this.refreshUnitTypeOptionsForCategory();
+    this.sanitizeProductFormUnits();
   }
 
   onCategoryFilterChange(): void {
@@ -653,6 +732,8 @@ export class InventoryComponent implements OnInit, OnDestroy {
         imageFile: null,
         variants: (form.variants?.length ? form.variants : [this.emptyVariantRow()]).map((v: typeof form.variants[number]) => ({
           ...v,
+          collapsed: v.collapsed ?? false,
+          unitsCollapsed: v.unitsCollapsed ?? this.isBeveragesCategory(form.category),
           imageFile: null,
         })),
       };
@@ -801,7 +882,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
     brand?: string | null;
     description?: string | null;
     imageUrl?: string | null;
-    variants?: Array<InventoryVariantRow & { units?: VariantUnitFormRow[] }>;
+    variants?: Array<InventoryVariantRow>;
   },
     singleVariantId?: number,
   ): Promise<void> {
@@ -814,7 +895,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
         imageUrl: d.imageUrl ?? null,
         imagePreview: d.imageUrl ?? null,
         imageFile: null,
-        variants: (d.variants ?? []).map((v: InventoryVariantRow & { units?: VariantUnitFormRow[] }) => ({
+        variants: (d.variants ?? []).map((v) => ({
           id: v.id,
           variantName: v.variantName,
           stockQty: v.stockQty,
@@ -824,19 +905,34 @@ export class InventoryComponent implements OnInit, OnDestroy {
           salePrice: v.salePrice ?? null,
           unitType: this.normalizeUnitType(v.unitType),
           marginPercent: v.marginPercent ?? null,
+          hasSugarLevel: Boolean(v.hasSugarLevel),
+          collapsed: false,
+          subVariantsCollapsed: false,
+          unitsCollapsed: true,
           units: (v.units?.length ? v.units : [{
             unitType: this.normalizeUnitType(v.unitType),
             sellingPrice: v.sellingPrice ?? 0,
             salePrice: v.salePrice ?? null,
             isManualEntry: false,
             isDefault: true,
-          } satisfies VariantUnitFormRow]).map((u, ui): VariantUnitFormRow => ({
+          }]).map((u, ui): VariantUnitFormRow => ({
             unitType: this.normalizeUnitType(u.unitType),
             sellingPrice: u.sellingPrice ?? 0,
             salePrice: u.salePrice ?? null,
             isManualEntry: false,
             isDefault: Boolean(u.isDefault) || ui === 0,
           })),
+          subVariants: (v.subVariants ?? []).map((s): VariantSubVariantFormRow => {
+            const temp = String(s.tempType ?? '').toLowerCase();
+            return {
+              id: s.id,
+              sortOrder: Number(s.sortOrder ?? 0) || undefined,
+              tempType: temp === 'hot' || temp === 'iced' ? temp : '',
+              sizeLabel: String(s.sizeLabel ?? ''),
+              sellingPrice: Number(s.sellingPrice ?? 0),
+              salePrice: s.salePrice ?? null,
+            };
+          }),
           imageUrl: v.imageUrl ?? null,
           imagePreview: v.imageUrl ?? null,
           imageFile: null,
@@ -853,21 +949,86 @@ export class InventoryComponent implements OnInit, OnDestroy {
         }
         this.editingVariantOnly = true;
         this.editingVariantId = singleVariantId;
+        this.productForm.variants[0].collapsed = false;
       } else {
         this.editingVariantOnly = false;
         this.editingVariantId = null;
+        this.productForm.variants.forEach((v, index) => {
+          v.collapsed = index > 0;
+        });
       }
       this.sanitizeProductFormUnits();
+      this.refreshUnitTypeOptionsForCategory();
       this.editingProductId = d.id;
       this.itemDrawerMode = 'edit';
       this.isItemDrawerOpen = true;
   }
 
   addVariantRow(): void {
-    this.productForm.variants.unshift(this.emptyVariantRow());
+    for (const v of this.productForm.variants) {
+      v.collapsed = true;
+    }
+    const row = this.emptyVariantRow(this.isBeveragesCategory(this.productForm.category));
+    row.collapsed = false;
+    this.productForm.variants.unshift(row);
+  }
+
+  moveVariantRow(index: number, direction: -1 | 1): void {
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= this.productForm.variants.length) return;
+    const [row] = this.productForm.variants.splice(index, 1);
+    this.productForm.variants.splice(nextIndex, 0, row);
+  }
+
+  duplicateVariantRow(index: number): void {
+    if (this.isEditingVariantOnly) return;
+    const source = this.productForm.variants[index];
+    if (!source) return;
+    const baseName = String(source.variantName ?? '').trim() || 'Variant';
+    const copy = {
+      id: undefined as number | undefined,
+      variantName: `${baseName} (copy)`,
+      stockQty: 0,
+      stockWarning: Number(source.stockWarning ?? 0),
+      costPrice: Number(source.costPrice ?? 0),
+      sellingPrice: Number(source.sellingPrice ?? 0),
+      salePrice: source.salePrice != null ? Number(source.salePrice) : null,
+      marginPercent: source.marginPercent != null ? Number(source.marginPercent) : null,
+      unitType: this.normalizeUnitType(source.unitType),
+      hasSugarLevel: Boolean(source.hasSugarLevel),
+      collapsed: false,
+      subVariantsCollapsed: false,
+      unitsCollapsed: this.isBeveragesCategory(this.productForm.category),
+      units: (source.units?.length ? source.units : [this.emptyUnitRow()]).map((u, ui) => ({
+        unitType: this.normalizeUnitType(u.unitType),
+        sellingPrice: Number(u.sellingPrice ?? 0),
+        salePrice: u.salePrice != null ? Number(u.salePrice) : null,
+        isManualEntry: false,
+        isDefault: Boolean(u.isDefault) || ui === 0,
+      })),
+      subVariants: (source.subVariants ?? []).map((s) => ({
+        sortOrder: Number(s.sortOrder ?? 0) || undefined,
+        tempType: (s.tempType === 'hot' || s.tempType === 'iced' ? s.tempType : '') as 'hot' | 'iced' | '',
+        sizeLabel: String(s.sizeLabel ?? ''),
+        sellingPrice: Number(s.sellingPrice ?? 0),
+        salePrice: s.salePrice != null ? Number(s.salePrice) : null,
+      })),
+      imageUrl: source.imageUrl ?? null,
+      imagePreview: source.imagePreview ?? source.imageUrl ?? null,
+      imageFile: null as File | null,
+    };
+    if (!copy.units.some((u) => u.isDefault) && copy.units.length) {
+      copy.units[0].isDefault = true;
+    }
+    for (const v of this.productForm.variants) {
+      v.collapsed = true;
+    }
+    this.productForm.variants.unshift(copy);
+    this.syncVariantPrimaryUnit(0);
   }
 
   addUnitRow(variantIndex: number): void {
+    this.productForm.variants[variantIndex].unitsCollapsed = false;
     const used = new Set(
       this.productForm.variants[variantIndex].units.map((u) =>
         this.normalizeUnitType(u.unitType).toLowerCase(),
@@ -970,6 +1131,24 @@ export class InventoryComponent implements OnInit, OnDestroy {
     this.productForm.variants.splice(index, 1);
   }
 
+  toggleSubVariantsCollapsed(index: number): void {
+    const variant = this.productForm.variants[index];
+    if (!variant) return;
+    variant.subVariantsCollapsed = !variant.subVariantsCollapsed;
+  }
+
+  toggleVariantCollapsed(index: number): void {
+    const variant = this.productForm.variants[index];
+    if (!variant) return;
+    variant.collapsed = !variant.collapsed;
+  }
+
+  toggleUnitsCollapsed(index: number): void {
+    const variant = this.productForm.variants[index];
+    if (!variant) return;
+    variant.unitsCollapsed = !variant.unitsCollapsed;
+  }
+
   onVariantCostChange(index: number): void {
     const v = this.productForm.variants[index];
     v.marginPercent = this.computeMargin(v.costPrice, v.sellingPrice);
@@ -1005,8 +1184,17 @@ export class InventoryComponent implements OnInit, OnDestroy {
     this.openConfirm('Confirm save', label, () => void this.saveProduct());
   }
 
-  private buildVariantPayload(v: (typeof this.productForm.variants)[number]) {
-    const sellingPrice = this.toFiniteNumber(v.units[0]?.sellingPrice ?? v.sellingPrice, 0);
+  private buildVariantPayload(v: VariantFormRow) {
+    const unitsSource = v.units?.length
+      ? v.units
+      : [{
+          unitType: this.defaultUnitTypeCode(),
+          sellingPrice: Number(v.sellingPrice ?? 0),
+          salePrice: v.salePrice ?? null,
+          isManualEntry: false,
+          isDefault: true,
+        }];
+    const sellingPrice = this.toFiniteNumber(unitsSource[0]?.sellingPrice ?? v.sellingPrice, 0);
     const costPrice = this.toFiniteNumber(v.costPrice, 0);
     return {
       id: v.id,
@@ -1015,16 +1203,29 @@ export class InventoryComponent implements OnInit, OnDestroy {
       stockWarning: this.toFiniteNumber(v.stockWarning, 0),
       costPrice,
       sellingPrice,
-      salePrice: v.units[0]?.salePrice ?? v.salePrice ?? null,
-      unitType: v.units[0]?.unitType ?? v.unitType,
+      salePrice: unitsSource[0]?.salePrice ?? v.salePrice ?? null,
+      unitType: unitsSource[0]?.unitType ?? v.unitType,
       marginPercent: this.computeMargin(costPrice, sellingPrice),
-      units: v.units.map((u) => ({
+      hasSugarLevel: this.isBeveragesCategory(this.productForm.category) ? Boolean(v.hasSugarLevel) : false,
+      units: unitsSource.map((u) => ({
         unitType: u.unitType,
         sellingPrice: this.toFiniteNumber(u.sellingPrice, 0),
         salePrice: u.salePrice ?? null,
         isManualEntry: false,
         isDefault: Boolean(u.isDefault),
       })),
+      subVariants: this.isBeveragesCategory(this.productForm.category)
+        ? (v.subVariants ?? [])
+            .filter((s) => String(s.sizeLabel ?? '').trim())
+            .map((s) => ({
+              id: s.id,
+              sortOrder: s.sortOrder,
+              tempType: s.tempType || null,
+              sizeLabel: String(s.sizeLabel).trim(),
+              sellingPrice: this.toFiniteNumber(s.sellingPrice, 0),
+              salePrice: s.salePrice ?? null,
+            }))
+        : [],
     };
   }
 
@@ -1033,6 +1234,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
     this.isSavingItem = true;
     try {
       if (this.productForm.category?.trim()) {
+        this.productForm.category = this.normalizeBeveragesCategory(this.productForm.category);
         await this.svc.createCategory(this.productForm.category.trim());
         await this.loadCategoryOptions();
       }
@@ -1308,6 +1510,37 @@ export class InventoryComponent implements OnInit, OnDestroy {
       () => void this.deleteVariant(variant.id),
       'danger',
     );
+  }
+
+  requestDuplicateVariant(variant: InventoryVariantRow): void {
+    this.openConfirm(
+      'Duplicate variant?',
+      `Create a copy of "${variant.variantName}" under ${variant.productName}? Settings, units, and sub-variants will be copied. Stock starts at 0.`,
+      () => void this.duplicateVariant(variant),
+    );
+  }
+
+  async duplicateVariant(variant: InventoryVariantRow): Promise<void> {
+    try {
+      const r = await this.posSvc.duplicateInventoryVariant(variant.id);
+      if (!r.success || !r.data) {
+        this.notify.error('Failed', r.message ?? 'Could not duplicate variant.');
+        return;
+      }
+      const copied: InventoryVariantRow = {
+        ...r.data,
+        stockQty: Number(r.data.stockQty ?? 0),
+        stockWarning: Number(r.data.stockWarning ?? 0),
+        costPrice: Number(r.data.costPrice ?? 0),
+        sellingPrice: Number(r.data.sellingPrice ?? 0),
+        salePrice: r.data.salePrice != null ? Number(r.data.salePrice) : null,
+      };
+      this.variantItems = [copied, ...this.variantItems.filter((v) => v.id !== copied.id)];
+      this.recomputeProductAggregates(copied.productId);
+      this.notify.success('Duplicated', `"${copied.variantName}" created.`);
+    } catch {
+      this.notify.error('Error', 'Failed to duplicate variant.');
+    }
   }
 
   async deleteVariant(variantId: number): Promise<void> {
@@ -2087,6 +2320,8 @@ export class InventoryComponent implements OnInit, OnDestroy {
   selectCategory(name: string): void { this.itemForm.category = name; this.showCategoryDropdown = false; }
 
   onProductCategoryInput(value: string): void {
+    this.refreshUnitTypeOptionsForCategory();
+    this.sanitizeProductFormUnits();
     if (this.productCategorySearchTimer) clearTimeout(this.productCategorySearchTimer);
     if (value.trim().length < 1) {
       this.productCategorySuggestions = [];
@@ -2110,6 +2345,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
   selectProductCategory(name: string): void {
     this.productForm.category = name;
     this.showProductCategoryDropdown = false;
+    this.onProductCategoryPickedOrTyped();
   }
 
   // Brand autocomplete for PO items
@@ -2138,6 +2374,16 @@ export class InventoryComponent implements OnInit, OnDestroy {
 
   selectPoItemCategory(index: number, name: string): void { this.poItems[index].category = name; this.showPoItemCategoryDropdown[index] = false; }
 
+  private emptySubVariantRow(): VariantSubVariantFormRow {
+    return {
+      sortOrder: undefined,
+      tempType: '',
+      sizeLabel: '',
+      sellingPrice: 0,
+      salePrice: null,
+    };
+  }
+
   private emptyUnitRow(): VariantUnitFormRow {
     return {
       unitType: this.defaultUnitTypeCode(),
@@ -2148,34 +2394,64 @@ export class InventoryComponent implements OnInit, OnDestroy {
     };
   }
 
-  private emptyVariantRow() {
+  private emptyVariantRow(unitsCollapsed = false): VariantFormRow {
     return {
-      id: undefined as number | undefined,
+      id: undefined,
       variantName: '',
       stockQty: 0,
       stockWarning: 0,
       costPrice: 0,
       sellingPrice: 0,
-      salePrice: null as number | null,
-      marginPercent: null as number | null,
+      salePrice: null,
+      marginPercent: null,
       unitType: 'piece',
+      hasSugarLevel: false,
+      collapsed: false,
+      subVariantsCollapsed: false,
+      unitsCollapsed,
       units: [this.emptyUnitRow()],
-      imageUrl: null as string | null,
-      imagePreview: null as string | null,
-      imageFile: null as File | null,
+      subVariants: [],
+      imageUrl: null,
+      imagePreview: null,
+      imageFile: null,
     };
   }
 
-  private emptyProductForm() {
+  addSubVariantRow(variantIndex: number): void {
+    const list = this.productForm.variants[variantIndex].subVariants ?? [];
+    list.unshift(this.emptySubVariantRow());
+    list.forEach((item: VariantSubVariantFormRow, index: number) => { item.sortOrder = index + 1; });
+    this.productForm.variants[variantIndex].subVariants = list;
+  }
+
+  moveSubVariantRow(variantIndex: number, subIndex: number, direction: -1 | 1): void {
+    const list = this.productForm.variants[variantIndex].subVariants ?? [];
+    const nextIndex = subIndex + direction;
+    if (subIndex < 0 || nextIndex < 0 || nextIndex >= list.length) return;
+    const [row] = list.splice(subIndex, 1);
+    list.splice(nextIndex, 0, row);
+    list.forEach((item: VariantSubVariantFormRow, index: number) => { item.sortOrder = index + 1; });
+    this.productForm.variants[variantIndex].subVariants = list;
+  }
+
+  removeSubVariantRow(variantIndex: number, subIndex: number): void {
+    const list = this.productForm.variants[variantIndex].subVariants ?? [];
+    if (subIndex < 0 || subIndex >= list.length) return;
+    list.splice(subIndex, 1);
+    list.forEach((item: VariantSubVariantFormRow, index: number) => { item.sortOrder = index + 1; });
+    this.productForm.variants[variantIndex].subVariants = list;
+  }
+
+  private emptyProductForm(): ProductFormState {
     return {
-      id: null as number | null,
+      id: null,
       name: '',
       category: '',
       brand: '',
       description: '',
-      imageUrl: null as string | null,
-      imagePreview: null as string | null,
-      imageFile: null as File | null,
+      imageUrl: null,
+      imagePreview: null,
+      imageFile: null,
       variants: [this.emptyVariantRow()],
     };
   }

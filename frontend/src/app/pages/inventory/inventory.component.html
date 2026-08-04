@@ -216,6 +216,12 @@
                             <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                           </button>
                         } @else {
+                        <button type="button" *appCan="{ menu: 'inventory', permission: 'canUpdate' }" (click)="requestDuplicateVariant(v)" title="Duplicate variant"
+                          class="rounded-lg p-2 text-brand-600 hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-500/10">
+                          <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                        </button>
                         <button type="button" (click)="openEditProduct(v)" title="Edit variant"
                           class="rounded-lg p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800">
                           <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
@@ -564,15 +570,46 @@
           }
           @for (v of productForm.variants; track $index; let i = $index) {
             <div class="rounded-md border border-gray-200 p-3 dark:border-gray-700">
-              <div class="mb-2 flex items-center justify-between">
-                <span class="text-xs font-medium text-gray-500">Variant {{ i + 1 }}</span>
-                @if (productForm.variants.length > 1 && !isEditingVariantOnly) {
-                  <button type="button" (click)="removeVariantRow(i)" title="Remove variant"
-                    class="rounded-md p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10">
-                    <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                  </button>
-                }
+              <div class="mb-2 flex items-center justify-between gap-2">
+                <button type="button" (click)="toggleVariantCollapsed(i)"
+                  class="flex min-w-0 flex-1 items-center gap-2 text-left text-xs font-medium text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">
+                  <svg class="h-4 w-4 shrink-0 transition-transform" [class.rotate-180]="!v.collapsed" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                  </svg>
+                  <span class="truncate">
+                    Variant {{ i + 1 }}@if (v.variantName.trim()) { — {{ v.variantName.trim() }} }
+                  </span>
+                </button>
+                <div class="flex shrink-0 items-center gap-1">
+                  @if (!isEditingVariantOnly) {
+                    <button type="button" (click)="moveVariantRow(i, -1)" [disabled]="i === 0" title="Move variant up"
+                      class="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 disabled:opacity-40 dark:text-gray-300 dark:hover:bg-gray-800">
+                      <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+                      </svg>
+                    </button>
+                    <button type="button" (click)="moveVariantRow(i, 1)" [disabled]="i === productForm.variants.length - 1" title="Move variant down"
+                      class="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 disabled:opacity-40 dark:text-gray-300 dark:hover:bg-gray-800">
+                      <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    <button type="button" (click)="duplicateVariantRow(i)" title="Duplicate variant"
+                      class="rounded-md p-1.5 text-brand-600 hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-500/10">
+                      <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    </button>
+                  }
+                  @if (productForm.variants.length > 1 && !isEditingVariantOnly) {
+                    <button type="button" (click)="removeVariantRow(i)" title="Remove variant"
+                      class="rounded-md p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10">
+                      <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
+                  }
+                </div>
               </div>
+              @if (!v.collapsed) {
               <div class="space-y-2">
                 <label class="block">
                   <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Variant name *</span>
@@ -608,52 +645,148 @@
                 </div>
                 <div class="rounded-md border border-brand-200 bg-brand-50/70 p-2 dark:border-brand-500/30 dark:bg-brand-500/10">
                   <div class="mb-2 flex items-center justify-between">
-                    <span class="text-xs font-semibold text-brand-800 dark:text-brand-200">Unit types</span>
-                    <button type="button" (click)="addUnitRow(i)" title="Add unit"
+                    @if (isBeveragesCategory(productForm.category)) {
+                      <button type="button" (click)="toggleUnitsCollapsed(i)"
+                        class="flex items-center gap-2 text-xs font-semibold text-brand-800 dark:text-brand-200">
+                        <svg class="h-4 w-4 transition-transform" [class.rotate-180]="!v.unitsCollapsed" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                        <span>Unit types</span>
+                      </button>
+                    } @else {
+                      <span class="text-xs font-semibold text-brand-800 dark:text-brand-200">Unit types</span>
+                    }
+                    <button type="button" (click)="addUnitRow(i)" title="Add unit type"
                       class="rounded-md p-1.5 text-brand-700 hover:bg-brand-100 dark:text-brand-300 dark:hover:bg-brand-500/20">
                       <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
                     </button>
                   </div>
-                  @for (u of v.units; track $index; let ui = $index) {
-                    <div class="mb-2 grid grid-cols-2 gap-2 rounded-md border border-brand-100 bg-white/90 p-2 last:mb-0 dark:border-brand-500/20 dark:bg-gray-900/70">
-                      <div class="col-span-2 flex items-center justify-between gap-2">
-                        <label class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
-                          <input type="radio" [name]="'default-unit-' + i" [checked]="u.isDefault" (change)="setDefaultUnit(i, ui)" />
-                          Default unit for POS
+                  @if (!isBeveragesCategory(productForm.category) || !v.unitsCollapsed) {
+                    @for (u of v.units; track $index; let ui = $index) {
+                      <div class="mb-2 grid grid-cols-2 gap-2 rounded-md border border-brand-100 bg-white/90 p-2 last:mb-0 dark:border-brand-500/20 dark:bg-gray-900/70">
+                        <div class="col-span-2 flex items-center justify-between gap-2">
+                          <label class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                            <input type="radio" [name]="'default-unit-' + i" [checked]="u.isDefault" (change)="setDefaultUnit(i, ui)" />
+                            Default unit for POS
+                          </label>
+                        </div>
+                        <label class="block col-span-2">
+                          <span class="mb-1 block text-[10px] font-medium text-gray-500">Unit</span>
+                          <select [(ngModel)]="u.unitType" (ngModelChange)="onUnitTypeChange(i, ui)"
+                            class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900">
+                            @for (unit of unitTypeOptions; track unit.value) { <option [value]="unit.value">{{ unit.label }}</option> }
+                          </select>
                         </label>
+                        <label class="block">
+                          <span class="mb-1 block text-[10px] font-medium text-gray-500">{{ unitPriceHint(u.unitType) }} (₱)</span>
+                          <input type="number" [(ngModel)]="u.sellingPrice" (ngModelChange)="onUnitPriceChange(i)" step="0.01"
+                            class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />
+                        </label>
+                        <label class="block">
+                          <span class="mb-1 block text-[10px] font-medium text-gray-500">Sale price (₱)</span>
+                          <input type="number" [(ngModel)]="u.salePrice" (ngModelChange)="onUnitPriceChange(i)" step="0.01"
+                            class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />
+                        </label>
+                        @if (v.units.length > 1) {
+                          <button type="button" (click)="removeUnitRow(i, ui)" title="Remove unit"
+                            class="col-span-2 flex items-center gap-1 text-red-500">
+                            <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                          </button>
+                        }
                       </div>
-                      <label class="block col-span-2">
-                        <span class="mb-1 block text-[10px] font-medium text-gray-500">Unit</span>
-                        <select [(ngModel)]="u.unitType" (ngModelChange)="onUnitTypeChange(i, ui)"
-                          class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900">
-                          @for (unit of unitTypeOptions; track unit.value) { <option [value]="unit.value">{{ unit.label }}</option> }
-                        </select>
-                      </label>
-                      <label class="block">
-                        <span class="mb-1 block text-[10px] font-medium text-gray-500">{{ unitPriceHint(u.unitType) }} (₱)</span>
-                        <input type="number" [(ngModel)]="u.sellingPrice" (ngModelChange)="onUnitPriceChange(i)" step="0.01"
-                          class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />
-                      </label>
-                      <label class="block">
-                        <span class="mb-1 block text-[10px] font-medium text-gray-500">Sale price (₱)</span>
-                        <input type="number" [(ngModel)]="u.salePrice" (ngModelChange)="onUnitPriceChange(i)" step="0.01"
-                          class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />
-                      </label>
-                      @if (v.units.length > 1) {
-                        <button type="button" (click)="removeUnitRow(i, ui)" title="Remove unit"
-                          class="col-span-2 flex items-center gap-1 text-red-500">
-                          <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                        </button>
-                      }
-                    </div>
+                    }
+                  } @else {
+                    <p class="text-[11px] text-brand-700/80 dark:text-brand-200/80">Optional for beverages. Use + to add a unit type, or expand to edit.</p>
                   }
                 </div>
+                @if (isBeveragesCategory(productForm.category)) {
+                  <label class="flex items-center gap-2 rounded-md border border-amber-200 bg-amber-50/70 px-3 py-2 text-sm text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+                    <input type="checkbox" [(ngModel)]="v.hasSugarLevel" class="h-4 w-4 rounded border-gray-300" />
+                    This variant has sugar level options
+                  </label>
+                  <div class="rounded-md border border-violet-200 bg-violet-50/70 p-2 dark:border-violet-500/30 dark:bg-violet-500/10">
+                    <div class="mb-2 flex items-center justify-between">
+                      <button type="button" (click)="toggleSubVariantsCollapsed(i)"
+                        class="flex items-center gap-2 text-xs font-semibold text-violet-800 dark:text-violet-200">
+                        <svg class="h-4 w-4 transition-transform" [class.rotate-180]="!v.subVariantsCollapsed" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                        <span>Sub-variants (temp / size)</span>
+                      </button>
+                      <div class="flex items-center gap-1">
+                        <button type="button" (click)="addSubVariantRow(i)" title="Add sub-variant"
+                          class="rounded-md p-1.5 text-violet-700 hover:bg-violet-100 dark:text-violet-300 dark:hover:bg-violet-500/20">
+                          <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                        </button>
+                      </div>
+                    </div>
+                    @if (!v.subVariantsCollapsed) {
+                      @if (!v.subVariants.length) {
+                        <p class="text-[11px] text-violet-700/80 dark:text-violet-200/80">Add rows like Hot/Iced + Small/Regular/Medium/Large.</p>
+                      }
+                      @for (s of v.subVariants; track $index; let si = $index) {
+                        <div class="mb-2 grid grid-cols-2 gap-2 rounded-md border border-violet-100 bg-white/90 p-2 last:mb-0 dark:border-violet-500/20 dark:bg-gray-900/70">
+                          <div class="col-span-2 flex items-center justify-end gap-1">
+                            <button type="button" (click)="moveSubVariantRow(i, si, -1)" [disabled]="si === 0" title="Move sub-variant up"
+                              class="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 disabled:opacity-40 dark:text-gray-300 dark:hover:bg-gray-800">
+                              <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 15l7-7 7 7" />
+                              </svg>
+                            </button>
+                            <button type="button" (click)="moveSubVariantRow(i, si, 1)" [disabled]="si === v.subVariants.length - 1" title="Move sub-variant down"
+                              class="rounded-md p-1.5 text-gray-500 hover:bg-gray-100 disabled:opacity-40 dark:text-gray-300 dark:hover:bg-gray-800">
+                              <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                              </svg>
+                            </button>
+                          </div>
+                          <label class="block">
+                            <span class="mb-1 block text-[10px] font-medium text-gray-500">Temperature</span>
+                            <select [(ngModel)]="s.tempType"
+                              class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900">
+                              <option value="">Any / N/A</option>
+                              <option value="hot">Hot</option>
+                              <option value="iced">Iced</option>
+                            </select>
+                          </label>
+                          <label class="block">
+                            <span class="mb-1 block text-[10px] font-medium text-gray-500">Size *</span>
+                            <input type="text" [(ngModel)]="s.sizeLabel" list="beverage-size-options" placeholder="small, regular…"
+                              class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />
+                          </label>
+                          <label class="block">
+                            <span class="mb-1 block text-[10px] font-medium text-gray-500">Price (₱)</span>
+                            <input type="number" [(ngModel)]="s.sellingPrice" step="0.01"
+                              class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />
+                          </label>
+                          <label class="block">
+                            <span class="mb-1 block text-[10px] font-medium text-gray-500">Sale price (₱)</span>
+                            <input type="number" [(ngModel)]="s.salePrice" step="0.01"
+                              class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />
+                          </label>
+                          <button type="button" (click)="removeSubVariantRow(i, si)" title="Remove sub-variant"
+                            class="col-span-2 flex items-center gap-1 text-red-500">
+                            <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            Remove
+                          </button>
+                        </div>
+                      }
+                      <datalist id="beverage-size-options">
+                        <option value="small"></option>
+                        <option value="regular"></option>
+                        <option value="medium"></option>
+                        <option value="large"></option>
+                      </datalist>
+                    }
+                  </div>
+                }
                 <label class="block">
                   <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Margin (%)</span>
                   <input type="number" [(ngModel)]="v.marginPercent" readonly
                     class="w-full rounded-lg border bg-gray-50 px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-800" />
                 </label>
               </div>
+              }
             </div>
           }
         } @else {

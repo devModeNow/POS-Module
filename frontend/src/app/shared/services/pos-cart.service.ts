@@ -5,8 +5,14 @@ const STORAGE_PREFIX = 'cbis-pos-cart-';
 
 @Injectable({ providedIn: 'root' })
 export class PosCartService {
-  cartKey(variantId: number, unitType: string): string {
-    return `${variantId}:${unitType}`;
+  cartKey(
+    variantId: number,
+    unitType: string,
+    extras?: { subVariantId?: number | null; sugarLevel?: string | null },
+  ): string {
+    const sub = extras?.subVariantId != null ? String(extras.subVariantId) : '0';
+    const sugar = extras?.sugarLevel ? String(extras.sugarLevel) : '-';
+    return `${variantId}:${unitType}:${sub}:${sugar}`;
   }
 
   load(orgId: number): CartLine[] {
