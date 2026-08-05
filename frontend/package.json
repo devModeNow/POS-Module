@@ -3,11 +3,10 @@
   "version": "1.0.2",
   "scripts": {
     "ng": "ng",
-    "env": "node scripts/generate-env.mjs",
-    "start": "node scripts/generate-env.mjs && ng serve",
-    "build": "node scripts/generate-env.mjs && node --max-old-space-size=4096 ./node_modules/@angular/cli/bin/ng.js build",
-    "build:prod": "node scripts/generate-env.mjs && node --max-old-space-size=4096 ./node_modules/@angular/cli/bin/ng.js build --configuration=production",
-    "watch": "node scripts/generate-env.mjs && ng build --watch --configuration development",
+    "start": "ng serve",
+    "build": "node --max-old-space-size=4096 ./node_modules/@angular/cli/bin/ng.js build",
+    "build:prod": "node --max-old-space-size=4096 ./node_modules/@angular/cli/bin/ng.js build --configuration=production",
+    "watch": "ng build --watch --configuration development",
     "test": "ng test"
   },
   "private": true,
