@@ -196,6 +196,36 @@
           <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">{{ isUploadingDrTemplate ? 'Uploading...' : 'PDF only' }}</p>
         </div>
       </div>
+
+      <div *ngIf="canAccessBackup" class="rounded-xl border border-brand-200 bg-brand-50/50 p-4 dark:border-brand-500/30 dark:bg-brand-500/10">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h4 class="text-sm font-semibold text-gray-900 dark:text-white">Database Backup</h4>
+            <p class="mt-1 text-xs text-gray-600 dark:text-gray-300">
+              Create a full SQL backup in one click. Open the Database Backup tab for history and downloads.
+            </p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button
+              type="button"
+              class="rounded-lg border border-brand-300 bg-white px-4 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50 dark:border-brand-500/40 dark:bg-gray-900 dark:text-brand-300"
+              (click)="setActiveTab('database-backup')"
+            >
+              Open Backup Tab
+            </button>
+            <button
+              type="button"
+              class="rounded-lg bg-brand-600 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-700 disabled:opacity-60"
+              [disabled]="isCreatingBackup || hasBackupInProgress"
+              (click)="createBackup()"
+            >
+              {{ isCreatingBackup || hasBackupInProgress ? 'Backing up…' : 'Backup Now' }}
+            </button>
+          </div>
+        </div>
+        <div *ngIf="backupMessage" class="mt-3 text-sm text-emerald-700 dark:text-emerald-300">{{ backupMessage }}</div>
+        <div *ngIf="backupError" class="mt-3 text-sm text-red-700 dark:text-red-300">{{ backupError }}</div>
+      </div>
     </div>
 
     <!-- Print Settings Tab -->
@@ -433,6 +463,49 @@
           </button>
         </div>
       </div>
+      <div *ngIf="!isLoadingUnitTypes" class="mb-3 flex flex-wrap items-end gap-2">
+        <div>
+          <label class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Search</label>
+          <input
+            type="text"
+            [(ngModel)]="unitTypeSearch"
+            (ngModelChange)="onUnitTypeFilterChange()"
+            placeholder="Label or code…"
+            class="w-48 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200"
+          />
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Status</label>
+          <select
+            [(ngModel)]="unitTypeStatusFilter"
+            (ngModelChange)="onUnitTypeFilterChange()"
+            class="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200"
+          >
+            <option value="all">All</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
+        <div>
+          <label class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Used for</label>
+          <select
+            [(ngModel)]="unitTypeScopeFilter"
+            (ngModelChange)="onUnitTypeFilterChange()"
+            class="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200"
+          >
+            <option value="all">All</option>
+            <option value="Beverages">Beverages</option>
+            <option value="Others">Others</option>
+          </select>
+        </div>
+        <button
+          type="button"
+          (click)="clearUnitTypeFilters()"
+          class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+        >
+          Clear
+        </button>
+      </div>
       <div *ngIf="isLoadingUnitTypes" class="text-sm text-gray-500">Loading unit types...</div>
       <div *ngIf="!isLoadingUnitTypes" class="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
         <table class="w-full min-w-[560px] text-sm">
@@ -446,7 +519,7 @@
             </tr>
           </thead>
           <tbody>
-            <tr *ngFor="let row of unitTypes" class="border-b border-gray-100 dark:border-gray-800"
+            <tr *ngFor="let row of paginatedUnitTypes" class="border-b border-gray-100 dark:border-gray-800"
               [class.opacity-60]="!row.isActive">
               <td class="px-4 py-3 text-gray-800 dark:text-gray-200">
                 <ng-container *ngIf="editingUnitTypeId === row.id; else unitLabelView">
@@ -506,11 +579,44 @@
                 </div>
               </td>
             </tr>
-            <tr *ngIf="unitTypes.length === 0">
-              <td colspan="5" class="px-4 py-8 text-center text-gray-500">No unit types yet.</td>
+            <tr *ngIf="paginatedUnitTypes.length === 0">
+              <td colspan="5" class="px-4 py-8 text-center text-gray-500">
+                {{ unitTypes.length === 0 ? 'No unit types yet.' : 'No unit types match your filters.' }}
+              </td>
             </tr>
           </tbody>
         </table>
+      </div>
+      <div *ngIf="!isLoadingUnitTypes && filteredUnitTypes.length > 0"
+        class="mt-4 flex flex-col gap-3 border-t border-gray-200 pt-4 dark:border-gray-700 sm:flex-row sm:items-center sm:justify-between">
+        <div class="flex flex-wrap items-center gap-3">
+          <p class="text-xs text-gray-500 dark:text-gray-400">
+            Showing {{ (unitTypeCurrentPage - 1) * unitTypePageSize + 1 }}
+            to {{ unitTypeCurrentPage * unitTypePageSize > filteredUnitTypes.length ? filteredUnitTypes.length : unitTypeCurrentPage * unitTypePageSize }}
+            of {{ filteredUnitTypes.length }}
+          </p>
+          <label class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+            Rows
+            <select
+              [(ngModel)]="unitTypePageSize"
+              (ngModelChange)="onUnitTypePageSizeChange()"
+              class="rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300"
+            >
+              <option *ngFor="let size of unitTypePageSizeOptions" [ngValue]="size">{{ size }}</option>
+            </select>
+          </label>
+        </div>
+        <div class="flex gap-1">
+          <button type="button" (click)="prevUnitTypePage()" [disabled]="unitTypeCurrentPage === 1"
+            class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
+            Previous
+          </button>
+          <span class="flex items-center px-3 text-xs text-gray-600 dark:text-gray-400">{{ unitTypeCurrentPage }} / {{ unitTypeTotalPages }}</span>
+          <button type="button" (click)="nextUnitTypePage()" [disabled]="unitTypeCurrentPage === unitTypeTotalPages"
+            class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
+            Next
+          </button>
+        </div>
       </div>
     </div>
 
@@ -531,43 +637,71 @@
         </button>
       </div>
 
-      <!-- Backup Trigger Form -->
-      <div class="rounded-lg border border-gray-200 p-4 dark:border-gray-700">
-        <h3 class="mb-4 text-sm font-semibold text-gray-800 dark:text-gray-100">Create New Backup</h3>
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div>
-            <label class="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Backup Type</label>
-            <select
-              class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-brand-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-              [(ngModel)]="backupForm.type"
-              [disabled]="isCreatingBackup"
-            >
-              <option value="full">Full</option>
-              <option value="schema-only">Schema Only</option>
-              <option value="data-only">Data Only</option>
-            </select>
+      <!-- One-click Backup -->
+      <div class="rounded-xl border border-brand-200 bg-brand-50/60 p-5 dark:border-brand-500/30 dark:bg-brand-500/10">
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div class="min-w-0">
+            <h3 class="text-base font-semibold text-gray-900 dark:text-white">Backup Database</h3>
+            <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">
+              One click creates a full SQL backup. When it finishes, the file downloads automatically.
+            </p>
           </div>
-          <div>
-            <label class="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Format</label>
-            <select
-              class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-brand-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white"
-              [(ngModel)]="backupForm.format"
-              [disabled]="isCreatingBackup"
-            >
-              <option value="plain">Plain SQL (.sql)</option>
-              <option value="custom">Custom Archive (.dump)</option>
-            </select>
-          </div>
-          <div class="flex items-end">
-            <button
-              type="button"
-              class="w-full rounded-lg bg-brand-500 px-4 py-2 text-sm font-semibold text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-60"
-              [disabled]="isCreatingBackup"
-              (click)="createBackup()"
-              aria-label="Create new database backup"
-            >
-              {{ isCreatingBackup ? 'Creating...' : 'Create Backup' }}
-            </button>
+          <button
+            type="button"
+            class="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-brand-600 px-5 py-3 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-60"
+            [disabled]="isCreatingBackup || hasBackupInProgress"
+            (click)="createBackup()"
+            aria-label="Backup database now"
+          >
+            <svg *ngIf="!isCreatingBackup && !hasBackupInProgress" class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            </svg>
+            <svg *ngIf="isCreatingBackup || hasBackupInProgress" class="h-5 w-5 animate-spin" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            {{
+              isCreatingBackup
+                ? 'Starting backup…'
+                : hasBackupInProgress
+                  ? 'Backup in progress…'
+                  : 'Backup Database Now'
+            }}
+          </button>
+        </div>
+
+        <div class="mt-4 border-t border-brand-200/70 pt-3 dark:border-brand-500/20">
+          <button
+            type="button"
+            class="text-xs font-semibold text-brand-700 hover:text-brand-800 dark:text-brand-300 dark:hover:text-brand-200"
+            (click)="showAdvancedBackupOptions = !showAdvancedBackupOptions"
+          >
+            {{ showAdvancedBackupOptions ? 'Hide advanced options' : 'Show advanced options' }}
+          </button>
+          <div *ngIf="showAdvancedBackupOptions" class="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <div>
+              <label class="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Backup Type</label>
+              <select
+                class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-brand-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                [(ngModel)]="backupForm.type"
+                [disabled]="isCreatingBackup || hasBackupInProgress"
+              >
+                <option value="full">Full</option>
+                <option value="schema-only">Schema Only</option>
+                <option value="data-only">Data Only</option>
+              </select>
+            </div>
+            <div>
+              <label class="mb-1 block text-xs font-semibold text-gray-600 dark:text-gray-300">Format</label>
+              <select
+                class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-brand-500 focus:outline-none dark:border-gray-700 dark:bg-gray-800 dark:text-white"
+                [(ngModel)]="backupForm.format"
+                [disabled]="isCreatingBackup || hasBackupInProgress"
+              >
+                <option value="plain">Plain SQL (.sql)</option>
+                <option value="custom">Custom Archive (.dump)</option>
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -587,7 +721,7 @@
           <path stroke-linecap="round" stroke-linejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0l-3-3m3 3l3-3M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
         </svg>
         <p class="text-sm font-medium text-gray-500 dark:text-gray-400">No backups found</p>
-        <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Create your first backup using the form above.</p>
+        <p class="mt-1 text-xs text-gray-400 dark:text-gray-500">Create your first backup with the button above.</p>
       </div>
 
       <!-- Error State (when not loading) -->

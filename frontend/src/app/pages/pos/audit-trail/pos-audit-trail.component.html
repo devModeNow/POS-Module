@@ -37,10 +37,58 @@
     }
 
     <section class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-white/[0.03] xl:p-6">
-      <div class="mb-4">
-        <h2 class="text-sm font-semibold text-gray-800 dark:text-white/90">Recent activity</h2>
-        <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Latest system actions across all user types</p>
+      <div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h2 class="text-sm font-semibold text-gray-800 dark:text-white/90">Recent activity</h2>
+          <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Search, filter, and page through system actions</p>
+        </div>
+        <div class="flex flex-wrap items-end gap-2">
+          <div>
+            <label class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Search</label>
+            <input
+              type="text"
+              [(ngModel)]="search"
+              (ngModelChange)="onFilterChange()"
+              placeholder="User, action, entity…"
+              class="w-48 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200"
+            />
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Action</label>
+            <select
+              [(ngModel)]="actionFilter"
+              (ngModelChange)="onFilterChange()"
+              class="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200"
+            >
+              <option value="">All actions</option>
+              @for (action of actionOptions; track action) {
+                <option [value]="action">{{ action }}</option>
+              }
+            </select>
+          </div>
+          <div>
+            <label class="mb-1 block text-xs font-medium text-gray-500 dark:text-gray-400">Role</label>
+            <select
+              [(ngModel)]="roleFilter"
+              (ngModelChange)="onFilterChange()"
+              class="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200"
+            >
+              <option value="">All roles</option>
+              @for (role of roleOptions; track role) {
+                <option [value]="role">{{ role }}</option>
+              }
+            </select>
+          </div>
+          <button
+            type="button"
+            (click)="clearFilters()"
+            class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800"
+          >
+            Clear
+          </button>
+        </div>
       </div>
+
       <div class="relative overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-800">
         @if (loading && logs.length === 0) {
           <div class="flex items-center justify-center gap-3 py-14 text-sm text-gray-500">
@@ -71,7 +119,7 @@
               </tr>
             </thead>
             <tbody>
-              @for (row of logs; track row.id) {
+              @for (row of paginatedLogs; track row.id) {
                 <tr (click)="openDetail(row)" title="View full details"
                   class="cursor-pointer border-b border-gray-100 transition-colors hover:bg-gray-50/80 last:border-0 dark:border-gray-800/70 dark:hover:bg-white/[0.02]">
                   <td class="whitespace-nowrap px-4 py-3.5 text-sm text-gray-700 dark:text-gray-300">{{ row.createdAt | date:'MMM dd, yyyy HH:mm' }}</td>
@@ -83,13 +131,46 @@
                 </tr>
               } @empty {
                 @if (!loading) {
-                  <tr><td colspan="6" class="px-4 py-12 text-center text-sm text-gray-500">No audit entries yet.</td></tr>
+                  <tr><td colspan="6" class="px-4 py-12 text-center text-sm text-gray-500">No audit entries match your filters.</td></tr>
                 }
               }
             </tbody>
           </table>
         }
       </div>
+
+      @if (filteredLogs.length > 0) {
+        <div class="mt-4 flex flex-col gap-3 border-t border-gray-200 pt-4 dark:border-gray-700 sm:flex-row sm:items-center sm:justify-between">
+          <div class="flex flex-wrap items-center gap-3">
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+              Showing {{ (currentPage - 1) * pageSize + 1 }} to {{ currentPage * pageSize > filteredLogs.length ? filteredLogs.length : currentPage * pageSize }} of {{ filteredLogs.length }}
+            </p>
+            <label class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+              Rows
+              <select
+                [(ngModel)]="pageSize"
+                (ngModelChange)="onPageSizeChange()"
+                class="rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300"
+              >
+                @for (size of pageSizeOptions; track size) {
+                  <option [ngValue]="size">{{ size }}</option>
+                }
+              </select>
+            </label>
+          </div>
+          <div class="flex gap-1">
+            <button type="button" (click)="prevPage()" [disabled]="currentPage === 1"
+              class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
+              Previous
+            </button>
+            <span class="flex items-center px-3 text-xs text-gray-600 dark:text-gray-400">{{ currentPage }} / {{ totalPages }}</span>
+            <button type="button" (click)="nextPage()" [disabled]="currentPage === totalPages"
+              class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
+              Next
+            </button>
+          </div>
+        </div>
+      }
     </section>
   </div>
 </div>

@@ -32,7 +32,7 @@ import type { BackupMetadata } from './interfaces';
  */
 @Controller('backups')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles('admin', 'superadmin')
+@Roles('admin', 'superadmin', 'owner', 'manager', 'pos admin', 'posadmin')
 export class BackupController {
   constructor(private readonly backupService: BackupService) {}
 

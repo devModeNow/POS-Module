@@ -169,7 +169,9 @@ Living notes for agents continuing this repo. Prefer this file over re-reading l
 - **POS Reports:** new **Product Logs** report lists product name, category, brand, added timestamp (`created_at`), and last updated timestamp (`updated_at`) from `tblinventory_products`.
 - **Checkout (Bank Transfer):** cashier must enter buyer/customer fullname before submit. Saved on `tblsales_transactions.customer_full_name`; backend also enforces it so offline/queued or manual requests cannot bypass the rule.
 - **Checkout references:** `Reference #` is now required for every **non-cash** payment method; cash stays exempt. Backend validates this too.
-- **Key files:** `inventory.component.*`, `pos-dashboard.component.*`, `settings.component.*`, `inventory-products.service.ts`, `inventory-unit-types.service.ts`, `pos.service.ts` types.
+- **Admin Settings → Database Backup:** tab is second in Settings (after System). System tab also shows **Backup Now** + **Open Backup Tab** when allowed. One-click full SQL backup; polls until complete, then auto-downloads. Advanced options stay collapsed. Visible to admin-like roles (incl. names containing “admin”) and users with Settings `canUpdate`. Backend `/backups` RolesGuard mirrors that (role match **or** settings update in JWT) so POS admins with custom/empty role names do not get 403. Needs working `PG_DUMP_PATH` on the backend host.
+- **Settings → Audit Trail / Unit Types:** both tables support search, filters (action/role; status/scope), and pagination (page size + prev/next).
+- **Key files:** `inventory.component.*`, `pos-dashboard.component.*`, `settings.component.*`, `pos-audit-trail.component.*`, `inventory-products.service.ts`, `inventory-unit-types.service.ts`, `pos.service.ts` types, `backup/guards/roles.guard.ts`.
 
 ## Key printer files
 - Panel: `frontend/.../pos-printer-settings-panel/*`

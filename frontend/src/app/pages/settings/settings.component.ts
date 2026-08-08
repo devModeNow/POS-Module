@@ -98,6 +98,8 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
   backupMessageTimeout: ReturnType<typeof setTimeout> | null = null;
   pollingInterval: ReturnType<typeof setInterval> | null = null;
   backupForm: { type: BackupType; format: BackupFormat } = { type: 'full', format: 'plain' };
+  showAdvancedBackupOptions = false;
+  autoDownloadIds: Set<string> = new Set();
   showDeleteConfirm = false;
   deleteTargetId: string | null = null;
 
@@ -237,13 +239,13 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
 
   readonly tabs: Array<{ key: SettingsTab; label: string }> = [
     { key: 'system', label: 'System' },
+    { key: 'database-backup', label: 'Database Backup' },
     { key: 'print-settings', label: 'Print Settings' },
     { key: 'void-codes', label: 'Void Codes' },
     { key: 'user-management', label: 'User Management' },
     { key: 'audit-trail', label: 'Audit Trail' },
     { key: 'rbac-configs', label: 'RBAC Configs' },
     { key: 'unit-types', label: 'Unit Types' },
-    { key: 'database-backup', label: 'Database Backup' },
   ];
 
   get isPosOrg(): boolean {
@@ -251,7 +253,67 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
   }
 
   get canAccessBackup(): boolean {
-    return this.rbacService.isAdminOrSuperAdmin();
+    // Match backend RolesGuard (case-insensitive admin/superadmin),
+    // and also allow POS users who can update settings.
+    return this.rbacService.isAdminOrSuperAdmin()
+      || (this.isPosOrg && this.canUpdateSettings);
+  }
+
+  // Unit Types table: search / filter / pagination
+  unitTypeSearch = '';
+  unitTypeStatusFilter: 'all' | 'active' | 'inactive' = 'all';
+  unitTypeScopeFilter: 'all' | 'Beverages' | 'Others' = 'all';
+  unitTypeCurrentPage = 1;
+  unitTypePageSize = 20;
+  readonly unitTypePageSizeOptions = [10, 20, 50, 100];
+
+  get filteredUnitTypes(): OrgUnitType[] {
+    const q = this.unitTypeSearch.trim().toLowerCase();
+    return this.unitTypes.filter((row) => {
+      if (this.unitTypeStatusFilter === 'active' && !row.isActive) return false;
+      if (this.unitTypeStatusFilter === 'inactive' && row.isActive) return false;
+      const scope = row.usageScope === 'Beverages' ? 'Beverages' : 'Others';
+      if (this.unitTypeScopeFilter !== 'all' && scope !== this.unitTypeScopeFilter) return false;
+      if (!q) return true;
+      const haystack = `${row.label} ${row.code} ${scope}`.toLowerCase();
+      return haystack.includes(q);
+    });
+  }
+
+  get unitTypeTotalPages(): number {
+    return Math.max(1, Math.ceil(this.filteredUnitTypes.length / this.unitTypePageSize));
+  }
+
+  get paginatedUnitTypes(): OrgUnitType[] {
+    const start = (this.unitTypeCurrentPage - 1) * this.unitTypePageSize;
+    return this.filteredUnitTypes.slice(start, start + this.unitTypePageSize);
+  }
+
+  onUnitTypeFilterChange(): void {
+    this.unitTypeCurrentPage = 1;
+  }
+
+  clearUnitTypeFilters(): void {
+    this.unitTypeSearch = '';
+    this.unitTypeStatusFilter = 'all';
+    this.unitTypeScopeFilter = 'all';
+    this.unitTypeCurrentPage = 1;
+  }
+
+  goToUnitTypePage(page: number): void {
+    if (page >= 1 && page <= this.unitTypeTotalPages) this.unitTypeCurrentPage = page;
+  }
+
+  nextUnitTypePage(): void {
+    this.goToUnitTypePage(this.unitTypeCurrentPage + 1);
+  }
+
+  prevUnitTypePage(): void {
+    this.goToUnitTypePage(this.unitTypeCurrentPage - 1);
+  }
+
+  onUnitTypePageSizeChange(): void {
+    this.unitTypeCurrentPage = 1;
   }
 
   get visibleTabs(): Array<{ key: SettingsTab; label: string }> {
@@ -479,6 +541,7 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
         return;
       }
       this.unitTypes = r.data ?? [];
+      this.unitTypeCurrentPage = 1;
     } catch (error: unknown) {
       this.unitTypes = [];
       this.uiError = this.resolveErrorMessage(error, 'Failed to load unit types.');
@@ -646,13 +709,18 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
     }
   }
 
+  get hasBackupInProgress(): boolean {
+    return this.backups.some((b) => b.status === 'pending' || b.status === 'in_progress');
+  }
+
   async loadBackups(): Promise<void> {
     this.isLoadingBackups = true;
     this.backupError = '';
     try {
       const backups = await this.backupService.listBackups();
       this.backups = backups;
-      if (shouldPoll(backups)) {
+      await this.handleCompletedAutoDownloads(backups);
+      if (shouldPoll(backups) || this.autoDownloadIds.size > 0) {
         this.startPolling();
       } else {
         this.stopPolling();
@@ -670,13 +738,14 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
       try {
         const backups = await this.backupService.listBackups();
         this.backups = backups;
-        if (!shouldPoll(backups)) {
+        await this.handleCompletedAutoDownloads(backups);
+        if (!shouldPoll(backups) && this.autoDownloadIds.size === 0) {
           this.stopPolling();
         }
       } catch {
         // Polling errors are silently ignored (no UI disruption)
       }
-    }, 5000);
+    }, this.autoDownloadIds.size > 0 ? 2000 : 5000);
   }
 
   stopPolling(): void {
@@ -697,6 +766,7 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
   // --- Backup CRUD Action Methods ---
 
   async createBackup(): Promise<void> {
+    if (this.isCreatingBackup || this.hasBackupInProgress) return;
     this.isCreatingBackup = true;
     try {
       const result = await this.backupService.createBackup(this.backupForm);
@@ -709,13 +779,35 @@ export class SettingsComponent implements OnInit, OnDestroy, AfterViewChecked {
         createdAt: new Date().toISOString(),
       };
       this.backups = [newEntry, ...this.backups];
-      this.showFeedback('success', 'Backup initiated successfully');
+      this.autoDownloadIds.add(result.id);
+      this.showFeedback('success', 'Backup started. Your file will download when ready.');
       this.startPolling();
     } catch (error: unknown) {
       const message = this.resolveErrorMessage(error, 'Failed to create backup.');
       this.showFeedback('error', message);
     } finally {
       this.isCreatingBackup = false;
+    }
+  }
+
+  private async handleCompletedAutoDownloads(backups: BackupMetadata[]): Promise<void> {
+    if (!this.autoDownloadIds.size) return;
+    const readyIds = backups
+      .filter((b) => this.autoDownloadIds.has(b.id) && b.status === 'completed')
+      .map((b) => b.id);
+    const failedIds = backups
+      .filter((b) => this.autoDownloadIds.has(b.id) && b.status === 'failed')
+      .map((b) => b.id);
+
+    for (const id of failedIds) {
+      this.autoDownloadIds.delete(id);
+      this.showFeedback('error', 'Backup failed. Check the list for details.');
+    }
+
+    for (const id of readyIds) {
+      this.autoDownloadIds.delete(id);
+      this.showFeedback('success', 'Backup ready. Downloading…');
+      await this.downloadBackup(id);
     }
   }
 

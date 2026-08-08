@@ -416,8 +416,17 @@ export class RbacService {
   }
 
   isAdminOrSuperAdmin(): boolean {
-    const role = String(this.getPayload()?.roleName ?? '').trim().toLowerCase();
-    return role === 'superadmin' || role === 'super admin' || role === 'admin';
+    const role = String(this.getPayload()?.roleName ?? '').trim().toLowerCase().replace(/\s+/g, ' ');
+    return (
+      role === 'superadmin'
+      || role === 'super admin'
+      || role === 'admin'
+      || role === 'owner'
+      || role === 'manager'
+      || role === 'pos admin'
+      || role === 'posadmin'
+      || role.includes('admin')
+    );
   }
 
   isCashier(): boolean {
