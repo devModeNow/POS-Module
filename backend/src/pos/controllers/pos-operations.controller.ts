@@ -1,6 +1,8 @@
-import { Body, Controller, Delete, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, Query, Req, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/auth/jwt-auth.guard';
 import { AuditService } from 'src/common/audit/audit.service';
+import { PosCostsService } from '../services/pos-costs.service';
+import { PosDailyStockService } from '../services/pos-daily-stock.service';
 import { PosStaffService } from '../services/pos-staff.service';
 import { PosVoidService } from '../services/pos-void.service';
 import { PosStoreReportsService } from '../services/store-reports.service';
@@ -18,6 +20,8 @@ export class PosOperationsController {
     private readonly voidSvc: PosVoidService,
     private readonly audit: AuditService,
     private readonly reports: PosStoreReportsService,
+    private readonly dailyStock: PosDailyStockService,
+    private readonly costs: PosCostsService,
   ) {}
 
   @Post('staff/heartbeat')
@@ -29,6 +33,56 @@ export class PosOperationsController {
   onDuty(@Query('withinMinutes') withinMinutes: string, @Req() req: AuthReq) {
     const mins = Number(withinMinutes) || 30;
     return this.staff.listOnDuty(posOrgId(req), mins);
+  }
+
+  @Get('staff/cashiers')
+  listCashiers(@Req() req: AuthReq) {
+    return this.staff.listCashiers(posOrgId(req));
+  }
+
+  @Get('daily-stock')
+  dailyStockList(@Query('date') date: string, @Req() req: AuthReq) {
+    return this.dailyStock.listForDate(posOrgId(req), date);
+  }
+
+  @Put('daily-stock')
+  dailyStockSave(
+    @Body() body: { businessDate?: string; items?: Array<{ variantId?: number; closingQty?: number | null }> },
+    @Req() req: AuthReq,
+  ) {
+    return this.dailyStock.saveClosingCounts(posOrgId(req), posUserId(req), body ?? {});
+  }
+
+  @Get('costs')
+  listCosts(
+    @Query('from') from: string,
+    @Query('to') to: string,
+    @Query('createdBy') createdBy: string,
+    @Req() req: AuthReq,
+  ) {
+    return this.costs.list(posOrgId(req), from, to, Number(createdBy) || undefined);
+  }
+
+  @Post('costs')
+  createCost(
+    @Body() body: { amount?: number; reason?: string; receiptImage?: string | null },
+    @Req() req: AuthReq,
+  ) {
+    return this.costs.create(posOrgId(req), posUserId(req), body ?? {});
+  }
+
+  @Put('costs/:id')
+  updateCost(
+    @Param('id') id: string,
+    @Body() body: { amount?: number; reason?: string; receiptImage?: string | null },
+    @Req() req: AuthReq,
+  ) {
+    return this.costs.update(posOrgId(req), posUserId(req), +id, body ?? {});
+  }
+
+  @Delete('costs/:id')
+  deleteCost(@Param('id') id: string, @Req() req: AuthReq) {
+    return this.costs.remove(posOrgId(req), posUserId(req), +id);
   }
 
   @Get('my-sales')

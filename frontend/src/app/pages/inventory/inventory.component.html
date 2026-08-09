@@ -626,23 +626,6 @@
                     }
                   </label>
                 </div>
-                <div class="grid grid-cols-2 gap-2">
-                  <label class="block">
-                    <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Stock qty</span>
-                    <input type="number" [(ngModel)]="v.stockQty" step="0.001"
-                      class="w-full rounded-lg border px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
-                  </label>
-                  <label class="block">
-                    <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Cost price (₱)</span>
-                    <input type="number" [(ngModel)]="v.costPrice" (ngModelChange)="onVariantCostChange(i)" step="0.01"
-                      class="w-full rounded-lg border px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
-                  </label>
-                  <label class="block col-span-2">
-                    <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Low-stock warning</span>
-                    <input type="number" [(ngModel)]="v.stockWarning" step="0.001"
-                      class="w-full rounded-lg border px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
-                  </label>
-                </div>
                 <div class="rounded-md border border-brand-200 bg-brand-50/70 p-2 dark:border-brand-500/30 dark:bg-brand-500/10">
                   <div class="mb-2 flex items-center justify-between">
                     @if (isBeveragesCategory(productForm.category)) {
@@ -663,8 +646,36 @@
                   </div>
                   @if (!isBeveragesCategory(productForm.category) || !v.unitsCollapsed) {
                     @for (u of v.units; track $index; let ui = $index) {
-                      <div class="mb-2 grid grid-cols-2 gap-2 rounded-md border border-brand-100 bg-white/90 p-2 last:mb-0 dark:border-brand-500/20 dark:bg-gray-900/70">
-                        <div class="col-span-2 flex items-center justify-between gap-2">
+                      <div class="mb-2 rounded-md border border-brand-100 bg-white/90 p-2 last:mb-0 dark:border-brand-500/20 dark:bg-gray-900/70">
+                        <div class="flex items-center justify-between gap-2">
+                          <button type="button" (click)="toggleUnitCollapsed(i, ui)"
+                            class="flex min-w-0 flex-1 items-center gap-2 text-left text-xs font-medium text-gray-600 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white">
+                            <svg class="h-4 w-4 shrink-0 transition-transform" [class.rotate-180]="!u.collapsed" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                            </svg>
+                            <span class="truncate capitalize">
+                              Unit {{ ui + 1 }} — {{ u.unitType || 'unit' }}
+                              @if (u.isDefault) { <span class="font-normal text-gray-400">(default)</span> }
+                            </span>
+                          </button>
+                          <div class="flex shrink-0 items-center gap-0.5">
+                            <button type="button" (click)="duplicateUnitRow(i, ui)" title="Duplicate unit type"
+                              class="rounded-md p-1.5 text-brand-600 hover:bg-brand-50 dark:text-brand-300 dark:hover:bg-brand-500/10">
+                              <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                              </svg>
+                            </button>
+                            @if (v.units.length > 1 || isBeveragesCategory(productForm.category)) {
+                              <button type="button" (click)="removeUnitRow(i, ui)" title="Remove unit"
+                                class="rounded-md p-1.5 text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10">
+                                <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                              </button>
+                            }
+                          </div>
+                        </div>
+                        @if (!u.collapsed) {
+                        <div class="mt-2 grid grid-cols-2 gap-2">
+                        <div class="col-span-2">
                           <label class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
                             <input type="radio" [name]="'default-unit-' + i" [checked]="u.isDefault" (change)="setDefaultUnit(i, ui)" />
                             Default unit for POS
@@ -677,26 +688,105 @@
                             @for (unit of unitTypeOptions; track unit.value) { <option [value]="unit.value">{{ unit.label }}</option> }
                           </select>
                         </label>
+                        @if (!isBeveragesCategory(productForm.category)) {
+                        <label class="block col-span-2">
+                          <span class="mb-1 block text-[10px] font-medium text-gray-500">Product source</span>
+                          <select
+                            [(ngModel)]="u.productSource"
+                            (ngModelChange)="onUnitProductSourceChange(i, ui)"
+                            [disabled]="isUnitProductSourceLocked(u)"
+                            class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900 disabled:opacity-70"
+                          >
+                            <option value="Retail">Retail</option>
+                            <option value="Wholesale">Wholesale</option>
+                          </select>
+                          <span class="mt-1 block text-[10px] text-gray-500">{{ unitProductSourceHint(u) }}</span>
+                        </label>
+                        }
                         <label class="block">
-                          <span class="mb-1 block text-[10px] font-medium text-gray-500">{{ unitPriceHint(u.unitType) }} (₱)</span>
-                          <input type="number" [(ngModel)]="u.sellingPrice" (ngModelChange)="onUnitPriceChange(i)" step="0.01"
+                          <span class="mb-1 block text-[10px] font-medium text-gray-500">{{ unitStockQtyLabel(u) }}</span>
+                          <input type="number" [(ngModel)]="u.stockQty" step="0.001" min="0"
+                            class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />
+                          @if (isGramsUnit(u.unitType) || u.isManualEntry) {
+                            <span class="mt-1 block text-[10px] text-gray-500">Enter kilos; stored as grams (1 kg = 1000 g).</span>
+                          }
+                        </label>
+                        <label class="block">
+                          <span class="mb-1 block text-[10px] font-medium text-gray-500">{{ unitStockWarningLabel(u) }}</span>
+                          <input type="number" [(ngModel)]="u.stockWarning" step="0.001" min="0"
                             class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />
                         </label>
                         <label class="block">
-                          <span class="mb-1 block text-[10px] font-medium text-gray-500">Sale price (₱)</span>
+                          <span class="mb-1 block text-[10px] font-medium text-gray-500">Cost price (₱)</span>
+                          <input type="number" [(ngModel)]="u.costPrice" (ngModelChange)="onUnitCostChange(i)" step="0.01" min="0"
+                            class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />
+                        </label>
+                        <div class="col-span-2 rounded-md border border-emerald-200/80 bg-emerald-50/50 p-2 dark:border-emerald-500/30 dark:bg-emerald-500/10">
+                          <div class="mb-2 flex items-center justify-between gap-2">
+                            <div>
+                              <p class="text-[10px] font-semibold uppercase tracking-wide text-emerald-800 dark:text-emerald-200">Quantity prices</p>
+                              <p class="text-[10px] text-emerald-700/80 dark:text-emerald-200/70">e.g. 25 → ₱10, 50 → ₱20. Cashier can tap these amounts.</p>
+                            </div>
+                            <button type="button" (click)="addQtyPriceRow(i, ui)" title="Add quantity price"
+                              class="rounded-md px-2 py-1 text-[11px] font-semibold text-emerald-800 hover:bg-emerald-100 dark:text-emerald-200 dark:hover:bg-emerald-500/20">
+                              + Add
+                            </button>
+                          </div>
+                          @if (u.qtyPrices.length > 0) {
+                            <div class="mb-1 grid grid-cols-[1fr_1fr_auto] gap-2 text-[10px] font-medium text-gray-500">
+                              <span>Quantity</span>
+                              <span>Price (₱)</span>
+                              <span class="w-8"></span>
+                            </div>
+                            @for (tier of u.qtyPrices; track $index; let ti = $index) {
+                              <div class="mb-1.5 grid grid-cols-[1fr_1fr_auto] gap-2 last:mb-0">
+                                <input type="number" [(ngModel)]="tier.qty" (ngModelChange)="onQtyPriceChange(i, ui)" step="0.01" min="0.01"
+                                  class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />
+                                <input type="number" [(ngModel)]="tier.price" (ngModelChange)="onQtyPriceChange(i, ui)" step="0.01" min="0"
+                                  class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />
+                                <button type="button" (click)="removeQtyPriceRow(i, ui, ti)" title="Remove"
+                                  class="rounded-md p-1.5 text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-500/10">
+                                  <svg class="h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                  </svg>
+                                </button>
+                              </div>
+                            }
+                          } @else {
+                            <p class="text-[11px] text-emerald-800/70 dark:text-emerald-200/70">No quantity prices yet. Use Default quantity + selling price, or add presets above.</p>
+                          }
+                        </div>
+                        <label class="block">
+                          <span class="mb-1 block text-[10px] font-medium text-gray-500">Default quantity</span>
+                          <input type="number" [(ngModel)]="u.defaultQty" step="0.01" min="0.01"
+                            [disabled]="!!u.qtyPrices.length"
+                            class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900 disabled:opacity-60" />
+                          @if (u.qtyPrices.length > 0) {
+                            <span class="mt-1 block text-[10px] text-gray-500">Uses the first quantity price row.</span>
+                          }
+                        </label>
+                        <label class="block">
+                          <span class="mb-1 block text-[10px] font-medium text-gray-500">{{ unitPriceHint(u) }} (₱)</span>
+                          <input type="number" [(ngModel)]="u.sellingPrice" (ngModelChange)="onUnitPriceChange(i)" step="0.01"
+                            [disabled]="!!u.qtyPrices.length"
+                            class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900 disabled:opacity-60" />
+                          @if (u.qtyPrices.length > 0) {
+                            <span class="mt-1 block text-[10px] text-gray-500">Uses the first quantity price. Custom amounts use the per-unit rate from that row.</span>
+                          } @else if (unitPricesByDefaultQty(u)) {
+                            <span class="mt-1 block text-[10px] text-gray-500">{{ unitPriceHelper(u) }}</span>
+                          }
+                        </label>
+                        <label class="block">
+                          <span class="mb-1 block text-[10px] font-medium text-gray-500">{{ unitSalePriceHint(u) }} (₱)</span>
                           <input type="number" [(ngModel)]="u.salePrice" (ngModelChange)="onUnitPriceChange(i)" step="0.01"
                             class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />
                         </label>
-                        @if (v.units.length > 1) {
-                          <button type="button" (click)="removeUnitRow(i, ui)" title="Remove unit"
-                            class="col-span-2 flex items-center gap-1 text-red-500">
-                            <svg class="h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                          </button>
+                        </div>
                         }
                       </div>
                     }
                   } @else {
-                    <p class="text-[11px] text-brand-700/80 dark:text-brand-200/80">Optional for beverages. Use + to add a unit type, or expand to edit.</p>
+                    <p class="text-[11px] text-brand-700/80 dark:text-brand-200/80">Optional — beverages use sub-variants for pricing. Add a unit type only if needed.</p>
                   }
                 </div>
                 @if (isBeveragesCategory(productForm.category)) {
@@ -722,7 +812,7 @@
                     </div>
                     @if (!v.subVariantsCollapsed) {
                       @if (!v.subVariants.length) {
-                        <p class="text-[11px] text-violet-700/80 dark:text-violet-200/80">Add rows like Hot/Iced + Small/Regular/Medium/Large.</p>
+                        <p class="text-[11px] text-violet-700/80 dark:text-violet-200/80">Add rows like Hot/Iced + Small/Regular/Medium/Large. Set stock qty on each row — POS availability follows the selected size.</p>
                       }
                       @for (s of v.subVariants; track $index; let si = $index) {
                         <div class="mb-2 grid grid-cols-2 gap-2 rounded-md border border-violet-100 bg-white/90 p-2 last:mb-0 dark:border-violet-500/20 dark:bg-gray-900/70">
@@ -762,6 +852,16 @@
                           <label class="block">
                             <span class="mb-1 block text-[10px] font-medium text-gray-500">Sale price (₱)</span>
                             <input type="number" [(ngModel)]="s.salePrice" step="0.01"
+                              class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />
+                          </label>
+                          <label class="block">
+                            <span class="mb-1 block text-[10px] font-medium text-gray-500">Stock qty</span>
+                            <input type="number" [(ngModel)]="s.stockQty" step="1" min="0"
+                              class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />
+                          </label>
+                          <label class="block">
+                            <span class="mb-1 block text-[10px] font-medium text-gray-500">Stock warning</span>
+                            <input type="number" [(ngModel)]="s.stockWarning" step="1" min="0"
                               class="w-full rounded-lg border px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />
                           </label>
                           <button type="button" (click)="removeSubVariantRow(i, si)" title="Remove sub-variant"
@@ -1000,6 +1100,13 @@
                       }
                     </div>
                   }
+                </div>
+                <div class="col-span-3">
+                  <select [(ngModel)]="item.productSource" [disabled]="isSavingPO"
+                    class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900">
+                    <option value="Retail">Retail</option>
+                    <option value="Wholesale">Wholesale</option>
+                  </select>
                 </div>
                 <input type="number" [(ngModel)]="item.quantity" placeholder="Qty" [disabled]="isSavingPO"
                   class="col-span-2 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />

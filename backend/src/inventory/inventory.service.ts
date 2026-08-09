@@ -3,6 +3,7 @@ import { DatabaseService } from 'src/database/database.service';
 import { PaginatedQueryDto } from './dto/paginated-query.dto';
 import { CreateProductDto } from './dto/create-product.dto';
 import sharp from 'sharp';
+import { kilosToStockGrams, tracksStockInGrams } from '../pos/utils/weight-stock.util';
 
 const MAX_IMAGE_SIZE = 2 * 1024 * 1024;
 const THUMB_SIZE = 400;
@@ -483,6 +484,26 @@ export class InventoryService {
   private async ensurePoSchema(): Promise<void> {
     if (this.poSchemaReady) return;
     await this.db.query(`ALTER TABLE tblpo_items ADD COLUMN IF NOT EXISTS variant_id BIGINT`);
+    await this.db.query(`ALTER TABLE tblpo_items ADD COLUMN IF NOT EXISTS product_source TEXT`);
+    await this.db.query(`
+      ALTER TABLE public.tblinventory_variants
+        ADD COLUMN IF NOT EXISTS product_source TEXT NOT NULL DEFAULT 'Retail'
+    `);
+    await this.db.query(`
+      ALTER TABLE public.tblinventory_variant_units
+        ADD COLUMN IF NOT EXISTS stock_qty NUMERIC(12, 3) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS stock_warning NUMERIC(12, 3) NOT NULL DEFAULT 0
+    `);
+    await this.db.query(`
+      DO $$
+      BEGIN
+        ALTER TABLE public.tblpo_items
+          ADD CONSTRAINT tblpo_items_product_source_check
+          CHECK (product_source IS NULL OR product_source IN ('Retail', 'Wholesale'));
+      EXCEPTION
+        WHEN duplicate_object THEN NULL;
+      END $$
+    `);
     // Drop ALL status CHECKs first — updating to 'draft' while a legacy check is active fails.
     await this.db.query(`
       DO $$
@@ -530,6 +551,12 @@ export class InventoryService {
     this.poSchemaReady = true;
   }
 
+  private normalizePoProductSource(_value: unknown, unitType?: string | null): 'Retail' | 'Wholesale' {
+    const unit = String(unitType ?? '').trim().toLowerCase();
+    if (unit === 'grams' || unit === 'gram' || unit === 'manual') return 'Retail';
+    return 'Wholesale';
+  }
+
   /**
    * Creates a new product record for a PO line item that has neither an inventoryId
    * nor a variantId. If the org already manages POS products/variants, the new
@@ -539,7 +566,14 @@ export class InventoryService {
   private async createNewPoProduct(
     client: { query: DatabaseService['query'] },
     orgId: number,
-    item: { itemName: string; brand?: string; category?: string; unitCost: number },
+    item: {
+      itemName: string;
+      brand?: string;
+      category?: string;
+      unitCost: number;
+      unitType?: string;
+      productSource?: string;
+    },
   ): Promise<{ inventoryId: number | null; variantId: number | null }> {
     const posCheck = await client.query<{ id: number }>(
       `SELECT id FROM tblinventory_products WHERE org_id = $1 AND is_active = TRUE LIMIT 1`,
@@ -552,11 +586,13 @@ export class InventoryService {
          VALUES ($1,$2,$3,$4) RETURNING id`,
         [orgId, item.itemName, item.category ?? null, item.brand ?? null],
       );
+      const productSource = this.normalizePoProductSource(item.productSource, item.unitType);
+      const unitType = String(item.unitType ?? 'piece').trim() || 'piece';
       const variant = await client.query<{ id: number }>(
         `INSERT INTO tblinventory_variants
-           (org_id, product_id, variant_name, stock_qty, stock_warning, cost_price, selling_price)
-         VALUES ($1,$2,'Default',0,0,$3,0) RETURNING id`,
-        [orgId, product.rows[0].id, item.unitCost],
+           (org_id, product_id, variant_name, stock_qty, stock_warning, cost_price, selling_price, unit_type, product_source)
+         VALUES ($1,$2,'Default',0,0,$3,0,$4,$5) RETURNING id`,
+        [orgId, product.rows[0].id, item.unitCost, unitType, productSource],
       );
       return { inventoryId: null, variantId: variant.rows[0].id };
     }
@@ -660,6 +696,7 @@ export class InventoryService {
                 COALESCE(v.unit_type, i.unit_type, 'piece') AS "unitType",
                 COALESCE(i.brand, vp.brand, '') AS "brand",
                 COALESCE(i.category, vp.category, '') AS "category",
+                COALESCE(pi.product_source, v.product_source, 'Retail') AS "productSource",
                 pi.quantity,
                 pi.unit_cost AS "unitCost",
                 pi.total_cost AS "lineTotal"
@@ -687,6 +724,7 @@ export class InventoryService {
           unitType: row['unitType'] ?? 'piece',
           brand: row['brand'] ?? '',
           category: row['category'] ?? '',
+          productSource: String(row['productSource'] ?? 'Retail') === 'Wholesale' ? 'Wholesale' : 'Retail',
           quantity,
           unitCost,
           lineTotal,
@@ -734,6 +772,8 @@ export class InventoryService {
       itemName?: string;
       brand?: string;
       category?: string;
+      unitType?: string;
+      productSource?: string;
       quantity: number;
       unitCost: number;
     }>;
@@ -807,15 +847,18 @@ export class InventoryService {
               brand: item.brand,
               category: item.category,
               unitCost: item.unitCost,
+              unitType: item.unitType,
+              productSource: item.productSource,
             });
             inventoryId = created.inventoryId;
             variantId = created.variantId;
           }
 
           const totalCost = item.quantity * item.unitCost;
+          const productSource = this.normalizePoProductSource(item.productSource, item.unitType);
           await client.query(
-            `INSERT INTO tblpo_items (purchase_id, inventory_id, variant_id, item_name, quantity, unit_cost, total_cost)
-             VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+            `INSERT INTO tblpo_items (purchase_id, inventory_id, variant_id, item_name, quantity, unit_cost, total_cost, product_source)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
             [
               poId,
               inventoryId,
@@ -824,6 +867,7 @@ export class InventoryService {
               item.quantity,
               item.unitCost,
               totalCost,
+              productSource,
             ],
           );
         }
@@ -847,7 +891,21 @@ export class InventoryService {
     }
   }
 
-  async updatePO(id: number, orgId: number, dto: { comments?: string; items?: Array<{ id?: number; inventoryId?: number | null; variantId?: number | null; itemName: string; brand?: string; category?: string; quantity: number; unitCost: number }> }) {
+  async updatePO(id: number, orgId: number, dto: {
+    comments?: string;
+    items?: Array<{
+      id?: number;
+      inventoryId?: number | null;
+      variantId?: number | null;
+      itemName: string;
+      brand?: string;
+      category?: string;
+      unitType?: string;
+      productSource?: string;
+      quantity: number;
+      unitCost: number;
+    }>;
+  }) {
     try {
       await this.ensurePoSchema();
 
@@ -888,15 +946,18 @@ export class InventoryService {
                 brand: item.brand,
                 category: item.category,
                 unitCost: item.unitCost,
+                unitType: item.unitType,
+                productSource: item.productSource,
               });
               inventoryId = created.inventoryId;
               variantId = created.variantId;
             }
 
+            const productSource = this.normalizePoProductSource(item.productSource, item.unitType);
             await client.query(
-              `INSERT INTO tblpo_items (purchase_id, inventory_id, variant_id, item_name, quantity, unit_cost, total_cost)
-               VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-              [id, inventoryId, variantId, item.itemName, item.quantity, item.unitCost, totalCost],
+              `INSERT INTO tblpo_items (purchase_id, inventory_id, variant_id, item_name, quantity, unit_cost, total_cost, product_source)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+              [id, inventoryId, variantId, item.itemName, item.quantity, item.unitCost, totalCost, productSource],
             );
           }
 
@@ -936,8 +997,13 @@ export class InventoryService {
       // Execute stock updates and status change within a single transaction
       await this.db.withTransaction(async (client) => {
         // Get all PO items with their inventory_id/variant_id and quantity
-        const items = await client.query<{ inventory_id: number | null; variant_id: number | null; quantity: number }>(
-          `SELECT pi.inventory_id, pi.variant_id, pi.quantity FROM tblpo_items pi WHERE pi.purchase_id = $1`,
+        const items = await client.query<{
+          inventory_id: number | null;
+          variant_id: number | null;
+          quantity: number;
+        }>(
+          `SELECT pi.inventory_id, pi.variant_id, pi.quantity
+           FROM tblpo_items pi WHERE pi.purchase_id = $1`,
           [id],
         );
 
@@ -963,12 +1029,78 @@ export class InventoryService {
             );
           }
 
-          // POS variant: increase stock_qty so it becomes available to the register
+          // POS variant: increase stock_qty so it becomes available to the register.
+          // Weight (grams) products are received in kilos and stored as grams.
           if (item.variant_id) {
-            await client.query(
-              `UPDATE tblinventory_variants SET stock_qty = stock_qty + $1, updated_at = NOW() WHERE id = $2 AND org_id = $3`,
-              [item.quantity, item.variant_id, orgId],
+            const meta = await client.query<{
+              unitType: string | null;
+              hasGrams: boolean;
+            }>(
+              `SELECT v.unit_type AS "unitType",
+                      EXISTS (
+                        SELECT 1
+                        FROM tblinventory_variant_units vu
+                        WHERE vu.variant_id = v.id
+                          AND vu.org_id = v.org_id
+                          AND vu.is_active = TRUE
+                          AND (
+                            vu.is_manual_entry = TRUE
+                            OR LOWER(vu.unit_type) IN ('grams', 'gram', 'manual')
+                          )
+                      ) AS "hasGrams"
+               FROM tblinventory_variants v
+               WHERE v.id = $1 AND v.org_id = $2
+               LIMIT 1`,
+              [item.variant_id, orgId],
             );
+            const row = meta.rows[0];
+            const stockInGrams =
+              Boolean(row?.hasGrams) || tracksStockInGrams(row?.unitType, null);
+            const addQty = stockInGrams
+              ? kilosToStockGrams(Number(item.quantity))
+              : Number(item.quantity);
+
+            // Prefer grams/retail unit when receiving weight stock; else default/first unit.
+            const unitPick = await client.query<{ unitType: string }>(
+              `SELECT unit_type AS "unitType"
+               FROM tblinventory_variant_units
+               WHERE variant_id = $1 AND org_id = $2 AND is_active = TRUE
+               ORDER BY
+                 CASE
+                   WHEN is_manual_entry = TRUE OR lower(unit_type) IN ('grams', 'gram', 'manual') THEN
+                     CASE WHEN $3::boolean THEN 0 ELSE 3 END
+                   WHEN is_default = TRUE THEN 1
+                   ELSE 2
+                 END,
+                 sort_order ASC,
+                 unit_type ASC
+               LIMIT 1`,
+              [item.variant_id, orgId, stockInGrams],
+            );
+            const targetUnit = unitPick.rows[0]?.unitType ?? null;
+            if (targetUnit) {
+              await client.query(
+                `UPDATE tblinventory_variant_units
+                 SET stock_qty = stock_qty + $1, updated_at = NOW()
+                 WHERE variant_id = $2 AND org_id = $3 AND is_active = TRUE
+                   AND lower(unit_type) = lower($4)`,
+                [addQty, item.variant_id, orgId, targetUnit],
+              );
+            }
+
+            if (stockInGrams) {
+              await client.query(
+                `UPDATE tblinventory_variants
+                 SET retail_stock_qty = retail_stock_qty + $1, updated_at = NOW()
+                 WHERE id = $2 AND org_id = $3`,
+                [addQty, item.variant_id, orgId],
+              );
+            } else {
+              await client.query(
+                `UPDATE tblinventory_variants SET stock_qty = stock_qty + $1, updated_at = NOW() WHERE id = $2 AND org_id = $3`,
+                [addQty, item.variant_id, orgId],
+              );
+            }
           }
         }
 

@@ -307,4 +307,20 @@
    -[x] Make sure to check all taskss under this continuation before setting it to done because in the past there are tasks that has not been done so be sure to check if its all done properly and without errors and bugs.
    -[x] Make sure update the Memory.md.
    -[x] Tick the checkbox once the task is done.
+   //Continuation 4.4
+   -[x] In poadmin, in adding inventory and creating PO, add a product source make it a dropdown with values ["Retail","Wholesale"]. Its for inventory purpose since stores have different kind and source of sales.
+   -[x] When a product uses the type of grams, always assign the source of it from "Retail", meaning when someone bought 200grams of a product, it will deduct/add to the retail inventory of that product.
+   -[x] In posadmin dashboard, add a separate report for retail and wholesale products, also add this report in the main dashboard cards.
+   -[x] In posadmin main dashboard, set the default view on "Today" not on "This month".
+   -[x] In cashier dashboard, on product popup when card is selected, show the total price below the product price so that when adding quantity it will show the total price, make the total price a bit bigger from the price.
+   -[x] In cashier dashboard, in the cart, add a feature on each product in the cart to be able to add discount.
+   -[x] In cashier dashboard, add a new page where in the cashier can input the products that has left for the day manually but make it automatic so like in this page it will list all products it will show the product quantity from the start of the day and will show the quantity stock by the end of the day, because the store will be setting a stock for the day and once the day is finish, they will count the products left in the inventory.
+   -[x] In the cashier dashboard, on Payment summary popup when a payment method is not cash, add feature where in it can upload or take photo since device the cashier will be using is a tablet. Make sure to run a detection first in the backgroud if the device have a camera, if none just the feature to upload an image can be use.
+   -[x] In the cashier dashboard, on Payment summary popup, do not require the Reference # on "Food Panda" mode of payment.
+   -[x] In the cashier dashboard, add a page where in the cashier can input costing, for example the cashier bought something outside and used the store money she need to add that in the system as company cost, by that the owner can see and also deduct the costing on total sales. the fields will be ["Amount","Reason","Reciept image(If available, not required)"].
+   -[x] In posadmin dashboard reports, add a settings where in the store owner can pick a user and generate a report of that specific staff/cashier.
+   -[x] Make sure to finish line-by-line, do not start working on next line unless its a pre-requisite to the present one.
+   -[x] Make sure to check all taskss under this continuation before setting it to done because in the past there are tasks that has not been done so be sure to check if its all done properly and without errors and bugs.
+   -[x] Make sure update the Memory.md.
+   -[x] Tick the checkbox once the task is done.
 

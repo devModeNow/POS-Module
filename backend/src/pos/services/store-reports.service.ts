@@ -40,7 +40,7 @@ export class PosStoreReportsService {
     paymentStatus?: string,
     limit = 50,
     offset = 0,
-    options?: { search?: string; sortBy?: string; sortDir?: string },
+    options?: { search?: string; sortBy?: string; sortDir?: string; cashierUserId?: number },
   ) {
     try {
       await this.ensureSalesVoidSchema();
@@ -50,6 +50,13 @@ export class PosStoreReportsService {
       if (paymentStatus === 'settled' || paymentStatus === 'floating') {
         params.push(paymentStatus);
         statusClause = ` AND st.payment_status = $${params.length}`;
+      }
+
+      let cashierClause = '';
+      const cashierUserId = Number(options?.cashierUserId ?? 0);
+      if (cashierUserId > 0) {
+        params.push(cashierUserId);
+        cashierClause = ` AND st.created_by = $${params.length}`;
       }
 
       let searchClause = '';
@@ -119,7 +126,7 @@ export class PosStoreReportsService {
          WHERE st.org_id = $1
            AND st.amount_paid IS NOT NULL
            AND COALESCE(st.is_voided, FALSE) = FALSE
-           ${dateClause} ${statusClause} ${searchClause}`,
+           ${dateClause} ${statusClause} ${cashierClause} ${searchClause}`,
         countParams,
       );
 
@@ -173,7 +180,7 @@ export class PosStoreReportsService {
          WHERE st.org_id = $1
            AND st.amount_paid IS NOT NULL
            AND COALESCE(st.is_voided, FALSE) = FALSE
-           ${dateClause} ${statusClause} ${searchClause}
+           ${dateClause} ${statusClause} ${cashierClause} ${searchClause}
          ORDER BY ${orderExpr} ${sortDir}, st.id DESC
          LIMIT $${params.length - 1} OFFSET $${params.length}`,
         params,
@@ -408,7 +415,13 @@ export class PosStoreReportsService {
     }
   }
 
-  async dashboard(orgId: number, from?: string, to?: string, paymentStatus?: string) {
+  async dashboard(
+    orgId: number,
+    from?: string,
+    to?: string,
+    paymentStatus?: string,
+    cashierUserId?: number,
+  ) {
     try {
       const params: unknown[] = [orgId];
       let dateClause = this.dateClause(params, from, to);
@@ -417,6 +430,12 @@ export class PosStoreReportsService {
         params.push(paymentStatus);
         statusClause = ` AND st.payment_status = $${params.length}`;
       }
+      let cashierClause = '';
+      const cashierId = Number(cashierUserId ?? 0);
+      if (cashierId > 0) {
+        params.push(cashierId);
+        cashierClause = ` AND st.created_by = $${params.length}`;
+      }
 
       const summary = await this.db.query<{
         totalSales: string;
@@ -424,14 +443,28 @@ export class PosStoreReportsService {
         floatingSales: string;
         transactionCount: string;
         totalDiscount: string;
+        retailSales: string;
+        wholesaleSales: string;
       }>(
         `SELECT COALESCE(SUM(st.total_amount), 0)::text AS "totalSales",
                 COALESCE(SUM(st.total_amount) FILTER (WHERE st.payment_status = 'settled'), 0)::text AS "settledSales",
                 COALESCE(SUM(st.total_amount) FILTER (WHERE st.payment_status = 'floating'), 0)::text AS "floatingSales",
                 COUNT(*)::text AS "transactionCount",
-                COALESCE(SUM(st.discount_amount), 0)::text AS "totalDiscount"
+                COALESCE(SUM(st.discount_amount), 0)::text AS "totalDiscount",
+                COALESCE(SUM(st.total_amount) FILTER (
+                  WHERE COALESCE(vu.product_source, v.product_source, 'Retail') = 'Retail'
+                ), 0)::text AS "retailSales",
+                COALESCE(SUM(st.total_amount) FILTER (
+                  WHERE COALESCE(vu.product_source, v.product_source, 'Retail') = 'Wholesale'
+                ), 0)::text AS "wholesaleSales"
          FROM tblsales_transactions st
-         WHERE st.org_id = $1 ${dateClause} ${statusClause}`,
+         LEFT JOIN tblinventory_variants v ON v.id = st.variant_id
+         LEFT JOIN tblinventory_variant_units vu
+           ON vu.variant_id = st.variant_id
+          AND vu.org_id = st.org_id
+          AND vu.is_active = TRUE
+          AND lower(vu.unit_type) = lower(COALESCE(st.unit_type, v.unit_type, 'piece'))
+         WHERE st.org_id = $1 ${dateClause} ${statusClause} ${cashierClause}`,
         params,
       );
 
@@ -446,7 +479,7 @@ export class PosStoreReportsService {
                 COALESCE(SUM(st.total_amount) FILTER (WHERE st.payment_status = 'settled'), 0)::text AS "settledSales",
                 COALESCE(SUM(st.total_amount) FILTER (WHERE st.payment_status = 'floating'), 0)::text AS "floatingSales"
          FROM tblsales_transactions st
-         WHERE st.org_id = $1 ${dateClause} ${statusClause}
+         WHERE st.org_id = $1 ${dateClause} ${statusClause} ${cashierClause}
          GROUP BY st.sale_date
          ORDER BY st.sale_date ASC
          LIMIT 31`,
@@ -465,7 +498,7 @@ export class PosStoreReportsService {
                 COUNT(*)::text AS "transactionCount"
          FROM tblsales_transactions st
          LEFT JOIN tblpayment_methods pm ON pm.id = st.payment_method_id
-         WHERE st.org_id = $1 ${dateClause} ${statusClause}
+         WHERE st.org_id = $1 ${dateClause} ${statusClause} ${cashierClause}
          GROUP BY pm.name, st.payment_status
          ORDER BY SUM(st.total_amount) DESC`,
         params,
@@ -480,9 +513,9 @@ export class PosStoreReportsService {
                 COALESCE(SUM(st.total_amount), 0)::text AS "totalAmount",
                 COALESCE(SUM(st.quantity_sold), 0)::text AS "quantitySold"
          FROM tblsales_transactions st
-         INNER JOIN tblinventory_variants v ON v.id = st.variant_id
-         INNER JOIN tblinventory_products p ON p.id = v.product_id
-         WHERE st.org_id = $1 ${dateClause} ${statusClause}
+         LEFT JOIN tblinventory_variants v ON v.id = st.variant_id
+         LEFT JOIN tblinventory_products p ON p.id = v.product_id
+         WHERE st.org_id = $1 ${dateClause} ${statusClause} ${cashierClause}
          GROUP BY COALESCE(NULLIF(TRIM(p.category), ''), 'Uncategorized')
          ORDER BY SUM(st.total_amount) DESC`,
         params,
@@ -497,6 +530,8 @@ export class PosStoreReportsService {
             floatingSales: Number(summary.rows[0]?.floatingSales ?? 0),
             transactionCount: Number(summary.rows[0]?.transactionCount ?? 0),
             totalDiscount: Number(summary.rows[0]?.totalDiscount ?? 0),
+            retailSales: Number(summary.rows[0]?.retailSales ?? 0),
+            wholesaleSales: Number(summary.rows[0]?.wholesaleSales ?? 0),
           },
           byDay: byDay.rows.map((r) => ({
             saleDate: r.saleDate,
@@ -707,6 +742,48 @@ export class PosStoreReportsService {
       };
     } catch (e) {
       return { success: false, message: e instanceof Error ? e.message : 'Failed to load category sales report' };
+    }
+  }
+
+  async salesBySource(orgId: number, from?: string, to?: string) {
+    try {
+      const params: unknown[] = [orgId];
+      const dateClause = this.dateClause(params, from, to);
+
+      const result = await this.db.query<{
+        productSource: string;
+        quantitySold: string;
+        totalAmount: string;
+        transactionCount: string;
+      }>(
+        `SELECT COALESCE(vu.product_source, v.product_source, 'Retail') AS "productSource",
+                COALESCE(SUM(st.quantity_sold), 0)::text AS "quantitySold",
+                COALESCE(SUM(st.total_amount), 0)::text AS "totalAmount",
+                COUNT(*)::text AS "transactionCount"
+         FROM tblsales_transactions st
+         LEFT JOIN tblinventory_variants v ON v.id = st.variant_id
+         LEFT JOIN tblinventory_variant_units vu
+           ON vu.variant_id = st.variant_id
+          AND vu.org_id = st.org_id
+          AND vu.is_active = TRUE
+          AND lower(vu.unit_type) = lower(COALESCE(st.unit_type, v.unit_type, 'piece'))
+         WHERE st.org_id = $1 ${dateClause}
+         GROUP BY COALESCE(vu.product_source, v.product_source, 'Retail')
+         ORDER BY SUM(st.total_amount) DESC`,
+        params,
+      );
+
+      return {
+        success: true,
+        data: result.rows.map((r) => ({
+          productSource: r.productSource === 'Wholesale' ? 'Wholesale' : 'Retail',
+          quantitySold: Number(r.quantitySold),
+          totalAmount: Number(r.totalAmount),
+          transactionCount: Number(r.transactionCount),
+        })),
+      };
+    } catch (e) {
+      return { success: false, message: e instanceof Error ? e.message : 'Failed to load retail/wholesale sales report' };
     }
   }
 
@@ -1055,6 +1132,7 @@ export class PosStoreReportsService {
     to?: string,
     limit = 100,
     offset = 0,
+    cashierUserId?: number,
   ) {
     try {
       const params: unknown[] = [orgId];
@@ -1066,6 +1144,12 @@ export class PosStoreReportsService {
       if (to) {
         params.push(to);
         dateClause += ` AND n.created_at::date <= $${params.length}::date`;
+      }
+      let cashierClause = '';
+      const cashierId = Number(cashierUserId ?? 0);
+      if (cashierId > 0) {
+        params.push(cashierId);
+        cashierClause = ` AND st.created_by = $${params.length}`;
       }
       const countParams = [...params];
       params.push(limit, offset);
@@ -1081,7 +1165,11 @@ export class PosStoreReportsService {
              ${dateClause}
            ORDER BY n.reference_id, n.created_at ASC
          )
-         SELECT COUNT(*)::text AS count FROM completed`,
+         SELECT COUNT(*)::text AS count
+         FROM completed c
+         LEFT JOIN tblsales_transactions st ON st.id = c.sale_id AND st.org_id = $1
+         WHERE (st.id IS NULL OR COALESCE(st.is_voided, FALSE) = FALSE)
+           ${cashierClause}`,
         countParams,
       );
 
@@ -1153,7 +1241,8 @@ export class PosStoreReportsService {
          LEFT JOIN tblsales_transactions st ON st.id = c.sale_id AND st.org_id = $1
          LEFT JOIN tblusers u ON u.id = st.created_by
          LEFT JOIN tblpayment_methods pm ON pm.id = st.payment_method_id
-         WHERE st.id IS NULL OR COALESCE(st.is_voided, FALSE) = FALSE
+         WHERE (st.id IS NULL OR COALESCE(st.is_voided, FALSE) = FALSE)
+           ${cashierClause}
          ORDER BY c.created_at DESC
          LIMIT $${params.length - 1} OFFSET $${params.length}`,
         params,

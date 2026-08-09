@@ -33,6 +33,7 @@ export interface PurchaseOrderItem {
   unitType?: string | null;
   brand?: string | null;
   category?: string | null;
+  productSource?: 'Retail' | 'Wholesale' | string | null;
   quantity: number;
   unitCost: number;
   totalCost?: number;

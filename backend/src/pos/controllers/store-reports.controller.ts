@@ -15,9 +15,16 @@ export class PosStoreReportsController {
     @Query('from') from: string,
     @Query('to') to: string,
     @Query('paymentStatus') paymentStatus: string,
+    @Query('cashierUserId') cashierUserId: string,
     @Req() req: AuthReq,
   ) {
-    return this.reportsService.dashboard(orgId(req), from, to, paymentStatus);
+    return this.reportsService.dashboard(
+      orgId(req),
+      from,
+      to,
+      paymentStatus,
+      Number(cashierUserId) || undefined,
+    );
   }
 
   @Get('custom-chart')
@@ -46,6 +53,11 @@ export class PosStoreReportsController {
     return this.reportsService.salesByCategory(orgId(req), from, to);
   }
 
+  @Get('sales-by-source')
+  salesBySource(@Query('from') from: string, @Query('to') to: string, @Req() req: AuthReq) {
+    return this.reportsService.salesBySource(orgId(req), from, to);
+  }
+
   @Get('inventory-valuation')
   inventoryValuation(@Req() req: AuthReq) {
     return this.reportsService.inventoryValuation(orgId(req));
@@ -71,6 +83,7 @@ export class PosStoreReportsController {
     @Query('search') search: string,
     @Query('sortBy') sortBy: string,
     @Query('sortDir') sortDir: string,
+    @Query('cashierUserId') cashierUserId: string,
     @Req() req: AuthReq,
   ) {
     return this.reportsService.listTransactions(
@@ -80,7 +93,7 @@ export class PosStoreReportsController {
       paymentStatus,
       Math.min(Math.max(Number(limit) || 50, 1), 200),
       Math.max(Number(offset) || 0, 0),
-      { search, sortBy, sortDir },
+      { search, sortBy, sortDir, cashierUserId: Number(cashierUserId) || undefined },
     );
   }
 
@@ -105,6 +118,7 @@ export class PosStoreReportsController {
     @Query('to') to: string,
     @Query('limit') limit: string,
     @Query('offset') offset: string,
+    @Query('cashierUserId') cashierUserId: string,
     @Req() req: AuthReq,
   ) {
     return this.reportsService.listCompletedSales(
@@ -113,6 +127,7 @@ export class PosStoreReportsController {
       to,
       Math.min(Math.max(Number(limit) || 100, 1), 200),
       Math.max(Number(offset) || 0, 0),
+      Number(cashierUserId) || undefined,
     );
   }
 }

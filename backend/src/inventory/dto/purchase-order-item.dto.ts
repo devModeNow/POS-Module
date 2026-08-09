@@ -21,6 +21,14 @@ export class PurchaseOrderItemDto {
   @IsString()
   category?: string;
 
+  @IsOptional()
+  @IsString()
+  unitType?: string;
+
+  @IsOptional()
+  @IsString()
+  productSource?: string;
+
   @IsInt()
   @Min(1, { message: 'Quantity must be at least 1' })
   quantity: number;

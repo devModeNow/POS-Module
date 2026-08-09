@@ -1,0 +1,208 @@
+<div class="flex h-full min-h-0 flex-col overflow-hidden bg-gray-50 dark:bg-gray-950">
+  <app-pos-page-header />
+
+  <div class="min-h-0 flex-1 space-y-4 overflow-y-auto p-4 md:p-6">
+    <section class="rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900">
+      <div class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <p class="text-xs font-medium uppercase tracking-wider text-gray-500">End of day</p>
+          <h2 class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">Stock Count</h2>
+          <p class="mt-1 text-sm text-gray-500">Opening stock is snapshotted for the day. Enter leftover quantities when counting.</p>
+        </div>
+        <div class="flex flex-wrap items-end gap-3">
+          <label>
+            <span class="mb-1 block text-[11px] font-medium text-gray-500">Business date</span>
+            <input type="date" [(ngModel)]="businessDate" (ngModelChange)="load()"
+              class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+          </label>
+          <button type="button" (click)="load()" [disabled]="loading" title="Refresh"
+            class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-700 dark:text-gray-300">
+            <svg class="h-4 w-4" [class.animate-spin]="loading" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+          <button type="button" (click)="requestSave()" [disabled]="saving || loading"
+            class="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50">
+            {{ saving ? 'Saving…' : 'Save counts' }}
+          </button>
+        </div>
+      </div>
+    </section>
+
+    @if (error) {
+      <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-950 dark:text-red-300">
+        {{ error }}
+      </div>
+    }
+
+    <section class="overflow-hidden rounded-2xl border border-gray-200 bg-white dark:border-gray-800 dark:bg-gray-900">
+      <div class="border-b border-gray-200 px-4 py-4 dark:border-gray-800">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h3 class="text-sm font-semibold text-gray-800 dark:text-white/90">Product variants to count</h3>
+            <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">Listed by product → variant. Search, filter, and page through inventory</p>
+          </div>
+          <div class="flex flex-wrap items-end gap-2">
+            <label>
+              <span class="mb-1 block text-xs font-medium text-gray-500">Search</span>
+              <input type="search" [(ngModel)]="search" (ngModelChange)="onFilterChange()"
+                placeholder="Product or variant…"
+                class="w-44 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900" />
+            </label>
+            <label>
+              <span class="mb-1 block text-xs font-medium text-gray-500">Product</span>
+              <select [(ngModel)]="productFilter" (ngModelChange)="onFilterChange()"
+                class="max-w-[14rem] rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900">
+                <option value="">All products</option>
+                @for (name of productOptions; track name) {
+                  <option [value]="name">{{ name }}</option>
+                }
+              </select>
+            </label>
+            <label>
+              <span class="mb-1 block text-xs font-medium text-gray-500">Source</span>
+              <select [(ngModel)]="sourceFilter" (ngModelChange)="onFilterChange()"
+                class="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900">
+                <option value="">All sources</option>
+                @for (src of sourceOptions; track src) {
+                  <option [value]="src">{{ src }}</option>
+                }
+              </select>
+            </label>
+            <label>
+              <span class="mb-1 block text-xs font-medium text-gray-500">Status</span>
+              <select [(ngModel)]="statusFilter" (ngModelChange)="onFilterChange()"
+                class="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900">
+                <option value="">All</option>
+                <option value="counted">Counted</option>
+                <option value="uncounted">Not counted</option>
+              </select>
+            </label>
+            <button type="button" (click)="clearFilters()"
+              class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
+              Clear
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="relative overflow-x-auto">
+        @if (loading && rows.length === 0) {
+          <div class="flex items-center justify-center gap-3 py-14 text-sm text-gray-500">
+            <svg class="h-5 w-5 animate-spin text-emerald-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+            </svg>
+            Loading products…
+          </div>
+        } @else {
+          @if (loading) {
+            <div class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-white/60 dark:bg-gray-950/60">
+              <svg class="h-5 w-5 animate-spin text-emerald-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+              </svg>
+            </div>
+          }
+          <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-800">
+            <thead class="bg-gray-50 dark:bg-gray-800/60">
+              <tr class="text-left text-xs font-semibold uppercase tracking-wide text-gray-500">
+                <th class="px-4 py-3">Product</th>
+                <th class="px-4 py-3">Opening</th>
+                <th class="px-4 py-3">Sold</th>
+                <th class="px-4 py-3">System stock</th>
+                <th class="px-4 py-3">Remaining (count)</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-100 dark:divide-gray-800">
+              @for (row of paginatedRows; track row.variantId) {
+                <tr class="text-sm text-gray-800 dark:text-gray-200">
+                  <td class="px-4 py-3">
+                    <p class="font-semibold">{{ row.variantName }}</p>
+                    <p class="text-xs text-gray-500">
+                      {{ row.productName }}
+                      · {{ row.unitType || 'unit' }} · {{ row.productSource }}
+                    </p>
+                    @if (row.stockInGrams) {
+                      <p class="text-[10px] text-emerald-700 dark:text-emerald-300">Retail weight — count leftover in kilos</p>
+                    }
+                  </td>
+                  <td class="px-4 py-3 tabular-nums">
+                    <div>{{ formatQty(row, row.openingQty, row.openingQtyKg) }}</div>
+                  </td>
+                  <td class="px-4 py-3 tabular-nums">
+                    <div>{{ formatQty(row, row.soldQty, row.soldQtyKg) }}</div>
+                  </td>
+                  <td class="px-4 py-3">
+                    <div class="flex items-center gap-2">
+                      <span class="tabular-nums">{{ formatQty(row, row.currentStock, row.currentStockKg) }}</span>
+                      <button type="button" (click)="fillFromCurrent(row)" title="Use system stock"
+                        class="rounded border border-gray-200 px-1.5 py-0.5 text-[10px] text-gray-500 hover:bg-gray-50 dark:border-gray-700">
+                        Use
+                      </button>
+                    </div>
+                  </td>
+                  <td class="px-4 py-3">
+                    <input type="number" min="0" step="0.001" [(ngModel)]="row.closingInput"
+                      [attr.placeholder]="row.stockInGrams ? 'kg' : 'qty'"
+                      class="w-28 rounded-md border border-gray-300 px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-800" />
+                    <p class="mt-1 text-[10px] text-gray-500">{{ unitHint(row) }}</p>
+                  </td>
+                </tr>
+              } @empty {
+                <tr>
+                  <td colspan="5" class="px-4 py-10 text-center text-sm text-gray-500">
+                    {{ rows.length ? 'No products match your filters.' : 'No active products for this date.' }}
+                  </td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        }
+      </div>
+
+      @if (filteredRows.length > 0) {
+        <div class="flex flex-col gap-3 border-t border-gray-200 px-4 py-4 dark:border-gray-800 sm:flex-row sm:items-center sm:justify-between">
+          <div class="flex flex-wrap items-center gap-3">
+            <p class="text-xs text-gray-500 dark:text-gray-400">
+              Showing {{ pageStart }} to {{ pageEnd }} of {{ filteredRows.length }}
+            </p>
+            <label class="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+              Rows
+              <select
+                [(ngModel)]="pageSize"
+                (ngModelChange)="onPageSizeChange()"
+                class="rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs dark:border-gray-600 dark:bg-gray-900 dark:text-gray-300"
+              >
+                @for (size of pageSizeOptions; track size) {
+                  <option [ngValue]="size">{{ size }}</option>
+                }
+              </select>
+            </label>
+          </div>
+          <div class="flex gap-1">
+            <button type="button" (click)="prevPage()" [disabled]="currentPage === 1"
+              class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
+              Previous
+            </button>
+            <span class="flex items-center px-3 text-xs text-gray-600 dark:text-gray-400">{{ currentPage }} / {{ totalPages }}</span>
+            <button type="button" (click)="nextPage()" [disabled]="currentPage === totalPages"
+              class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-800">
+              Next
+            </button>
+          </div>
+        </div>
+      }
+    </section>
+  </div>
+</div>
+
+<app-confirm-dialog
+  [isOpen]="confirmOpen"
+  [title]="confirmTitle"
+  [message]="confirmMessage"
+  variant="primary"
+  confirmLabel="Save"
+  (confirm)="onConfirm()"
+  (cancel)="onCancelConfirm()"
+/>

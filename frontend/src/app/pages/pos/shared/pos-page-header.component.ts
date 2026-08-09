@@ -108,6 +108,14 @@ export class PosPageHeaderComponent implements OnInit {
     return this.currentPath.includes('/pos-my-sales');
   }
 
+  get isOnStockCount(): boolean {
+    return this.currentPath.includes('/pos-stock-count');
+  }
+
+  get isOnCompanyCosts(): boolean {
+    return this.currentPath.includes('/pos-company-costs');
+  }
+
   get isOnProfile(): boolean {
     return this.currentPath === '/profile' || this.currentPath.startsWith('/profile/');
   }

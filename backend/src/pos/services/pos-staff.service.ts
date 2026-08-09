@@ -70,4 +70,47 @@ export class PosStaffService {
       return { success: false, message: e instanceof Error ? e.message : 'Failed to load staff' };
     }
   }
+
+  /** All active cashiers in the org (for report filters). */
+  async listCashiers(orgId: number) {
+    if (!orgId) return { success: false, message: 'Organization context is required' };
+    try {
+      const result = await this.db.query<{
+        userId: number;
+        username: string;
+        fullname: string;
+        roleName: string | null;
+      }>(
+        `SELECT u.id AS "userId",
+                u.username,
+                COALESCE(to_jsonb(u)->>'fullname', u.username) AS fullname,
+                COALESCE(to_jsonb(r)->>'roleName', to_jsonb(r)->>'rolename') AS "roleName"
+         FROM tblusers u
+         LEFT JOIN tblrbac r ON r.id::text = COALESCE(
+           to_jsonb(u)->>'roleId',
+           to_jsonb(u)->>'roleid',
+           to_jsonb(u)->>'role_id'
+         )
+         WHERE (
+             u.org_id = $1
+             OR NULLIF(to_jsonb(u)->>'org_id', '')::bigint = $1
+             OR NULLIF(to_jsonb(u)->>'orgId', '')::bigint = $1
+           )
+           AND COALESCE(
+                 NULLIF(LOWER(to_jsonb(u)->>'isActive'), ''),
+                 NULLIF(LOWER(to_jsonb(u)->>'is_active'), ''),
+                 'true'
+               ) IN ('true', '1', 't', 'yes')
+           AND LOWER(COALESCE(to_jsonb(r)->>'roleName', to_jsonb(r)->>'rolename', '')) LIKE '%cashier%'
+         ORDER BY fullname ASC, u.username ASC`,
+        [orgId],
+      );
+      return { success: true, data: result.rows };
+    } catch (e) {
+      return {
+        success: false,
+        message: e instanceof Error ? e.message : 'Failed to load cashiers',
+      };
+    }
+  }
 }

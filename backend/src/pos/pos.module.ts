@@ -18,6 +18,8 @@ import { PosOperationsController } from './controllers/pos-operations.controller
 import { PosStaffService } from './services/pos-staff.service';
 import { PosVoidService } from './services/pos-void.service';
 import { PosPrinterService } from './services/pos-printer.service';
+import { PosDailyStockService } from './services/pos-daily-stock.service';
+import { PosCostsService } from './services/pos-costs.service';
 
 @Module({
   imports: [DatabaseModule, SettingsModule],
@@ -40,6 +42,8 @@ import { PosPrinterService } from './services/pos-printer.service';
     PosChatService,
     PosNotificationsService,
     PosPrinterService,
+    PosDailyStockService,
+    PosCostsService,
   ],
 })
 export class PosModule {}

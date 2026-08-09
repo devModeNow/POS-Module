@@ -481,6 +481,18 @@
                     </div>
                   }
                 </div>
+                <div>
+                  <label class="mb-1 block text-[11px] font-medium text-gray-600 dark:text-gray-300">Product source</label>
+                  <select
+                    [(ngModel)]="item.productSource"
+                    (ngModelChange)="onPoItemProductSourceChange(i)"
+                    [disabled]="isSavingPO || isPoProductSourceLocked(item)"
+                    class="w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm dark:border-gray-700 dark:bg-gray-900 disabled:opacity-70"
+                  >
+                    <option value="Retail">Retail</option>
+                    <option value="Wholesale">Wholesale</option>
+                  </select>
+                </div>
               </div>
 
               <div class="mb-2 flex flex-wrap gap-2 text-[11px] text-gray-500 dark:text-gray-400">

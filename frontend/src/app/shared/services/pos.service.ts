@@ -16,12 +16,23 @@ export interface PosProduct {
   inStock: boolean;
 }
 
+export interface PosQtyPrice {
+  qty: number;
+  price: number;
+}
+
 export interface PosVariantUnit {
+  id?: number;
   unitType: string;
   sellingPrice: number;
   salePrice?: number | null;
   isManualEntry: boolean;
   isDefault?: boolean;
+  productSource?: 'Retail' | 'Wholesale' | string;
+  stockQty?: number;
+  stockWarning?: number;
+  defaultQty?: number;
+  qtyPrices?: PosQtyPrice[];
 }
 
 export interface PosSubVariant {
@@ -31,6 +42,8 @@ export interface PosSubVariant {
   sizeLabel: string;
   sellingPrice: number;
   salePrice?: number | null;
+  stockQty?: number;
+  stockWarning?: number;
 }
 
 export interface PosVariant {
@@ -40,6 +53,7 @@ export interface PosVariant {
   variantName: string;
   category?: string | null;
   stockQty: number;
+  retailStockQty?: number;
   sellingPrice: number;
   salePrice?: number | null;
   unitType?: string | null;
@@ -82,12 +96,16 @@ export interface CartLine {
   stockQty: number;
   imageUrl?: string | null;
   unitType: string;
+  unitId?: number | null;
   isManualEntry?: boolean;
   units?: PosVariantUnit[];
   subVariantId?: number | null;
   tempType?: string | null;
   sizeLabel?: string | null;
   sugarLevel?: string | null;
+  stockInGrams?: boolean;
+  /** Fixed peso discount applied to this cart line. */
+  lineDiscount?: number;
 }
 
 export interface CheckoutResult {
@@ -145,6 +163,8 @@ export interface PosDashboardReport {
     floatingSales: number;
     transactionCount: number;
     totalDiscount: number;
+    retailSales?: number;
+    wholesaleSales?: number;
   };
   byDay: Array<{ saleDate: string; totalSales: number; settledSales: number; floatingSales: number }>;
   byPayment: Array<{ methodName: string; paymentStatus: string; totalAmount: number; transactionCount: number }>;
@@ -160,6 +180,8 @@ export interface InventoryVariantRow {
   brand?: string | null;
   stockQty: number;
   stockWarning: number;
+  retailStockQty?: number;
+  retailStockWarning?: number;
   costPrice: number;
   sellingPrice: number;
   salePrice?: number | null;
@@ -167,12 +189,14 @@ export interface InventoryVariantRow {
   marginPercent?: number | null;
   imageUrl?: string | null;
   hasSugarLevel?: boolean;
+  productSource?: 'Retail' | 'Wholesale' | string;
   units?: Array<{
     unitType: string;
     sellingPrice: number;
     salePrice?: number | null;
     isManualEntry?: boolean;
     isDefault?: boolean;
+    productSource?: 'Retail' | 'Wholesale' | string;
   }>;
   subVariants?: Array<{
     id?: number;
@@ -181,6 +205,8 @@ export interface InventoryVariantRow {
     sizeLabel: string;
     sellingPrice: number;
     salePrice?: number | null;
+    stockQty?: number;
+    stockWarning?: number;
   }>;
 }
 
@@ -208,18 +234,22 @@ export interface InventoryProductPayload {
     variantName: string;
     stockQty?: number;
     stockWarning?: number;
+    retailStockQty?: number;
+    retailStockWarning?: number;
     costPrice?: number;
     sellingPrice?: number;
     salePrice?: number | null;
     unitType?: string;
     marginPercent?: number | null;
     hasSugarLevel?: boolean;
+    productSource?: 'Retail' | 'Wholesale' | string;
     units?: Array<{
       unitType: string;
       sellingPrice?: number;
       salePrice?: number | null;
       isManualEntry?: boolean;
       isDefault?: boolean;
+      productSource?: 'Retail' | 'Wholesale' | string;
     }>;
     subVariants?: Array<{
       id?: number;
@@ -228,6 +258,8 @@ export interface InventoryProductPayload {
       sizeLabel: string;
       sellingPrice?: number;
       salePrice?: number | null;
+      stockQty?: number;
+      stockWarning?: number;
     }>;
   }>;
 }
@@ -286,6 +318,7 @@ export class PosService {
       quantity: number;
       unitType?: string;
       subVariantId?: number | null;
+      lineDiscount?: number;
     }>;
     discountId?: number | null;
     discountAmount?: number;
@@ -293,6 +326,7 @@ export class PosService {
     paymentMethodId?: number | null;
     referenceNumber?: string | null;
     customerFullName?: string | null;
+    paymentProofImage?: string | null;
   }) {
     const r = await apiClient.post<{ success: boolean; data?: CheckoutResult; message?: string }>(
       '/api/pos/checkout',
@@ -301,11 +335,12 @@ export class PosService {
     return r.data;
   }
 
-  async getDashboardReport(from?: string, to?: string, paymentStatus?: string) {
+  async getDashboardReport(from?: string, to?: string, paymentStatus?: string, cashierUserId?: number) {
     const params: Record<string, string> = {};
     if (from) params['from'] = from;
     if (to) params['to'] = to;
     if (paymentStatus) params['paymentStatus'] = paymentStatus;
+    if (cashierUserId && cashierUserId > 0) params['cashierUserId'] = String(cashierUserId);
     const r = await apiClient.get<{ success: boolean; data?: PosDashboardReport; message?: string }>(
       '/api/pos/reports/dashboard',
       { params: Object.keys(params).length ? params : undefined },
@@ -331,7 +366,7 @@ export class PosService {
     paymentStatus?: string,
     limit = 50,
     offset = 0,
-    options?: { search?: string; sortBy?: string; sortDir?: string },
+    options?: { search?: string; sortBy?: string; sortDir?: string; cashierUserId?: number },
   ) {
     const params: Record<string, string> = { limit: String(limit), offset: String(offset) };
     if (from) params['from'] = from;
@@ -340,6 +375,9 @@ export class PosService {
     if (options?.search) params['search'] = options.search;
     if (options?.sortBy) params['sortBy'] = options.sortBy;
     if (options?.sortDir) params['sortDir'] = options.sortDir;
+    if (options?.cashierUserId && options.cashierUserId > 0) {
+      params['cashierUserId'] = String(options.cashierUserId);
+    }
     const r = await apiClient.get<{ success: boolean; data?: PosSaleTransaction[]; total?: number; message?: string }>(
       '/api/pos/reports/transactions',
       { params },
@@ -408,6 +446,21 @@ export class PosService {
     return r.data;
   }
 
+  async getSalesBySourceReport(from?: string, to?: string) {
+    const params: Record<string, string> = {};
+    if (from) params['from'] = from;
+    if (to) params['to'] = to;
+    const r = await apiClient.get<{
+      success: boolean;
+      data?: Array<{ productSource: string; quantitySold: number; totalAmount: number; transactionCount: number }>;
+      message?: string;
+    }>(
+      '/api/pos/reports/sales-by-source',
+      { params: Object.keys(params).length ? params : undefined },
+    );
+    return r.data;
+  }
+
   async getInventoryValuationReport() {
     const r = await apiClient.get<{ success: boolean; data?: Array<{ category: string; itemCount: number; totalStock: number; retailValue: number }>; message?: string }>(
       '/api/pos/reports/inventory-valuation',
@@ -429,13 +482,20 @@ export class PosService {
     return r.data;
   }
 
-  async getCompletedSalesReport(from?: string, to?: string, limit = 100, offset = 0) {
+  async getCompletedSalesReport(
+    from?: string,
+    to?: string,
+    limit = 100,
+    offset = 0,
+    cashierUserId?: number,
+  ) {
     const params: Record<string, string> = {
       limit: String(limit),
       offset: String(offset),
     };
     if (from) params['from'] = from;
     if (to) params['to'] = to;
+    if (cashierUserId && cashierUserId > 0) params['cashierUserId'] = String(cashierUserId);
     const r = await apiClient.get<{ success: boolean; data?: PosCompletedSale[]; total?: number; message?: string }>(
       '/api/pos/reports/completed-sales',
       { params },
@@ -660,6 +720,99 @@ export class PosService {
 
   async setVoidCodeActive(id: number, isActive: boolean) {
     const r = await apiClient.post<{ success: boolean; message?: string }>(`/api/pos/void-codes/${id}/active`, { isActive });
+    return r.data;
+  }
+
+  async listCashiers() {
+    const r = await apiClient.get<{
+      success: boolean;
+      data?: Array<{ userId: number; username: string; fullname: string; roleName?: string | null }>;
+      message?: string;
+    }>('/api/pos/staff/cashiers');
+    return r.data;
+  }
+
+  async getDailyStock(date?: string) {
+    const params: Record<string, string> = {};
+    if (date) params['date'] = date;
+    const r = await apiClient.get<{
+      success: boolean;
+      data?: {
+        businessDate: string;
+        items: Array<{
+          id: number;
+          variantId: number;
+          productName: string;
+          variantName: string;
+          category?: string | null;
+          unitType: string | null;
+          productSource: string;
+          stockInGrams?: boolean;
+          openingQty: number;
+          closingQty: number | null;
+          currentStock: number;
+          soldQty: number;
+          openingQtyKg?: number | null;
+          closingQtyKg?: number | null;
+          currentStockKg?: number | null;
+          soldQtyKg?: number | null;
+          countedBy: number | null;
+          countedAt: string | null;
+          businessDate: string;
+        }>;
+      };
+      message?: string;
+    }>('/api/pos/daily-stock', { params: Object.keys(params).length ? params : undefined });
+    return r.data;
+  }
+
+  async saveDailyStock(payload: {
+    businessDate?: string;
+    items: Array<{ variantId: number; closingQty: number | null; closingInKilos?: boolean }>;
+  }) {
+    const r = await apiClient.put<{
+      success: boolean;
+      data?: { saved: number; businessDate: string };
+      message?: string;
+    }>('/api/pos/daily-stock', payload);
+    return r.data;
+  }
+
+  async getCompanyCosts(options?: { from?: string; to?: string; createdBy?: number }) {
+    const params: Record<string, string> = {};
+    if (options?.from) params['from'] = options.from;
+    if (options?.to) params['to'] = options.to;
+    if (options?.createdBy) params['createdBy'] = String(options.createdBy);
+    const r = await apiClient.get<{
+      success: boolean;
+      data?: {
+        items: Array<{
+          id: number;
+          amount: number;
+          reason: string;
+          receiptImage: string | null;
+          createdBy: number | null;
+          createdByName: string;
+          createdAt: string;
+        }>;
+        totalAmount: number;
+        count: number;
+      };
+      message?: string;
+    }>('/api/pos/costs', { params: Object.keys(params).length ? params : undefined });
+    return r.data;
+  }
+
+  async createCompanyCost(payload: { amount: number; reason: string; receiptImage?: string | null }) {
+    const r = await apiClient.post<{ success: boolean; data?: { id: number }; message?: string }>(
+      '/api/pos/costs',
+      payload,
+    );
+    return r.data;
+  }
+
+  async deleteCompanyCost(id: number) {
+    const r = await apiClient.delete<{ success: boolean; message?: string }>(`/api/pos/costs/${id}`);
     return r.data;
   }
 }

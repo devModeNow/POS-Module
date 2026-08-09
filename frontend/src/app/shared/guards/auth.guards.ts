@@ -83,7 +83,13 @@ export const rbacGuard: CanActivateFn = (route) => {
   if (rbacService.isCashier()) {
     const path = route.routeConfig?.path ?? '';
     const parentPath = route.parent?.routeConfig?.path ?? '';
-    const cashierPaths = ['pos-dashboard', 'pos-terminal', 'pos-my-sales'];
+    const cashierPaths = [
+      'pos-dashboard',
+      'pos-terminal',
+      'pos-my-sales',
+      'pos-stock-count',
+      'pos-company-costs',
+    ];
     const isProfileRoute = path === '' && parentPath === 'profile';
     if (!cashierPaths.includes(path) && !isProfileRoute) {
       return router.createUrlTree(['/users/pos-dashboard']);

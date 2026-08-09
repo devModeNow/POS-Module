@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { DatabaseService } from 'src/database/database.service';
 import { AuditService } from 'src/common/audit/audit.service';
+import { sellQtyToStockQty, isRetailSellUnit } from '../utils/weight-stock.util';
 
 @Injectable()
 export class PosVoidService {
@@ -32,8 +33,23 @@ export class PosVoidService {
         ADD COLUMN IF NOT EXISTS voided_at TIMESTAMPTZ,
         ADD COLUMN IF NOT EXISTS voided_by BIGINT,
         ADD COLUMN IF NOT EXISTS void_reason TEXT,
-        ADD COLUMN IF NOT EXISTS reference_number TEXT
+        ADD COLUMN IF NOT EXISTS reference_number TEXT,
+        ADD COLUMN IF NOT EXISTS sub_variant_id INTEGER
     `);
+    await this.db.query(`
+      ALTER TABLE public.tblinventory_variant_units
+        ADD COLUMN IF NOT EXISTS stock_qty NUMERIC(12, 3) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS stock_warning NUMERIC(12, 3) NOT NULL DEFAULT 0
+    `);
+    try {
+      await this.db.query(`
+        ALTER TABLE public.tblinventory_variant_subvariants
+          ADD COLUMN IF NOT EXISTS stock_qty NUMERIC(12, 3) NOT NULL DEFAULT 0,
+          ADD COLUMN IF NOT EXISTS stock_warning NUMERIC(12, 3) NOT NULL DEFAULT 0
+      `);
+    } catch {
+      /* table may not exist yet */
+    }
   }
 
   async listCodes(orgId: number) {
@@ -163,6 +179,9 @@ export class PosVoidService {
         id: number;
         variantId: number | null;
         quantitySold: string;
+        unitType: string | null;
+        variantUnitId: number | null;
+        subVariantId: number | null;
         amountPaid: string | null;
         changeAmount: string | null;
         paymentMethodId: number | null;
@@ -177,6 +196,9 @@ export class PosVoidService {
         `SELECT id,
                 variant_id AS "variantId",
                 quantity_sold::text AS "quantitySold",
+                unit_type AS "unitType",
+                variant_unit_id AS "variantUnitId",
+                sub_variant_id AS "subVariantId",
                 amount_paid::text AS "amountPaid",
                 change_amount::text AS "changeAmount",
                 payment_method_id AS "paymentMethodId",
@@ -210,12 +232,68 @@ export class PosVoidService {
 
         const qty = Number(saleLine.quantitySold) || 0;
         if (saleLine.variantId != null && qty > 0) {
-          await client.query(
-            `UPDATE tblinventory_variants
-             SET stock_qty = stock_qty + $1, updated_at = NOW()
-             WHERE id = $2 AND org_id = $3`,
-            [qty, saleLine.variantId, orgId],
-          );
+          const subVariantId =
+            saleLine.subVariantId != null && Number(saleLine.subVariantId) > 0
+              ? Number(saleLine.subVariantId)
+              : null;
+          const restoreQty = subVariantId
+            ? qty
+            : sellQtyToStockQty(
+                qty,
+                saleLine.unitType,
+                isRetailSellUnit(saleLine.unitType),
+              );
+          if (subVariantId) {
+            await client.query(
+              `UPDATE tblinventory_variant_subvariants
+               SET stock_qty = stock_qty + $1, updated_at = NOW()
+               WHERE id = $2 AND org_id = $3 AND variant_id = $4 AND is_active = TRUE`,
+              [restoreQty, subVariantId, orgId, saleLine.variantId],
+            );
+            await client.query(
+              `UPDATE tblinventory_variants
+               SET stock_qty = stock_qty + $1, updated_at = NOW()
+               WHERE id = $2 AND org_id = $3`,
+              [restoreQty, saleLine.variantId, orgId],
+            );
+          } else {
+            if (saleLine.variantUnitId) {
+              await client.query(
+                `UPDATE tblinventory_variant_units
+                 SET stock_qty = stock_qty + $1, updated_at = NOW()
+                 WHERE id = $2 AND org_id = $3 AND is_active = TRUE`,
+                [restoreQty, saleLine.variantUnitId, orgId],
+              );
+            } else {
+              await client.query(
+                `UPDATE tblinventory_variant_units
+                 SET stock_qty = stock_qty + $1, updated_at = NOW()
+                 WHERE id = (
+                   SELECT id FROM tblinventory_variant_units
+                   WHERE variant_id = $2 AND org_id = $3 AND is_active = TRUE
+                     AND lower(unit_type) = lower($4)
+                   ORDER BY is_default DESC, sort_order ASC, id ASC
+                   LIMIT 1
+                 )`,
+                [restoreQty, saleLine.variantId, orgId, saleLine.unitType ?? 'piece'],
+              );
+            }
+            if (isRetailSellUnit(saleLine.unitType)) {
+              await client.query(
+                `UPDATE tblinventory_variants
+                 SET retail_stock_qty = retail_stock_qty + $1, updated_at = NOW()
+                 WHERE id = $2 AND org_id = $3`,
+                [restoreQty, saleLine.variantId, orgId],
+              );
+            } else {
+              await client.query(
+                `UPDATE tblinventory_variants
+                 SET stock_qty = stock_qty + $1, updated_at = NOW()
+                 WHERE id = $2 AND org_id = $3`,
+                [restoreQty, saleLine.variantId, orgId],
+              );
+            }
+          }
         }
 
         // If this row held the checkout payment header, move it to a sibling line in the same batch.

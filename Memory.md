@@ -147,31 +147,49 @@ Living notes for agents continuing this repo. Prefer this file over re-reading l
 - **Beverages gate = category** (not product name). Match `beverages` / typo `bevarages`; normalize saved category to `"Beverages"`.
 - **Inventory (admin):** when category is Beverages, each variant gets:
   - `hasSugarLevel` checkbox
-  - Sub-variants editor: temperature (`hot` / `iced` / N/A) + size (small/regular/medium/large datalist) + selling/sale price
+  - Sub-variants editor: temperature (`hot` / `iced` / N/A) + size (small/regular/medium/large datalist) + selling/sale price + **stock qty / stock warning** (availability is per sub-variant)
+  - Unit types (optional for beverages): each unit row still has its own stock qty / warning; POS availability uses **sub-variant stock when a size is selected**, otherwise unit stock
   - **Duplicate variant** copies units, sugar flag, sub-variants, prices, image; stock starts at 0; new row inserts at top as `Name (copy)`
   - New sub-variant rows insert at the **top** of the list
   - Variants and sub-variants can be reordered in the form with up/down controls; saved order persists through existing `sort_order` handling
   - Sub-variants panel is collapsible per variant in the inventory form
   - Sub-variant order is now carried explicitly as `sortOrder` from admin save through cashier load, so cashier size button order matches POS admin reordering
-- **Schema:** `tblinventory_variants.has_sugar_level`; `tblinventory_variant_subvariants`; `tblorg_unit_types.usage_scope` (`Beverages` | `Others`). Auto-ensured in Nest + SQL `20260804_pos_continuation_4_3.sql`.
+- **Schema:** `tblinventory_variants.has_sugar_level`; `tblinventory_variant_subvariants` (+ `stock_qty` / `stock_warning`, SQL `20260810_pos_subvariant_stock.sql`); `tblorg_unit_types.usage_scope` (`Beverages` | `Others`). Auto-ensured in Nest + SQL `20260804_pos_continuation_4_3.sql`.
 - **Unit types (Settings):** create form has **Can be used for** selector [Beverages, Others]; table shows scope. Active rows are **editable** (label + scope) via Edit → Save; code stays fixed. Liter/bottle/can seeded to Beverages.
 - **Inventory unit dropdown:** only shows units whose `usageScope` matches the product category (`Beverages` → Beverages units; anything else → Others units). Changing category re-filters and sanitizes selected units.
 - **Cashier catalog:** All / Beverages / Others selector beside Product/Variants + grid/list toggles (`catalogGroup`, sessionStorage).
-- **Cashier beverage picker:** loads `hasSugarLevel` + `subVariants` from terminal API; modal shows Temperature / Size / Sugar level; price follows selected sub-variant; cart line name includes those choices.
+- **Cashier beverage picker:** loads `hasSugarLevel` + `subVariants` (incl. stock) from terminal API; modal shows Temperature / Size / Sugar level; price and available qty follow selected sub-variant; size chips show remaining stock and disable when empty.
+- **Checkout beverage stock:** when `subVariantId` is set, deduct/restore `tblinventory_variant_subvariants.stock_qty` (not unit stock). Variant pool stays in sync for lists/reports.
 - **Cashier product cards:** in Products view, beverage cards now derive min/max/sale price from sub-variant pricing when present, instead of falling back to base variant price `0`.
 - **Variant catalog cards:** when base/unit price is `0`, card price falls back to first priced sub-variant.
 - **Checkout beverage pricing:** cart now sends `subVariantId`; backend resolves `unit_price` from `tblinventory_variant_subvariants` (not zero base/unit price). Also stores `sub_variant_id` on `tblsales_transactions`. Rejects checkout if beverage has sub-variants but none selected, or if resolved price is still `0`.
 - **Inventory Product variants table:** Duplicate action copies units/sub-variants/settings/image; stock starts at `0`; name becomes `Name (copy)`. Fixed bigint id Map lookup so sub-variants actually copy.
-- **Beverage product form:** Unit types section is collapsed by default for Beverages (pricing comes from sub-variants); use the Unit types header / + button to expand and add unit types when needed.
+- **Beverage product form:** Unit types are optional (pricing comes from sub-variants); product source is not shown/required. Use the Unit types header / + button only when needed.
 - **Inventory product form:** Variant cards are collapsible (header shows name when collapsed). Opening a product expands the first variant; add/duplicate expands the new card and collapses the others.
 - **Cashier cart beverage details:** beverage lines now show plain order details on separate lines (e.g. `Iced`, `Large`, `75%`) for quicker cashier scanning.
 - **Grams / manual entry:** default qty **200** on add-to-cart, unit change, and cart edit (`defaultVariantQty`).
 - **POS Reports:** new **Product Logs** report lists product name, category, brand, added timestamp (`created_at`), and last updated timestamp (`updated_at`) from `tblinventory_products`.
 - **Checkout (Bank Transfer):** cashier must enter buyer/customer fullname before submit. Saved on `tblsales_transactions.customer_full_name`; backend also enforces it so offline/queued or manual requests cannot bypass the rule.
-- **Checkout references:** `Reference #` is now required for every **non-cash** payment method; cash stays exempt. Backend validates this too.
+- **Checkout references:** `Reference #` required for non-cash payments **except Food Panda** (optional). Cash stays exempt. Backend validates the same rule.
 - **Admin Settings → Database Backup:** tab is second in Settings (after System). System tab also shows **Backup Now** + **Open Backup Tab** when allowed. One-click full SQL backup; polls until complete, then auto-downloads. Advanced options stay collapsed. Visible to admin-like roles (incl. names containing “admin”) and users with Settings `canUpdate`. Backend `/backups` RolesGuard mirrors that (role match **or** settings update in JWT) so POS admins with custom/empty role names do not get 403. Needs working `PG_DUMP_PATH` on the backend host.
 - **Settings → Audit Trail / Unit Types:** both tables support search, filters (action/role; status/scope), and pagination (page size + prev/next).
 - **Key files:** `inventory.component.*`, `pos-dashboard.component.*`, `settings.component.*`, `pos-audit-trail.component.*`, `inventory-products.service.ts`, `inventory-unit-types.service.ts`, `pos.service.ts` types, `backup/guards/roles.guard.ts`.
+
+### 4.4
+- **Product source:** Derived from unit type — **grams/gram/manual → Retail**, **all other units → Wholesale** (locked in the form). Stored per unit on `tblinventory_variant_units.product_source`; variant column mirrors the default unit. PO items follow the same rule when unit type is known. Admin reports resolve source via sale `unit_type` → unit row. Admin dashboard default period = **Today**.
+- **Per-unit stock:** Stock qty + low-stock warning live on each **unit type** row (`tblinventory_variant_units.stock_qty` / `stock_warning`). Grams/manual enter **kg** (stored as grams). Variant `stock_qty` / `retail_stock_qty` are denormalized sums for lists/reports. Checkout/void deduct/restore the sold unit’s stock. SQL: `20260809_pos_unit_level_stock.sql`.
+- **Per-unit cost:** Cost price lives on each unit type row (`tblinventory_variant_units.cost_price`). Variant `cost_price` mirrors the default unit. SQL: `20260809_pos_unit_level_cost.sql`.
+- **Per-unit default qty:** Each unit type has `default_qty` (cashier product popup pre-fill when that unit is selected). Grams default seed = 200; others = 1. SQL: `20260809_pos_unit_default_qty.sql`.
+- **Duplicate unit types allowed:** A variant may have multiple rows with the same `unit_type` (e.g. two grams presets). Unique index dropped (`20260809_pos_allow_duplicate_unit_types.sql`). Save/load/update by unit `id`. POS selects/carts/checkout/void by `unitId` (`tblsales_transactions.variant_unit_id`). Cashier chips show `default_qty` when the same type appears more than once.
+- **Quantity prices:** Each unit can define multiple qty→price presets (`qty_prices` JSONB, e.g. 25→₱10, 50→₱20). Inventory “Quantity prices” editor; first row sets default qty. POS shows preset chips with price; matching qty uses that tier total at checkout. Custom qty falls back to unit `selling_price` rate. SQL: `20260810_pos_unit_qty_prices.sql`.
+- **Grams pricing UX:** Inventory form accepts **price for default quantity** (e.g. ₱80 for 200 g); stored as per-gram (`price / default_qty`) so POS still charges `qty × per-gram`. When quantity prices exist, those absolute tier prices are used instead.
+- **Cashier UX:** Product popup live total price; cart per-line `lineDiscount` (checkout payload + backend). Food Panda **Reference #** optional (other non-cash still required).
+- **End-of-day stock count:** `/users/pos-stock-count` — table of **product variants** (product → variant order via `sort_order`) with opening (first-open snapshot = current stock + sold today), sold, system stock, closing input. Filters: search, **product** (not category), product source, counted/not counted. Client pagination (10/20/50/100). Table `tblpos_daily_stock`. APIs: `GET/PUT /api/pos/daily-stock`. Cashier header nav + `cashierPaths`.
+- **Payment proof:** Non-cash checkout can Take photo (if `videoinput` / getUserMedia) or Upload image; stored as `tblsales_transactions.payment_proof_image` (base64 data URL). Runtime ALTER.
+- **Company costs:** `/users/pos-company-costs` — Amount, Reason, optional receipt image. Table `tblpos_costs`. APIs: `GET/POST/PUT/DELETE /api/pos/costs`. Soft-delete.
+- **Admin reports staff filter:** Staff/Cashier dropdown on Store Dashboard + Completed Sales; `cashierUserId` query on dashboard/transactions/completed-sales. `GET /api/pos/staff/cashiers`.
+- **SQL optional:** `backend/sql/supabase/20260809_pos_continuation_4_4.sql` (product_source) + `20260809_pos_continuation_4_4_stock_costs.sql` (daily stock, costs, payment proof) + `20260809_pos_unit_level_stock.sql` (per-unit stock) + `20260809_pos_unit_level_cost.sql` (per-unit cost). Nest ensureSchema also creates these at runtime.
+- **Key files:** `pos-daily-stock.service.ts`, `pos-costs.service.ts`, `pos-stock-count/*`, `pos-company-costs/*`, `pos-operations.controller.ts`, `store-reports.*`, `terminal.service.ts`, `pos-page-header.*`, `auth.guards.ts`, `reports.component.*`.
 
 ## Key printer files
 - Panel: `frontend/.../pos-printer-settings-panel/*`
@@ -224,25 +242,13 @@ Living notes for agents continuing this repo. Prefer this file over re-reading l
 - `tblpurchases_status_check`: drop constraint before UPDATE to `draft`; legacy check was `pending|received|cancelled`.
 
 ## Suggested next checks when continuing
-1. Continuation 4.3 smoke: Inventory category Beverages → sugar checkbox + sub-variants save/reload; Settings unit type scope Beverages/Others; cashier All/Beverages/Others filter; grams unit defaults qty to 200.
-2. Purchase Orders → New PO + Draft PO: labels on all item fields; Product type / Unit type / Brand / Category smart search (pick or type new); Variant smart search autofills related fields.
-3. Login as POS user → PrintHub connects (silent if previously paired; picker once if first time).
-4. Reload dashboard → Bluetooth indicator goes green without clicking (if printer on + previously paired).
-5. Print receipt → store/company name + cashier name centered, with gaps matching template (logo → header → items → total → thank you).
-6. Drag template blocks farther apart → save → reprint → blank lines increase.
-7. Save printer settings → reload → connection type + template still in Network `item`.
-8. Receive PO linked to a POS variant → variant stock increases on cashier terminal.
-9. Chat delete/clear + notification mark-all.
-10. Login shows uploaded company logo.
-11. My Sales → Details modal + Re-print (watermark on thermal).
-12. Admin KPI transactions → Re-print icon in Actions column.
-13. Saved template align/spacing → reprint matches editor layout (items format `Qty - Name - Unit`).
-14. Re-print from My Sales → admin void code required.
-15. Purchase Orders page → full-width table; **+** opens create modal; icon actions; status `draft` OK.
-16. Cash drawer enabled → complete sale opens drawer before receipt (PrintHub/USB/network).
-17. Admin dashboard charts → donut view labels readable (white % on slices); custom chart stable (no infinite load).
-18. Tablet portrait → cart drawer above header/filters; checkout modal accordion + fixed footer.
-19. Offline sale → queues locally; Sync now uploads when online.
-20. Receipt items → name + total on line 1, qty x price on line 2 (no ₱ on thermal).
-21. My Sales → filter/pagination on recent sales table.
-22. BLE re-print of long receipts → no 512-byte GATT write error.
+1. Continuation 4.4: Stock count page opens with opening/sold/remaining; save closing counts.
+2. Non-cash checkout → Take photo / Upload payment proof; Food Panda reference optional.
+3. Company Costs page → amount + reason (+ optional receipt); list/delete.
+4. Admin Reports → Staff/Cashier filter on Store Dashboard + Completed Sales.
+5. Continuation 4.3 smoke: Inventory category Beverages → sugar checkbox + sub-variants save/reload; Settings unit type scope Beverages/Others; cashier All/Beverages/Others filter; grams unit defaults qty to 200.
+6. Purchase Orders → New PO + Draft PO: labels on all item fields; Product type / Unit type / Brand / Category smart search (pick or type new); Variant smart search autofills related fields.
+7. Login as POS user → PrintHub connects (silent if previously paired; picker once if first time).
+8. Reload dashboard → Bluetooth indicator goes green without clicking (if printer on + previously paired).
+9. Print receipt → store/company name + cashier name centered, with gaps matching template (logo → header → items → total → thank you).
+10. My Sales → Details modal + Re-print (watermark on thermal); admin code for re-print.

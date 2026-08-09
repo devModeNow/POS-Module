@@ -54,6 +54,10 @@ type KpiWidgetId =
 
   | 'kpi-discounts'
 
+  | 'kpi-retail'
+
+  | 'kpi-wholesale'
+
   | 'kpi-staff'
 
   | 'kpi-low-stock';
@@ -95,6 +99,10 @@ const DEFAULT_WIDGETS: WidgetId[] = [
   'kpi-transactions',
 
   'kpi-discounts',
+
+  'kpi-retail',
+
+  'kpi-wholesale',
 
   'kpi-staff',
 
@@ -278,7 +286,7 @@ export class PosAdminDashboardComponent implements OnInit {
 
   loading = false;
 
-  period: 'daily' | 'weekly' | 'monthly' = 'monthly';
+  period: 'daily' | 'weekly' | 'monthly' = 'daily';
 
   report: PosDashboardReport | null = null;
 
@@ -483,6 +491,10 @@ export class PosAdminDashboardComponent implements OnInit {
     'kpi-transactions': { label: 'Transactions', span: 'kpi' },
 
     'kpi-discounts': { label: 'Discounts', span: 'kpi' },
+
+    'kpi-retail': { label: 'Retail Sales', span: 'kpi' },
+
+    'kpi-wholesale': { label: 'Wholesale Sales', span: 'kpi' },
 
     'kpi-staff': { label: 'On-Duty Staff', span: 'kpi' },
 
@@ -1513,6 +1525,10 @@ export class PosAdminDashboardComponent implements OnInit {
 
       case 'kpi-discounts': return this.money(s?.totalDiscount ?? 0);
 
+      case 'kpi-retail': return this.money(s?.retailSales ?? 0);
+
+      case 'kpi-wholesale': return this.money(s?.wholesaleSales ?? 0);
+
       case 'kpi-staff': return String(this.onDutyStaff.length);
 
       case 'kpi-low-stock': return String(this.lowStock.length);
@@ -1534,6 +1550,10 @@ export class PosAdminDashboardComponent implements OnInit {
       case 'kpi-floating': return 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-500/10 dark:text-amber-300';
 
       case 'kpi-staff': return 'border-blue-200 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-500/10 dark:text-blue-300';
+
+      case 'kpi-retail': return 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-500/10 dark:text-sky-300';
+
+      case 'kpi-wholesale': return 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-500/10 dark:text-violet-300';
 
       case 'kpi-low-stock': return 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-500/10 dark:text-red-300';
 

@@ -8,11 +8,16 @@ export class PosCartService {
   cartKey(
     variantId: number,
     unitType: string,
-    extras?: { subVariantId?: number | null; sugarLevel?: string | null },
+    extras?: {
+      unitId?: number | null;
+      subVariantId?: number | null;
+      sugarLevel?: string | null;
+    },
   ): string {
+    const unitId = extras?.unitId != null && Number(extras.unitId) > 0 ? String(extras.unitId) : '0';
     const sub = extras?.subVariantId != null ? String(extras.subVariantId) : '0';
     const sugar = extras?.sugarLevel ? String(extras.sugarLevel) : '-';
-    return `${variantId}:${unitType}:${sub}:${sugar}`;
+    return `${variantId}:${unitId}:${unitType}:${sub}:${sugar}`;
   }
 
   load(orgId: number): CartLine[] {

@@ -14,6 +14,11 @@ import { RbacService } from '../../shared/services/rbac.service';
 import { NotificationService } from '../../shared/services/notification.service';
 import { ActionBusyService } from '../../shared/services/action-busy.service';
 import ExcelJS from 'exceljs/dist/exceljs.min.js';
+import {
+  kilosToStockGrams,
+  stockGramsToKilos,
+  tracksStockInGrams,
+} from '../../shared/utils/weight-stock.util';
 
 type MainTab = 'inventory' | 'purchase-orders' | 'reports';
 type DrawerMode = 'create' | 'edit';
@@ -28,12 +33,25 @@ type InventoryTableColumn = {
   hideable: boolean;
 };
 
+type UnitQtyPriceForm = {
+  qty: number;
+  price: number;
+};
+
 type VariantUnitFormRow = {
+  id?: number;
   unitType: string;
   sellingPrice: number;
   salePrice: number | null;
   isManualEntry: boolean;
   isDefault: boolean;
+  productSource: 'Retail' | 'Wholesale';
+  stockQty: number;
+  stockWarning: number;
+  costPrice: number;
+  defaultQty: number;
+  qtyPrices: UnitQtyPriceForm[];
+  collapsed: boolean;
 };
 
 type VariantSubVariantFormRow = {
@@ -43,13 +61,13 @@ type VariantSubVariantFormRow = {
   sizeLabel: string;
   sellingPrice: number;
   salePrice: number | null;
+  stockQty: number;
+  stockWarning: number;
 };
 
 type VariantFormRow = {
   id?: number;
   variantName: string;
-  stockQty: number;
-  stockWarning: number;
   costPrice: number;
   sellingPrice: number;
   salePrice: number | null;
@@ -735,6 +753,15 @@ export class InventoryComponent implements OnInit, OnDestroy {
           collapsed: v.collapsed ?? false,
           unitsCollapsed: v.unitsCollapsed ?? this.isBeveragesCategory(form.category),
           imageFile: null,
+          units: (() => {
+            const beverages = this.isBeveragesCategory(form.category);
+            const list = v.units?.length ? v.units : (beverages ? [] : [this.emptyUnitRow()]);
+            return list.map((u, ui) => ({
+              ...u,
+              qtyPrices: Array.isArray(u.qtyPrices) ? u.qtyPrices : [],
+              collapsed: u.collapsed ?? ui > 0,
+            }));
+          })(),
         })),
       };
     } catch {
@@ -774,15 +801,19 @@ export class InventoryComponent implements OnInit, OnDestroy {
     if (!activeCodes.size) return;
 
     const defaultCode = this.defaultUnitTypeCode();
+    const beverages = this.isBeveragesCategory(this.productForm.category);
     for (let vi = 0; vi < this.productForm.variants.length; vi++) {
       const v = this.productForm.variants[vi];
       v.units = v.units.filter((u) =>
         activeCodes.has(this.normalizeUnitType(u.unitType).toLowerCase()),
       );
       if (!v.units.length) {
-        v.units = [this.emptyUnitRow()];
+        // Beverages: unit types are optional (pricing comes from sub-variants).
+        if (!beverages) {
+          v.units = [this.emptyUnitRow()];
+        }
       }
-      if (!v.units.some((u) => u.isDefault)) {
+      if (v.units.length && !v.units.some((u) => u.isDefault)) {
         v.units[0].isDefault = true;
       }
       for (const u of v.units) {
@@ -794,10 +825,116 @@ export class InventoryComponent implements OnInit, OnDestroy {
     }
   }
 
-  unitPriceHint(unitType: string): string {
-    if (unitType === 'kilo') return 'Price per kilo';
-    if (unitType === 'grams') return 'Price per gram';
+  unitPriceHint(unit: VariantUnitFormRow | string): string {
+    const u = typeof unit === 'string'
+      ? { unitType: unit, defaultQty: 1, isManualEntry: false } as VariantUnitFormRow
+      : unit;
+    if (this.unitPricesByDefaultQty(u)) {
+      const qty = this.toFiniteNumber(u.defaultQty, this.isGramsUnit(u.unitType) ? 200 : 1);
+      return `Price for ${qty} ${this.unitQtyLabel(u.unitType)}`;
+    }
+    if (u.unitType === 'kilo') return 'Price per kilo';
+    if (u.unitType === 'grams') return 'Price per gram';
     return 'Selling price per unit';
+  }
+
+  unitSalePriceHint(unit: VariantUnitFormRow): string {
+    if (this.unitPricesByDefaultQty(unit)) {
+      const qty = this.toFiniteNumber(unit.defaultQty, 200);
+      return `Sale price for ${qty} ${this.unitQtyLabel(unit.unitType)}`;
+    }
+    return 'Sale price';
+  }
+
+  unitPriceHelper(unit: VariantUnitFormRow): string {
+    const qty = this.toFiniteNumber(unit.defaultQty, 200);
+    return `Enter the sell price for ${qty} ${this.unitQtyLabel(unit.unitType)}. Cashier qty still sells by the gram.`;
+  }
+
+  unitPricesByDefaultQty(unit: Pick<VariantUnitFormRow, 'unitType' | 'isManualEntry'>): boolean {
+    return this.isGramsUnit(unit.unitType) || Boolean(unit.isManualEntry);
+  }
+
+  private normalizeQtyPricesForm(raw: unknown): UnitQtyPriceForm[] {
+    if (!Array.isArray(raw)) return [];
+    const out: UnitQtyPriceForm[] = [];
+    const seen = new Set<number>();
+    for (const item of raw) {
+      if (!item || typeof item !== 'object') continue;
+      const qty = this.toFiniteNumber((item as { qty?: unknown }).qty, 0);
+      const price = this.toFiniteNumber((item as { price?: unknown }).price, 0);
+      if (qty <= 0 || price < 0) continue;
+      const key = Math.round(qty * 1000) / 1000;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ qty: key, price: Math.round(price * 100) / 100 });
+    }
+    return out.sort((a, b) => a.qty - b.qty);
+  }
+
+  addQtyPriceRow(variantIndex: number, unitIndex: number): void {
+    const unit = this.productForm.variants[variantIndex]?.units?.[unitIndex];
+    if (!unit) return;
+    if (!unit.qtyPrices) unit.qtyPrices = [];
+    const last = unit.qtyPrices[unit.qtyPrices.length - 1];
+    const nextQty = last
+      ? Math.round((Number(last.qty) + (this.isGramsUnit(unit.unitType) ? 25 : 1)) * 1000) / 1000
+      : (this.isGramsUnit(unit.unitType) ? 25 : 1);
+    unit.qtyPrices = [...unit.qtyPrices, { qty: nextQty, price: 0 }];
+    this.syncUnitDefaultFromQtyPrices(unit);
+  }
+
+  removeQtyPriceRow(variantIndex: number, unitIndex: number, tierIndex: number): void {
+    const unit = this.productForm.variants[variantIndex]?.units?.[unitIndex];
+    if (!unit?.qtyPrices?.length) return;
+    unit.qtyPrices = unit.qtyPrices.filter((_, i) => i !== tierIndex);
+    this.syncUnitDefaultFromQtyPrices(unit);
+  }
+
+  onQtyPriceChange(variantIndex: number, unitIndex: number): void {
+    const unit = this.productForm.variants[variantIndex]?.units?.[unitIndex];
+    if (!unit) return;
+    this.syncUnitDefaultFromQtyPrices(unit);
+    this.onUnitPriceChange(variantIndex);
+  }
+
+  private syncUnitDefaultFromQtyPrices(unit: VariantUnitFormRow): void {
+    const tiers = this.normalizeQtyPricesForm(unit.qtyPrices);
+    unit.qtyPrices = tiers;
+    if (!tiers.length) return;
+    unit.defaultQty = tiers[0].qty;
+    // Keep form selling price aligned with first tier total (grams: price for that qty).
+    unit.sellingPrice = tiers[0].price;
+  }
+
+  private unitQtyLabel(unitType: string | null | undefined): string {
+    const t = this.normalizeUnitType(unitType);
+    if (t === 'grams' || t === 'manual') return 'g';
+    if (t === 'kilo') return 'kg';
+    return t || 'unit';
+  }
+
+  /** Form shows price for default qty; DB stores per-gram for weight units. */
+  private unitPriceFromStorage(
+    unit: Pick<VariantUnitFormRow, 'unitType' | 'isManualEntry' | 'defaultQty'>,
+    storedPrice: number | null | undefined,
+  ): number | null {
+    if (storedPrice == null) return null;
+    const price = this.toFiniteNumber(storedPrice, 0);
+    if (!this.unitPricesByDefaultQty(unit)) return price;
+    const qty = Math.max(0.01, this.toFiniteNumber(unit.defaultQty, 200));
+    return Math.round(price * qty * 10000) / 10000;
+  }
+
+  private unitPriceToStorage(
+    unit: Pick<VariantUnitFormRow, 'unitType' | 'isManualEntry' | 'defaultQty'>,
+    formPrice: number | null | undefined,
+  ): number | null {
+    if (formPrice == null) return null;
+    const price = this.toFiniteNumber(formPrice, 0);
+    if (!this.unitPricesByDefaultQty(unit)) return price;
+    const qty = Math.max(0.01, this.toFiniteNumber(unit.defaultQty, 200));
+    return Math.round((price / qty) * 1000000) / 1000000;
   }
 
   onCostPriceChange(): void {
@@ -869,11 +1006,6 @@ export class InventoryComponent implements OnInit, OnDestroy {
     await this.openEditProductById(variant.productId, variant.id);
   }
 
-  private normalizeUnitType(unitType: string | null | undefined): string {
-    const normalized = String(unitType ?? 'piece').trim().toLowerCase();
-    return normalized === 'manual' ? 'grams' : normalized || 'piece';
-  }
-
   private async populateProductForm(
     d: {
     id: number;
@@ -895,33 +1027,79 @@ export class InventoryComponent implements OnInit, OnDestroy {
         imageUrl: d.imageUrl ?? null,
         imagePreview: d.imageUrl ?? null,
         imageFile: null,
-        variants: (d.variants ?? []).map((v) => ({
+        variants: (d.variants ?? []).map((v) => {
+          const beverages = this.isBeveragesCategory(d.category);
+          const unitSource = v.units?.length
+            ? v.units
+            : beverages
+              ? []
+              : [{
+                  unitType: this.normalizeUnitType(v.unitType),
+                  sellingPrice: v.sellingPrice ?? 0,
+                  salePrice: v.salePrice ?? null,
+                  isManualEntry: false,
+                  isDefault: true,
+                  productSource: this.resolveProductSource(v.productSource, v.unitType, false),
+                }];
+          const units = unitSource.map((u, ui): VariantUnitFormRow => {
+            const unitType = this.normalizeUnitType(u.unitType);
+            const rawStock = Number((u as { stockQty?: number }).stockQty ?? 0);
+            const rawWarning = Number((u as { stockWarning?: number }).stockWarning ?? 0);
+            const unitCost = Number((u as { costPrice?: number }).costPrice ?? v.costPrice ?? 0);
+            const isGrams = this.isGramsUnit(unitType);
+            const fallbackDefault = isGrams ? 200 : 1;
+            const defaultQty = Math.max(
+              0.01,
+              Number((u as { defaultQty?: number }).defaultQty ?? fallbackDefault) || fallbackDefault,
+            );
+            const qtyPrices = this.normalizeQtyPricesForm((u as { qtyPrices?: unknown }).qtyPrices);
+            const effectiveDefault = qtyPrices.length ? qtyPrices[0].qty : defaultQty;
+            const unitRowBase = {
+              unitType,
+              isManualEntry: false,
+              defaultQty: effectiveDefault,
+            };
+            const storedSelling = u.sellingPrice ?? 0;
+            const storedSale = u.salePrice ?? null;
+            const unitId = Number((u as { id?: number }).id);
+            let sellingPrice = this.unitPriceFromStorage(unitRowBase, storedSelling) ?? 0;
+            if (qtyPrices.length) {
+              sellingPrice = qtyPrices[0].price;
+            }
+            return {
+              id: Number.isFinite(unitId) && unitId > 0 ? unitId : undefined,
+              unitType,
+              sellingPrice,
+              salePrice: this.unitPriceFromStorage(unitRowBase, storedSale),
+              isManualEntry: false,
+              isDefault: Boolean(u.isDefault) || ui === 0,
+              productSource: this.resolveProductSource(
+                (u as { productSource?: string }).productSource,
+                unitType,
+                false,
+              ),
+              stockQty: this.unitStockFromStorage(unitType, rawStock, false),
+              stockWarning: this.unitStockFromStorage(unitType, rawWarning, false),
+              costPrice: unitCost,
+              defaultQty: effectiveDefault,
+              qtyPrices,
+              collapsed: ui > 0,
+            };
+          });
+          const primaryUnit = units.find((u) => u.isDefault) ?? units[0];
+          return {
           id: v.id,
           variantName: v.variantName,
-          stockQty: v.stockQty,
-          stockWarning: v.stockWarning ?? 0,
-          costPrice: v.costPrice ?? 0,
-          sellingPrice: v.sellingPrice ?? 0,
-          salePrice: v.salePrice ?? null,
+          costPrice: primaryUnit?.costPrice ?? v.costPrice ?? 0,
+          sellingPrice: primaryUnit?.sellingPrice ?? v.sellingPrice ?? 0,
+          salePrice: primaryUnit?.salePrice ?? v.salePrice ?? null,
           unitType: this.normalizeUnitType(v.unitType),
           marginPercent: v.marginPercent ?? null,
           hasSugarLevel: Boolean(v.hasSugarLevel),
           collapsed: false,
           subVariantsCollapsed: false,
           unitsCollapsed: true,
-          units: (v.units?.length ? v.units : [{
-            unitType: this.normalizeUnitType(v.unitType),
-            sellingPrice: v.sellingPrice ?? 0,
-            salePrice: v.salePrice ?? null,
-            isManualEntry: false,
-            isDefault: true,
-          }]).map((u, ui): VariantUnitFormRow => ({
-            unitType: this.normalizeUnitType(u.unitType),
-            sellingPrice: u.sellingPrice ?? 0,
-            salePrice: u.salePrice ?? null,
-            isManualEntry: false,
-            isDefault: Boolean(u.isDefault) || ui === 0,
-          })),
+          units,
           subVariants: (v.subVariants ?? []).map((s): VariantSubVariantFormRow => {
             const temp = String(s.tempType ?? '').toLowerCase();
             return {
@@ -931,12 +1109,15 @@ export class InventoryComponent implements OnInit, OnDestroy {
               sizeLabel: String(s.sizeLabel ?? ''),
               sellingPrice: Number(s.sellingPrice ?? 0),
               salePrice: s.salePrice ?? null,
+              stockQty: Number((s as { stockQty?: number }).stockQty ?? 0),
+              stockWarning: Number((s as { stockWarning?: number }).stockWarning ?? 0),
             };
           }),
           imageUrl: v.imageUrl ?? null,
           imagePreview: v.imageUrl ?? null,
           imageFile: null,
-        })),
+        };
+        }),
       };
       if (!this.productForm.variants.length) {
         this.productForm.variants = [this.emptyVariantRow()];
@@ -988,8 +1169,6 @@ export class InventoryComponent implements OnInit, OnDestroy {
     const copy = {
       id: undefined as number | undefined,
       variantName: `${baseName} (copy)`,
-      stockQty: 0,
-      stockWarning: Number(source.stockWarning ?? 0),
       costPrice: Number(source.costPrice ?? 0),
       sellingPrice: Number(source.sellingPrice ?? 0),
       salePrice: source.salePrice != null ? Number(source.salePrice) : null,
@@ -1000,11 +1179,19 @@ export class InventoryComponent implements OnInit, OnDestroy {
       subVariantsCollapsed: false,
       unitsCollapsed: this.isBeveragesCategory(this.productForm.category),
       units: (source.units?.length ? source.units : [this.emptyUnitRow()]).map((u, ui) => ({
+        id: undefined as number | undefined,
         unitType: this.normalizeUnitType(u.unitType),
         sellingPrice: Number(u.sellingPrice ?? 0),
         salePrice: u.salePrice != null ? Number(u.salePrice) : null,
         isManualEntry: false,
         isDefault: Boolean(u.isDefault) || ui === 0,
+        productSource: this.resolveProductSource(u.productSource, u.unitType, u.isManualEntry),
+        stockQty: 0,
+        stockWarning: Number(u.stockWarning ?? 0),
+        costPrice: Number(u.costPrice ?? 0),
+        defaultQty: Math.max(0.01, Number(u.defaultQty ?? (this.isGramsUnit(u.unitType) ? 200 : 1))),
+        qtyPrices: this.normalizeQtyPricesForm(u.qtyPrices).map((t) => ({ ...t })),
+        collapsed: ui > 0,
       })),
       subVariants: (source.subVariants ?? []).map((s) => ({
         sortOrder: Number(s.sortOrder ?? 0) || undefined,
@@ -1012,6 +1199,8 @@ export class InventoryComponent implements OnInit, OnDestroy {
         sizeLabel: String(s.sizeLabel ?? ''),
         sellingPrice: Number(s.sellingPrice ?? 0),
         salePrice: s.salePrice != null ? Number(s.salePrice) : null,
+        stockQty: 0,
+        stockWarning: Number(s.stockWarning ?? 0),
       })),
       imageUrl: source.imageUrl ?? null,
       imagePreview: source.imagePreview ?? source.imageUrl ?? null,
@@ -1038,9 +1227,60 @@ export class InventoryComponent implements OnInit, OnDestroy {
     const row = this.emptyUnitRow();
     if (available) {
       row.unitType = available.value;
+      row.defaultQty = this.isGramsUnit(available.value) ? 200 : 1;
     }
     row.isDefault = false;
+    row.collapsed = false;
+    this.applyUnitProductSourceByUnitType(row);
+    const primary = this.productForm.variants[variantIndex].units.find((u) => u.isDefault)
+      ?? this.productForm.variants[variantIndex].units[0];
+    if (primary) {
+      row.costPrice = this.toFiniteNumber(primary.costPrice, 0);
+    }
+    for (const u of this.productForm.variants[variantIndex].units) {
+      u.collapsed = true;
+    }
     this.productForm.variants[variantIndex].units.unshift(row);
+  }
+
+  duplicateUnitRow(variantIndex: number, unitIndex: number): void {
+    const units = this.productForm.variants[variantIndex]?.units;
+    const source = units?.[unitIndex];
+    if (!source) return;
+
+    this.productForm.variants[variantIndex].unitsCollapsed = false;
+    const copy: VariantUnitFormRow = {
+      id: undefined,
+      unitType: this.normalizeUnitType(source.unitType),
+      sellingPrice: Number(source.sellingPrice ?? 0),
+      salePrice: source.salePrice != null ? Number(source.salePrice) : null,
+      isManualEntry: Boolean(source.isManualEntry),
+      isDefault: false,
+      productSource: source.productSource,
+      stockQty: Number(source.stockQty ?? 0),
+      stockWarning: Number(source.stockWarning ?? 0),
+      costPrice: Number(source.costPrice ?? 0),
+      defaultQty: Math.max(0.01, Number(source.defaultQty ?? 1)),
+      qtyPrices: this.normalizeQtyPricesForm(source.qtyPrices).map((t) => ({ ...t })),
+      collapsed: false,
+    };
+    this.applyUnitProductSourceByUnitType(copy);
+    for (const u of units) {
+      u.collapsed = true;
+    }
+    units.splice(unitIndex + 1, 0, copy);
+    this.syncVariantPrimaryUnit(variantIndex);
+
+    this.notify.success(
+      'Unit duplicated',
+      `Copied “${this.normalizeUnitType(source.unitType)}”. Edit prices, stock, or quantity prices, then save.`,
+    );
+  }
+
+  toggleUnitCollapsed(variantIndex: number, unitIndex: number): void {
+    const unit = this.productForm.variants[variantIndex]?.units?.[unitIndex];
+    if (!unit) return;
+    unit.collapsed = !unit.collapsed;
   }
 
   setDefaultUnit(variantIndex: number, unitIndex: number): void {
@@ -1052,7 +1292,8 @@ export class InventoryComponent implements OnInit, OnDestroy {
 
   removeUnitRow(variantIndex: number, unitIndex: number): void {
     const units = this.productForm.variants[variantIndex].units;
-    if (units.length <= 1) return;
+    const beverages = this.isBeveragesCategory(this.productForm.category);
+    if (!beverages && units.length <= 1) return;
     const wasDefault = units[unitIndex].isDefault;
     units.splice(unitIndex, 1);
     if (wasDefault && units.length) {
@@ -1064,6 +1305,12 @@ export class InventoryComponent implements OnInit, OnDestroy {
   onUnitTypeChange(variantIndex: number, unitIndex: number): void {
     const unit = this.productForm.variants[variantIndex].units[unitIndex];
     unit.isManualEntry = false;
+    this.applyUnitProductSourceByUnitType(unit);
+    const suggested = this.isGramsUnit(unit.unitType) ? 200 : 1;
+    const current = Number(unit.defaultQty);
+    if (!Number.isFinite(current) || current <= 0 || current === 1 || current === 200) {
+      unit.defaultQty = suggested;
+    }
     this.syncVariantPrimaryUnit(variantIndex);
   }
 
@@ -1072,13 +1319,99 @@ export class InventoryComponent implements OnInit, OnDestroy {
     this.onVariantSellingChange(variantIndex);
   }
 
+  private normalizeUnitType(unitType: string | null | undefined): string {
+    const normalized = String(unitType ?? 'piece').trim().toLowerCase();
+    if (normalized === 'manual' || normalized === 'gram') return 'grams';
+    return normalized || 'piece';
+  }
+
+  isGramsUnit(unitType: string | null | undefined): boolean {
+    const normalized = this.normalizeUnitType(unitType).toLowerCase();
+    return normalized === 'grams' || normalized === 'manual';
+  }
+
+  /** Show kg stock fields only when a grams/manual unit (Retail weight) exists. */
+  variantTracksWeightStock(v: {
+    unitType?: string | null;
+    units?: Array<{ unitType?: string | null; isManualEntry?: boolean; productSource?: string }>;
+  }): boolean {
+    const units = v.units ?? [];
+    if (units.length) {
+      return units.some(
+        (u) =>
+          Boolean(u.isManualEntry) ||
+          this.isGramsUnit(u.unitType) ||
+          String(u.productSource ?? '').toLowerCase() === 'retail',
+      );
+    }
+    return this.isGramsUnit(v.unitType);
+  }
+
+  unitStockQtyLabel(unit: VariantUnitFormRow): string {
+    return this.isGramsUnit(unit.unitType) || unit.isManualEntry ? 'Stock qty (kg)' : 'Stock qty';
+  }
+
+  unitStockWarningLabel(unit: VariantUnitFormRow): string {
+    return this.isGramsUnit(unit.unitType) || unit.isManualEntry
+      ? 'Low-stock warning (kg)'
+      : 'Low-stock warning';
+  }
+
+  private unitStockToStorage(unit: VariantUnitFormRow): number {
+    const qty = this.toFiniteNumber(unit.stockQty, 0);
+    return this.isGramsUnit(unit.unitType) || unit.isManualEntry ? kilosToStockGrams(qty) : qty;
+  }
+
+  private unitStockFromStorage(unitType: string, stockQty: number, isManualEntry = false): number {
+    return this.isGramsUnit(unitType) || isManualEntry
+      ? stockGramsToKilos(stockQty)
+      : this.toFiniteNumber(stockQty, 0);
+  }
+
+  resolveProductSource(
+    _value: unknown,
+    unitType?: string | null,
+    isManualEntry?: boolean,
+  ): 'Retail' | 'Wholesale' {
+    // Grams/manual → Retail. Every other unit type → Wholesale (not selectable).
+    if (isManualEntry || this.isGramsUnit(unitType)) return 'Retail';
+    return 'Wholesale';
+  }
+
+  private applyUnitProductSourceByUnitType(unit: VariantUnitFormRow): void {
+    unit.productSource = this.resolveProductSource(unit.productSource, unit.unitType, unit.isManualEntry);
+  }
+
+  onUnitProductSourceChange(variantIndex: number, unitIndex: number): void {
+    const unit = this.productForm.variants[variantIndex].units[unitIndex];
+    this.applyUnitProductSourceByUnitType(unit);
+    this.syncVariantPrimaryUnit(variantIndex);
+  }
+
+  isUnitProductSourceLocked(_unit: VariantUnitFormRow): boolean {
+    // Source is derived from unit type; user cannot override.
+    return true;
+  }
+
+  unitProductSourceHint(unit: VariantUnitFormRow): string {
+    return this.isGramsUnit(unit.unitType) || unit.isManualEntry
+      ? 'Grams units always use Retail.'
+      : 'Non-grams units always use Wholesale.';
+  }
+
   private syncVariantPrimaryUnit(variantIndex: number): void {
     const v = this.productForm.variants[variantIndex];
-    const primary = v.units[0];
+    const primary = v.units.find((u) => u.isDefault) ?? v.units[0];
     if (!primary) return;
     v.unitType = primary.unitType;
     v.sellingPrice = primary.sellingPrice;
     v.salePrice = primary.salePrice;
+    v.costPrice = this.toFiniteNumber(primary.costPrice, 0);
+    v.marginPercent = this.computeMargin(v.costPrice, v.sellingPrice);
+  }
+
+  onUnitCostChange(variantIndex: number): void {
+    this.syncVariantPrimaryUnit(variantIndex);
   }
 
   productImageDisplay(): string | null {
@@ -1176,6 +1509,16 @@ export class InventoryComponent implements OnInit, OnDestroy {
       this.notify.warning('Duplicate variants', 'Each variant must have a unique name.');
       return;
     }
+    for (const v of this.productForm.variants) {
+      if (this.isBeveragesCategory(this.productForm.category)) continue;
+      if (!(v.units ?? []).length) {
+        this.notify.warning(
+          'Required',
+          `Variant “${v.variantName.trim() || 'Untitled'}” needs at least one unit type.`,
+        );
+        return;
+      }
+    }
     const label = this.isEditingVariantOnly
       ? 'Save changes to this variant?'
       : this.itemDrawerMode === 'create'
@@ -1185,35 +1528,96 @@ export class InventoryComponent implements OnInit, OnDestroy {
   }
 
   private buildVariantPayload(v: VariantFormRow) {
+    const beverages = this.isBeveragesCategory(this.productForm.category);
     const unitsSource = v.units?.length
       ? v.units
-      : [{
+      : beverages
+        ? []
+        : [{
           unitType: this.defaultUnitTypeCode(),
           sellingPrice: Number(v.sellingPrice ?? 0),
           salePrice: v.salePrice ?? null,
           isManualEntry: false,
           isDefault: true,
+          productSource: 'Wholesale' as const,
+          stockQty: 0,
+          stockWarning: 0,
+          costPrice: Number(v.costPrice ?? 0),
+          defaultQty: 1,
+          qtyPrices: [] as UnitQtyPriceForm[],
+          collapsed: false,
         }];
-    const sellingPrice = this.toFiniteNumber(unitsSource[0]?.sellingPrice ?? v.sellingPrice, 0);
-    const costPrice = this.toFiniteNumber(v.costPrice, 0);
+    const primary = unitsSource.find((u) => u.isDefault) ?? unitsSource[0];
+    const unitsPayload = unitsSource.map((u) => {
+      const qtyPrices = this.normalizeQtyPricesForm(u.qtyPrices);
+      const defaultQty = Math.max(
+        0.01,
+        qtyPrices[0]?.qty
+          ?? this.toFiniteNumber(u.defaultQty, this.isGramsUnit(u.unitType) || u.isManualEntry ? 200 : 1),
+      );
+      const formSelling = qtyPrices.length ? qtyPrices[0].price : u.sellingPrice;
+      const unitMeta = { unitType: u.unitType, isManualEntry: Boolean(u.isManualEntry), defaultQty };
+      return {
+        id: u.id,
+        unitType: u.unitType,
+        sellingPrice: this.unitPriceToStorage(unitMeta, formSelling) ?? 0,
+        salePrice: this.unitPriceToStorage(unitMeta, u.salePrice),
+        isManualEntry: false,
+        isDefault: Boolean(u.isDefault),
+        // Beverages do not use product source; default Retail for any optional unit rows.
+        productSource: beverages
+          ? 'Retail'
+          : this.resolveProductSource(u.productSource, u.unitType, u.isManualEntry),
+        stockQty: this.unitStockToStorage(u),
+        stockWarning:
+          this.isGramsUnit(u.unitType) || u.isManualEntry
+            ? kilosToStockGrams(this.toFiniteNumber(u.stockWarning, 0))
+            : this.toFiniteNumber(u.stockWarning, 0),
+        costPrice: this.toFiniteNumber(u.costPrice, 0),
+        defaultQty,
+        qtyPrices,
+      };
+    });
+    const primaryStored = unitsPayload.find((u) => u.isDefault) ?? unitsPayload[0];
+    const sellingPrice = this.toFiniteNumber(
+      primaryStored?.sellingPrice ?? primary?.sellingPrice ?? v.sellingPrice,
+      0,
+    );
+    const costPrice = this.toFiniteNumber(primary?.costPrice ?? v.costPrice, 0);
+    const wholesaleUnits = unitsPayload.filter(
+      (u) => !this.isGramsUnit(u.unitType) && String(u.productSource).toLowerCase() !== 'retail',
+    );
+    const retailUnits = unitsPayload.filter(
+      (u) => this.isGramsUnit(u.unitType) || String(u.productSource).toLowerCase() === 'retail',
+    );
+    const subStockQty = beverages
+      ? (v.subVariants ?? []).reduce((sum, s) => sum + this.toFiniteNumber(s.stockQty, 0), 0)
+      : 0;
+    const subStockWarning = beverages
+      ? (v.subVariants ?? []).reduce((sum, s) => sum + this.toFiniteNumber(s.stockWarning, 0), 0)
+      : 0;
     return {
       id: v.id,
       variantName: v.variantName.trim(),
-      stockQty: this.toFiniteNumber(v.stockQty, 0),
-      stockWarning: this.toFiniteNumber(v.stockWarning, 0),
+      stockQty: wholesaleUnits.reduce((sum, u) => sum + this.toFiniteNumber(u.stockQty, 0), 0) + subStockQty,
+      stockWarning:
+        wholesaleUnits.reduce((sum, u) => sum + this.toFiniteNumber(u.stockWarning, 0), 0) + subStockWarning,
+      retailStockQty: retailUnits.reduce((sum, u) => sum + this.toFiniteNumber(u.stockQty, 0), 0),
+      retailStockWarning: retailUnits.reduce((sum, u) => sum + this.toFiniteNumber(u.stockWarning, 0), 0),
       costPrice,
       sellingPrice,
-      salePrice: unitsSource[0]?.salePrice ?? v.salePrice ?? null,
-      unitType: unitsSource[0]?.unitType ?? v.unitType,
+      salePrice: primaryStored?.salePrice ?? primary?.salePrice ?? v.salePrice ?? null,
+      unitType: primary?.unitType ?? v.unitType,
       marginPercent: this.computeMargin(costPrice, sellingPrice),
       hasSugarLevel: this.isBeveragesCategory(this.productForm.category) ? Boolean(v.hasSugarLevel) : false,
-      units: unitsSource.map((u) => ({
-        unitType: u.unitType,
-        sellingPrice: this.toFiniteNumber(u.sellingPrice, 0),
-        salePrice: u.salePrice ?? null,
-        isManualEntry: false,
-        isDefault: Boolean(u.isDefault),
-      })),
+      productSource: beverages
+        ? 'Retail'
+        : this.resolveProductSource(
+            primary?.productSource,
+            primary?.unitType ?? v.unitType,
+            primary?.isManualEntry,
+          ),
+      units: unitsPayload,
       subVariants: this.isBeveragesCategory(this.productForm.category)
         ? (v.subVariants ?? [])
             .filter((s) => String(s.sizeLabel ?? '').trim())
@@ -1224,6 +1628,8 @@ export class InventoryComponent implements OnInit, OnDestroy {
               sizeLabel: String(s.sizeLabel).trim(),
               sellingPrice: this.toFiniteNumber(s.sellingPrice, 0),
               salePrice: s.salePrice ?? null,
+              stockQty: this.toFiniteNumber(s.stockQty, 0),
+              stockWarning: this.toFiniteNumber(s.stockWarning, 0),
             }))
         : [],
     };
@@ -1896,6 +2302,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
           if (i.variantId) item.variantId = Number(i.variantId);
           if (i.brand?.trim()) item.brand = i.brand.trim();
           if (i.category?.trim()) item.category = i.category.trim();
+          item.productSource = this.resolveProductSource(i.productSource, null, false);
           return item;
         }),
       });
@@ -2381,25 +2788,36 @@ export class InventoryComponent implements OnInit, OnDestroy {
       sizeLabel: '',
       sellingPrice: 0,
       salePrice: null,
+      stockQty: 0,
+      stockWarning: 0,
     };
   }
 
   private emptyUnitRow(): VariantUnitFormRow {
+    const unitType = this.defaultUnitTypeCode();
+    const isGrams = this.isGramsUnit(unitType);
     return {
-      unitType: this.defaultUnitTypeCode(),
+      unitType,
       sellingPrice: 0,
       salePrice: null,
       isManualEntry: false,
       isDefault: true,
+      productSource: this.resolveProductSource(null, unitType, false),
+      stockQty: 0,
+      stockWarning: 0,
+      costPrice: 0,
+      defaultQty: isGrams ? 200 : 1,
+      qtyPrices: [],
+      collapsed: false,
     };
   }
 
   private emptyVariantRow(unitsCollapsed = false): VariantFormRow {
+    // unitsCollapsed=true for beverages (optional units). Do not read productForm here —
+    // this runs during field init of productForm itself.
     return {
       id: undefined,
       variantName: '',
-      stockQty: 0,
-      stockWarning: 0,
       costPrice: 0,
       sellingPrice: 0,
       salePrice: null,
@@ -2409,7 +2827,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
       collapsed: false,
       subVariantsCollapsed: false,
       unitsCollapsed,
-      units: [this.emptyUnitRow()],
+      units: unitsCollapsed ? [] : [this.emptyUnitRow()],
       subVariants: [],
       imageUrl: null,
       imagePreview: null,
@@ -2476,5 +2894,17 @@ export class InventoryComponent implements OnInit, OnDestroy {
     return { supplierId: null as number | null, comments: '', orderDate: today, expectedDate: today };
   }
   private poItemUid = 0;
-  private emptyPOItem(): PurchaseOrderItem & { _uid: number } { return { _uid: ++this.poItemUid, itemName: '', brand: '', category: '', quantity: 1, unitCost: 0, inventoryId: null, variantId: null }; }
+  private emptyPOItem(): PurchaseOrderItem & { _uid: number } {
+    return {
+      _uid: ++this.poItemUid,
+      itemName: '',
+      brand: '',
+      category: '',
+      productSource: 'Wholesale',
+      quantity: 1,
+      unitCost: 0,
+      inventoryId: null,
+      variantId: null,
+    };
+  }
 }

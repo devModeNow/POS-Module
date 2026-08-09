@@ -5,12 +5,24 @@ import sharp from 'sharp';
 const MAX_IMAGE_SIZE = 2 * 1024 * 1024;
 const THUMB_SIZE = 400;
 
+export type UnitQtyPrice = {
+  qty: number;
+  price: number;
+};
+
 export type VariantUnitRow = {
+  id?: number;
   unitType: string;
   sellingPrice: number;
   salePrice: number | null;
   isManualEntry: boolean;
   isDefault?: boolean;
+  productSource?: 'Retail' | 'Wholesale';
+  stockQty?: number;
+  stockWarning?: number;
+  costPrice?: number;
+  defaultQty?: number;
+  qtyPrices?: UnitQtyPrice[];
 };
 
 export type VariantRow = {
@@ -47,7 +59,149 @@ export type ProductRow = {
 
 @Injectable()
 export class InventoryProductsService {
+  private productSourceRepairDoneV2 = false;
+  private retailStockSchemaReady = false;
+  private unitStockSchemaReady = false;
+  private unitCostSchemaReady = false;
+  private unitDefaultQtySchemaReady = false;
+  private unitQtyPricesSchemaReady = false;
+  private duplicateUnitTypesAllowed = false;
+
   constructor(private readonly db: DatabaseService) {}
+
+  private async ensureRetailStockSchema(): Promise<void> {
+    if (this.retailStockSchemaReady) return;
+    await this.db.query(`
+      ALTER TABLE public.tblinventory_variants
+        ADD COLUMN IF NOT EXISTS retail_stock_qty NUMERIC(12, 3) NOT NULL DEFAULT 0
+    `);
+    await this.db.query(`
+      ALTER TABLE public.tblinventory_variants
+        ADD COLUMN IF NOT EXISTS retail_stock_warning NUMERIC(12, 3) NOT NULL DEFAULT 0
+    `);
+    this.retailStockSchemaReady = true;
+  }
+
+  private async ensureDuplicateUnitTypesAllowed(): Promise<void> {
+    if (this.duplicateUnitTypesAllowed) return;
+    await this.db.query(`DROP INDEX IF EXISTS public.idx_variant_units_variant_type`);
+    await this.db.query(`
+      CREATE INDEX IF NOT EXISTS idx_variant_units_variant_type_nonunique
+        ON public.tblinventory_variant_units (variant_id, lower(unit_type))
+        WHERE is_active = TRUE
+    `);
+    this.duplicateUnitTypesAllowed = true;
+  }
+
+  private async ensureUnitDefaultQtySchema(): Promise<void> {
+    if (this.unitDefaultQtySchemaReady) return;
+    await this.db.query(`
+      ALTER TABLE public.tblinventory_variant_units
+        ADD COLUMN IF NOT EXISTS default_qty NUMERIC(12, 3) NOT NULL DEFAULT 1
+    `);
+    await this.db.query(`
+      UPDATE public.tblinventory_variant_units
+      SET default_qty = 200,
+          updated_at = NOW()
+      WHERE default_qty = 1
+        AND (
+          COALESCE(is_manual_entry, FALSE) = TRUE
+          OR LOWER(COALESCE(unit_type, '')) IN ('grams', 'gram', 'manual')
+        )
+    `);
+    this.unitDefaultQtySchemaReady = true;
+  }
+
+  private async ensureUnitQtyPricesSchema(): Promise<void> {
+    if (this.unitQtyPricesSchemaReady) return;
+    await this.db.query(`
+      ALTER TABLE public.tblinventory_variant_units
+        ADD COLUMN IF NOT EXISTS qty_prices JSONB NOT NULL DEFAULT '[]'::jsonb
+    `);
+    this.unitQtyPricesSchemaReady = true;
+  }
+
+  private normalizeQtyPrices(raw: unknown): UnitQtyPrice[] {
+    if (!Array.isArray(raw)) return [];
+    const out: UnitQtyPrice[] = [];
+    const seen = new Set<number>();
+    for (const item of raw) {
+      if (!item || typeof item !== 'object') continue;
+      const qty = this.toFiniteNumber((item as { qty?: unknown }).qty, 0);
+      const price = this.toFiniteNumber((item as { price?: unknown }).price, 0);
+      if (qty <= 0 || price < 0) continue;
+      const key = Math.round(qty * 1000) / 1000;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({
+        qty: key,
+        price: Math.round(price * 100) / 100,
+      });
+    }
+    out.sort((a, b) => a.qty - b.qty);
+    return out;
+  }
+
+  private async ensureUnitCostSchema(): Promise<void> {
+    if (this.unitCostSchemaReady) return;
+    await this.db.query(`
+      ALTER TABLE public.tblinventory_variant_units
+        ADD COLUMN IF NOT EXISTS cost_price NUMERIC(12, 2) NOT NULL DEFAULT 0
+    `);
+    await this.db.query(`
+      UPDATE public.tblinventory_variant_units vu
+      SET cost_price = COALESCE(v.cost_price, 0),
+          updated_at = NOW()
+      FROM public.tblinventory_variants v
+      WHERE v.id = vu.variant_id
+        AND COALESCE(vu.cost_price, 0) = 0
+        AND COALESCE(v.cost_price, 0) > 0
+    `);
+    this.unitCostSchemaReady = true;
+  }
+
+  private async ensureUnitStockSchema(): Promise<void> {
+    if (this.unitStockSchemaReady) return;
+    await this.db.query(`
+      ALTER TABLE public.tblinventory_variant_units
+        ADD COLUMN IF NOT EXISTS stock_qty NUMERIC(12, 3) NOT NULL DEFAULT 0
+    `);
+    await this.db.query(`
+      ALTER TABLE public.tblinventory_variant_units
+        ADD COLUMN IF NOT EXISTS stock_warning NUMERIC(12, 3) NOT NULL DEFAULT 0
+    `);
+    // One-time migrate from variant pools into unit rows (only when unit stock still 0).
+    await this.db.query(`
+      UPDATE public.tblinventory_variant_units vu
+      SET stock_qty = CASE
+            WHEN COALESCE(vu.is_manual_entry, FALSE) = TRUE
+              OR LOWER(COALESCE(vu.unit_type, '')) IN ('grams', 'gram', 'manual')
+              OR LOWER(COALESCE(vu.product_source, '')) = 'retail'
+            THEN COALESCE(v.retail_stock_qty, 0)
+            WHEN COALESCE(vu.is_default, FALSE) = TRUE
+            THEN COALESCE(v.stock_qty, 0)
+            ELSE COALESCE(vu.stock_qty, 0)
+          END,
+          stock_warning = CASE
+            WHEN COALESCE(vu.is_manual_entry, FALSE) = TRUE
+              OR LOWER(COALESCE(vu.unit_type, '')) IN ('grams', 'gram', 'manual')
+              OR LOWER(COALESCE(vu.product_source, '')) = 'retail'
+            THEN COALESCE(v.retail_stock_warning, 0)
+            WHEN COALESCE(vu.is_default, FALSE) = TRUE
+            THEN COALESCE(v.stock_warning, 0)
+            ELSE COALESCE(vu.stock_warning, 0)
+          END,
+          updated_at = NOW()
+      FROM public.tblinventory_variants v
+      WHERE v.id = vu.variant_id
+        AND COALESCE(vu.stock_qty, 0) = 0
+        AND (
+          COALESCE(v.stock_qty, 0) > 0
+          OR COALESCE(v.retail_stock_qty, 0) > 0
+        )
+    `);
+    this.unitStockSchemaReady = true;
+  }
 
   private formatSaveError(e: unknown): string {
     const msg = e instanceof Error ? e.message : String(e);
@@ -58,7 +212,7 @@ export class InventoryProductsService {
       return 'Each variant must have a unique name under the same product.';
     }
     if (msg.includes('idx_variant_units_variant_type')) {
-      return 'Each unit type must be unique within a variant.';
+      return 'Could not save unit types. Refresh and try again.';
     }
     if (msg.includes('numeric field overflow')) {
       return 'One of the price or margin values is too large. Check cost, selling, and sale prices.';
@@ -90,16 +244,25 @@ export class InventoryProductsService {
       unitType?: string;
       sellingPrice?: number;
       salePrice?: number | null;
+      productSource?: string;
+      costPrice?: number;
       units?: Array<{
+        id?: number;
         unitType?: string;
         sellingPrice?: number;
         salePrice?: number | null;
         isManualEntry?: boolean;
         isDefault?: boolean;
+        productSource?: string;
+        stockQty?: number;
+        stockWarning?: number;
+        costPrice?: number;
+        defaultQty?: number;
+        qtyPrices?: Array<{ qty?: number; price?: number }>;
       }>;
     },
   ): VariantUnitRow[] {
-    const raw = v.units?.length
+    const raw = Array.isArray(v.units)
       ? v.units
       : [{
           unitType: v.unitType ?? 'piece',
@@ -107,17 +270,47 @@ export class InventoryProductsService {
           salePrice: v.salePrice ?? null,
           isManualEntry: v.unitType === 'manual',
           isDefault: true,
+          productSource: v.productSource,
+          stockQty: 0,
+          stockWarning: 0,
+          costPrice: v.costPrice ?? 0,
+          defaultQty: undefined,
+          qtyPrices: [],
         }];
     return raw
       .map((u, index) => {
         const rawType = String(u.unitType ?? 'piece').trim();
         const unitType = rawType.toLowerCase() === 'manual' ? 'grams' : rawType;
+        const isManualEntry = Boolean(u.isManualEntry);
+        const fallbackDefault =
+          isManualEntry || ['grams', 'gram', 'manual'].includes(unitType.toLowerCase()) ? 200 : 1;
+        const id = Number((u as { id?: number }).id);
+        const qtyPrices = this.normalizeQtyPrices((u as { qtyPrices?: unknown }).qtyPrices);
+        const defaultQty = qtyPrices.length
+          ? qtyPrices[0].qty
+          : Math.max(0.01, this.toFiniteNumber(u.defaultQty, fallbackDefault));
+        let sellingPrice = Number(u.sellingPrice ?? 0);
+        if (qtyPrices.length && (!Number.isFinite(sellingPrice) || sellingPrice <= 0)) {
+          const t = qtyPrices[0];
+          sellingPrice = t.qty > 0 ? Math.round((t.price / t.qty) * 1000000) / 1000000 : 0;
+        }
         return {
+          id: Number.isFinite(id) && id > 0 ? id : undefined,
           unitType,
-          sellingPrice: Number(u.sellingPrice ?? 0),
+          sellingPrice,
           salePrice: u.salePrice != null ? Number(u.salePrice) : null,
-          isManualEntry: Boolean(u.isManualEntry),
+          isManualEntry,
           isDefault: Boolean(u.isDefault) || (index === 0 && !raw.some((x) => x.isDefault)),
+          productSource: this.normalizeUnitProductSource(
+            u.productSource,
+            unitType,
+            isManualEntry,
+          ),
+          stockQty: this.toFiniteNumber(u.stockQty, 0),
+          stockWarning: this.toFiniteNumber(u.stockWarning, 0),
+          costPrice: this.toFiniteNumber(u.costPrice, 0),
+          defaultQty,
+          qtyPrices,
         };
       })
       .filter((u) => u.unitType.length > 0);
@@ -126,19 +319,36 @@ export class InventoryProductsService {
   private async loadUnitsMap(variantIds: number[], orgId: number, activeOnly = true) {
     const map = new Map<number, VariantUnitRow[]>();
     if (!variantIds.length) return map;
+    await this.ensureUnitCostSchema();
+    await this.ensureUnitDefaultQtySchema();
+    await this.ensureUnitQtyPricesSchema();
+    await this.ensureDuplicateUnitTypesAllowed();
     const activeClause = activeOnly ? 'AND vu.is_active = TRUE' : '';
     const result = await this.db.query<{
+      id: number | string;
       variantId: number | string;
       unitType: string;
       sellingPrice: string;
       salePrice: string | null;
       isManualEntry: boolean;
       isDefault: boolean;
+      productSource: string;
+      stockQty: string;
+      stockWarning: string;
+      costPrice: string;
+      defaultQty: string;
+      qtyPrices: unknown;
     }>(
-      `SELECT vu.variant_id AS "variantId", vu.unit_type AS "unitType",
+      `SELECT vu.id AS id, vu.variant_id AS "variantId", vu.unit_type AS "unitType",
               vu.selling_price AS "sellingPrice", vu.sale_price AS "salePrice",
               vu.is_manual_entry AS "isManualEntry",
-              vu.is_default AS "isDefault"
+              vu.is_default AS "isDefault",
+              COALESCE(vu.product_source, 'Retail') AS "productSource",
+              COALESCE(vu.stock_qty, 0)::text AS "stockQty",
+              COALESCE(vu.stock_warning, 0)::text AS "stockWarning",
+              COALESCE(vu.cost_price, 0)::text AS "costPrice",
+              COALESCE(vu.default_qty, 1)::text AS "defaultQty",
+              COALESCE(vu.qty_prices, '[]'::jsonb) AS "qtyPrices"
        FROM tblinventory_variant_units vu
        WHERE vu.variant_id = ANY($1::bigint[]) ${activeClause}
          AND (
@@ -150,19 +360,37 @@ export class InventoryProductsService {
                AND ut.is_active = TRUE
            )
          )
-       ORDER BY vu.is_default DESC, vu.sort_order ASC, vu.unit_type ASC`,
+       ORDER BY vu.is_default DESC, vu.sort_order ASC, vu.id ASC`,
       [variantIds, orgId],
     );
     for (const row of result.rows) {
       const variantId = Number(row.variantId);
       if (!Number.isFinite(variantId) || variantId <= 0) continue;
       const list = map.get(variantId) ?? [];
+      const unitType = row.unitType;
+      const isManualEntry = row.isManualEntry;
+      const fallbackDefault =
+        isManualEntry || ['grams', 'gram', 'manual'].includes(String(unitType).toLowerCase())
+          ? 200
+          : 1;
+      const qtyPrices = this.normalizeQtyPrices(row.qtyPrices);
       list.push({
-        unitType: row.unitType,
+        id: Number(row.id),
+        unitType,
         sellingPrice: Number(row.sellingPrice ?? 0),
         salePrice: row.salePrice != null ? Number(row.salePrice) : null,
-        isManualEntry: row.isManualEntry,
+        isManualEntry,
         isDefault: row.isDefault,
+        productSource: this.normalizeUnitProductSource(
+          row.productSource,
+          unitType,
+          isManualEntry,
+        ),
+        stockQty: Number(row.stockQty ?? 0),
+        stockWarning: Number(row.stockWarning ?? 0),
+        costPrice: Number(row.costPrice ?? 0),
+        defaultQty: Math.max(0.01, Number(row.defaultQty ?? fallbackDefault) || fallbackDefault),
+        qtyPrices,
       });
       map.set(variantId, list);
     }
@@ -176,7 +404,118 @@ export class InventoryProductsService {
     }));
   }
 
+  private async ensureProductSourceSchema(): Promise<void> {
+    await this.db.query(`
+      ALTER TABLE public.tblinventory_variants
+        ADD COLUMN IF NOT EXISTS product_source TEXT NOT NULL DEFAULT 'Wholesale'
+    `);
+    await this.db.query(`
+      ALTER TABLE public.tblinventory_variant_units
+        ADD COLUMN IF NOT EXISTS product_source TEXT NOT NULL DEFAULT 'Wholesale'
+    `);
+    await this.db.query(`
+      ALTER TABLE public.tblinventory_variants
+        ALTER COLUMN product_source SET DEFAULT 'Wholesale'
+    `);
+    await this.db.query(`
+      ALTER TABLE public.tblinventory_variant_units
+        ALTER COLUMN product_source SET DEFAULT 'Wholesale'
+    `);
+    await this.db.query(`
+      DO $$
+      BEGIN
+        ALTER TABLE public.tblinventory_variants
+          ADD CONSTRAINT tblinventory_variants_product_source_check
+          CHECK (product_source IN ('Retail', 'Wholesale'));
+      EXCEPTION
+        WHEN duplicate_object THEN NULL;
+      END $$
+    `);
+    await this.db.query(`
+      DO $$
+      BEGIN
+        ALTER TABLE public.tblinventory_variant_units
+          ADD CONSTRAINT tblinventory_variant_units_product_source_check
+          CHECK (product_source IN ('Retail', 'Wholesale'));
+      EXCEPTION
+        WHEN duplicate_object THEN NULL;
+      END $$
+    `);
+    // One-time repair: grams/manual → Retail; every other unit type → Wholesale.
+    if (!this.productSourceRepairDoneV2) {
+      await this.db.query(`
+        UPDATE public.tblinventory_variant_units
+        SET product_source = CASE
+              WHEN LOWER(COALESCE(unit_type, '')) IN ('grams', 'gram', 'manual')
+                OR COALESCE(is_manual_entry, FALSE) = TRUE
+              THEN 'Retail'
+              ELSE 'Wholesale'
+            END,
+            updated_at = NOW()
+        WHERE COALESCE(product_source, '') <> CASE
+              WHEN LOWER(COALESCE(unit_type, '')) IN ('grams', 'gram', 'manual')
+                OR COALESCE(is_manual_entry, FALSE) = TRUE
+              THEN 'Retail'
+              ELSE 'Wholesale'
+            END
+      `);
+      // Variant denormalized source follows the default unit only.
+      await this.db.query(`
+        UPDATE public.tblinventory_variants v
+        SET product_source = src.product_source, updated_at = NOW()
+        FROM (
+          SELECT DISTINCT ON (vu.variant_id)
+                 vu.variant_id,
+                 vu.product_source
+          FROM public.tblinventory_variant_units vu
+          WHERE COALESCE(vu.is_active, TRUE) = TRUE
+          ORDER BY vu.variant_id,
+                   CASE WHEN COALESCE(vu.is_default, FALSE) THEN 0 ELSE 1 END,
+                   vu.sort_order ASC NULLS LAST,
+                   vu.id ASC
+        ) src
+        WHERE v.id = src.variant_id
+          AND COALESCE(v.product_source, '') <> COALESCE(src.product_source, '')
+      `);
+      this.productSourceRepairDoneV2 = true;
+    }
+  }
+
+  private normalizeUnitProductSource(
+    _value: unknown,
+    unitType?: string | null,
+    isManualEntry?: boolean,
+  ): 'Retail' | 'Wholesale' {
+    const unit = String(unitType ?? '').trim().toLowerCase();
+    // Grams/gram/manual → Retail. All other unit types → Wholesale.
+    if (isManualEntry || unit === 'grams' || unit === 'gram' || unit === 'manual') return 'Retail';
+    return 'Wholesale';
+  }
+
+  private normalizeProductSource(
+    value: unknown,
+    units: Array<{ unitType?: string | null; isManualEntry?: boolean; productSource?: string }> = [],
+    fallbackUnitType?: string | null,
+  ): 'Retail' | 'Wholesale' {
+    const primary = units.find((u) => Boolean((u as { isDefault?: boolean }).isDefault)) ?? units[0];
+    if (primary) {
+      return this.normalizeUnitProductSource(
+        primary.productSource ?? value,
+        primary.unitType ?? fallbackUnitType,
+        primary.isManualEntry,
+      );
+    }
+    return this.normalizeUnitProductSource(value, fallbackUnitType, false);
+  }
+
   private async ensureBeverageSchema(): Promise<void> {
+    await this.ensureProductSourceSchema();
+    await this.ensureRetailStockSchema();
+    await this.ensureUnitStockSchema();
+    await this.ensureUnitCostSchema();
+    await this.ensureUnitDefaultQtySchema();
+    await this.ensureUnitQtyPricesSchema();
+    await this.ensureDuplicateUnitTypesAllowed();
     await this.db.query(`
       ALTER TABLE public.tblinventory_variants
         ADD COLUMN IF NOT EXISTS has_sugar_level BOOLEAN NOT NULL DEFAULT FALSE
@@ -190,11 +529,18 @@ export class InventoryProductsService {
         size_label    TEXT NOT NULL,
         selling_price NUMERIC(12,2) NOT NULL DEFAULT 0,
         sale_price    NUMERIC(12,2),
+        stock_qty     NUMERIC(12,3) NOT NULL DEFAULT 0,
+        stock_warning NUMERIC(12,3) NOT NULL DEFAULT 0,
         sort_order    INTEGER NOT NULL DEFAULT 0,
         is_active     BOOLEAN NOT NULL DEFAULT TRUE,
         created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
+    `);
+    await this.db.query(`
+      ALTER TABLE public.tblinventory_variant_subvariants
+        ADD COLUMN IF NOT EXISTS stock_qty NUMERIC(12, 3) NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS stock_warning NUMERIC(12, 3) NOT NULL DEFAULT 0
     `);
     await this.db.query(`
       CREATE INDEX IF NOT EXISTS idx_inv_subvariants_variant
@@ -217,6 +563,8 @@ export class InventoryProductsService {
       sizeLabel?: string;
       sellingPrice?: number;
       salePrice?: number | null;
+      stockQty?: number;
+      stockWarning?: number;
     }>,
   ) {
     if (!Array.isArray(rows)) return [] as Array<{
@@ -225,6 +573,8 @@ export class InventoryProductsService {
       sizeLabel: string;
       sellingPrice: number;
       salePrice: number | null;
+      stockQty: number;
+      stockWarning: number;
     }>;
     return rows
       .map((r, index) => ({
@@ -234,6 +584,8 @@ export class InventoryProductsService {
         sizeLabel: String(r.sizeLabel ?? '').trim(),
         sellingPrice: this.toFiniteNumber(r.sellingPrice, 0),
         salePrice: this.toOptionalNumber(r.salePrice),
+        stockQty: this.toFiniteNumber(r.stockQty, 0),
+        stockWarning: this.toFiniteNumber(r.stockWarning, 0),
       }))
       .filter((r) => r.sizeLabel.length > 0);
   }
@@ -246,6 +598,8 @@ export class InventoryProductsService {
       sizeLabel: string;
       sellingPrice: number;
       salePrice: number | null;
+      stockQty: number;
+      stockWarning: number;
     }>>();
     if (!variantIds.length) return map;
     try {
@@ -258,6 +612,8 @@ export class InventoryProductsService {
         sizeLabel: string;
         sellingPrice: string;
         salePrice: string | null;
+        stockQty: string;
+        stockWarning: string;
       }>(
         `SELECT id,
                 variant_id AS "variantId",
@@ -265,7 +621,9 @@ export class InventoryProductsService {
                 temp_type AS "tempType",
                 size_label AS "sizeLabel",
                 selling_price AS "sellingPrice",
-                sale_price AS "salePrice"
+                sale_price AS "salePrice",
+                COALESCE(stock_qty, 0)::text AS "stockQty",
+                COALESCE(stock_warning, 0)::text AS "stockWarning"
          FROM tblinventory_variant_subvariants
          WHERE org_id = $1
            AND variant_id = ANY($2::bigint[])
@@ -284,6 +642,8 @@ export class InventoryProductsService {
           sizeLabel: row.sizeLabel,
           sellingPrice: Number(row.sellingPrice ?? 0),
           salePrice: row.salePrice != null ? Number(row.salePrice) : null,
+          stockQty: Number(row.stockQty ?? 0),
+          stockWarning: Number(row.stockWarning ?? 0),
         });
         map.set(variantId, list);
       }
@@ -302,6 +662,8 @@ export class InventoryProductsService {
       sizeLabel: string;
       sellingPrice: number;
       salePrice: number | null;
+      stockQty?: number;
+      stockWarning?: number;
     }>>,
   ) {
     return rows.map((row) => ({
@@ -321,6 +683,8 @@ export class InventoryProductsService {
       sizeLabel: string;
       sellingPrice: number;
       salePrice: number | null;
+      stockQty: number;
+      stockWarning: number;
     }>,
   ) {
     const keptIds: number[] = [];
@@ -333,18 +697,41 @@ export class InventoryProductsService {
         await client.query(
           `UPDATE tblinventory_variant_subvariants
            SET temp_type = $1, size_label = $2, selling_price = $3, sale_price = $4,
-               sort_order = $5, is_active = TRUE, updated_at = NOW()
-           WHERE id = $6 AND org_id = $7 AND variant_id = $8`,
-          [s.tempType, s.sizeLabel, s.sellingPrice, s.salePrice, i + 1, s.id, orgId, variantId],
+               stock_qty = $5, stock_warning = $6,
+               sort_order = $7, is_active = TRUE, updated_at = NOW()
+           WHERE id = $8 AND org_id = $9 AND variant_id = $10`,
+          [
+            s.tempType,
+            s.sizeLabel,
+            s.sellingPrice,
+            s.salePrice,
+            s.stockQty,
+            s.stockWarning,
+            i + 1,
+            s.id,
+            orgId,
+            variantId,
+          ],
         );
         keptIds.push(s.id);
       } else {
         const ins = await client.query<{ id: number }>(
           `INSERT INTO tblinventory_variant_subvariants
-             (org_id, variant_id, temp_type, size_label, selling_price, sale_price, sort_order)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)
+             (org_id, variant_id, temp_type, size_label, selling_price, sale_price,
+              stock_qty, stock_warning, sort_order)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
            RETURNING id`,
-          [orgId, variantId, s.tempType, s.sizeLabel, s.sellingPrice, s.salePrice, i + 1],
+          [
+            orgId,
+            variantId,
+            s.tempType,
+            s.sizeLabel,
+            s.sellingPrice,
+            s.salePrice,
+            s.stockQty,
+            s.stockWarning,
+            i + 1,
+          ],
         );
         keptIds.push(ins.rows[0].id);
       }
@@ -364,6 +751,7 @@ export class InventoryProductsService {
         [variantId, orgId],
       );
     }
+    await this.syncVariantStockPoolsFromUnits(client, orgId, variantId);
   }
 
   private async saveVariantUnits(
@@ -373,9 +761,17 @@ export class InventoryProductsService {
     units: VariantUnitRow[],
   ) {
     if (!units.length) {
-      throw new Error('Each variant needs at least one unit type.');
+      await client.query(
+        `UPDATE tblinventory_variant_units SET is_active = FALSE, updated_at = NOW()
+         WHERE variant_id = $1 AND org_id = $2 AND is_active = TRUE`,
+        [variantId, orgId],
+      );
+      await this.syncVariantStockPoolsFromUnits(client, orgId, variantId);
+      return;
     }
-    const kept: string[] = [];
+    await this.ensureDuplicateUnitTypesAllowed();
+    await this.ensureUnitQtyPricesSchema();
+    const keptIds: number[] = [];
     const defaultIndex = units.findIndex((u) => u.isDefault);
     const orderedUnits = defaultIndex > 0
       ? [units[defaultIndex], ...units.filter((_, i) => i !== defaultIndex)]
@@ -383,49 +779,155 @@ export class InventoryProductsService {
     for (let i = 0; i < orderedUnits.length; i++) {
       const u = orderedUnits[i];
       const isDefault = Boolean(u.isDefault) || (defaultIndex < 0 && i === 0);
-      const existing = await client.query<{ id: number }>(
-        `SELECT id FROM tblinventory_variant_units
-         WHERE variant_id = $1 AND lower(unit_type) = lower($2)
-         LIMIT 1`,
-        [variantId, u.unitType],
-      );
-      if (existing.rowCount) {
-        await client.query(
-          `UPDATE tblinventory_variant_units
-           SET selling_price = $1, sale_price = $2, is_manual_entry = $3,
-               sort_order = $4, is_default = $5, is_active = TRUE, updated_at = NOW()
-           WHERE id = $6`,
-          [u.sellingPrice, u.salePrice, u.isManualEntry, i + 1, isDefault, existing.rows[0].id],
+      const existingId = Number(u.id);
+      if (Number.isFinite(existingId) && existingId > 0) {
+        const owned = await client.query<{ id: number }>(
+          `SELECT id FROM tblinventory_variant_units
+           WHERE id = $1 AND variant_id = $2 AND org_id = $3
+           LIMIT 1`,
+          [existingId, variantId, orgId],
         );
-      } else {
-        await client.query(
-          `INSERT INTO tblinventory_variant_units
-             (org_id, variant_id, unit_type, selling_price, sale_price, is_manual_entry, sort_order, is_default)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-          [orgId, variantId, u.unitType, u.sellingPrice, u.salePrice, u.isManualEntry, i + 1, isDefault],
-        );
+        if (owned.rowCount) {
+          await client.query(
+            `UPDATE tblinventory_variant_units
+             SET unit_type = $1, selling_price = $2, sale_price = $3, is_manual_entry = $4,
+                 sort_order = $5, is_default = $6, product_source = $7,
+                 stock_qty = $8, stock_warning = $9, cost_price = $10, default_qty = $11,
+                 qty_prices = $12::jsonb,
+                 is_active = TRUE, updated_at = NOW()
+             WHERE id = $13`,
+            [
+              u.unitType,
+              u.sellingPrice,
+              u.salePrice,
+              u.isManualEntry,
+              i + 1,
+              isDefault,
+              this.normalizeUnitProductSource(u.productSource, u.unitType, u.isManualEntry),
+              this.toFiniteNumber(u.stockQty, 0),
+              this.toFiniteNumber(u.stockWarning, 0),
+              this.toFiniteNumber(u.costPrice, 0),
+              Math.max(0.01, this.toFiniteNumber(u.defaultQty, 1)),
+              JSON.stringify(this.normalizeQtyPrices(u.qtyPrices)),
+              existingId,
+            ],
+          );
+          keptIds.push(existingId);
+          continue;
+        }
       }
-      kept.push(u.unitType.toLowerCase());
+      const inserted = await client.query<{ id: number }>(
+        `INSERT INTO tblinventory_variant_units
+           (org_id, variant_id, unit_type, selling_price, sale_price, is_manual_entry,
+            sort_order, is_default, product_source, stock_qty, stock_warning, cost_price, default_qty, qty_prices)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb)
+         RETURNING id`,
+        [
+          orgId,
+          variantId,
+          u.unitType,
+          u.sellingPrice,
+          u.salePrice,
+          u.isManualEntry,
+          i + 1,
+          isDefault,
+          this.normalizeUnitProductSource(u.productSource, u.unitType, u.isManualEntry),
+          this.toFiniteNumber(u.stockQty, 0),
+          this.toFiniteNumber(u.stockWarning, 0),
+          this.toFiniteNumber(u.costPrice, 0),
+          Math.max(0.01, this.toFiniteNumber(u.defaultQty, 1)),
+          JSON.stringify(this.normalizeQtyPrices(u.qtyPrices)),
+        ],
+      );
+      keptIds.push(Number(inserted.rows[0].id));
     }
     await client.query(
       `UPDATE tblinventory_variant_units SET is_default = FALSE, updated_at = NOW()
        WHERE variant_id = $1 AND org_id = $2 AND is_active = TRUE`,
       [variantId, orgId],
     );
+    const defaultUnitId = keptIds[0];
+    if (defaultUnitId) {
+      await client.query(
+        `UPDATE tblinventory_variant_units SET is_default = TRUE, updated_at = NOW()
+         WHERE id = $1 AND org_id = $2`,
+        [defaultUnitId, orgId],
+      );
+    }
+    if (keptIds.length) {
+      await client.query(
+        `UPDATE tblinventory_variant_units SET is_active = FALSE, updated_at = NOW()
+         WHERE variant_id = $1 AND org_id = $2 AND id != ALL($3::bigint[])`,
+        [variantId, orgId, keptIds],
+      );
+    }
+    await this.syncVariantStockPoolsFromUnits(client, orgId, variantId);
+  }
+
+  /** Keep variant stock_qty / retail_stock_qty in sync for list/report compatibility. */
+  private async syncVariantStockPoolsFromUnits(
+    client: { query: DatabaseService['query'] },
+    orgId: number,
+    variantId: number,
+  ): Promise<void> {
     await client.query(
-      `UPDATE tblinventory_variant_units SET is_default = TRUE, updated_at = NOW()
-       WHERE id = (
-         SELECT id FROM tblinventory_variant_units
-         WHERE variant_id = $1 AND org_id = $2 AND is_active = TRUE
-         ORDER BY sort_order ASC, id ASC
-         LIMIT 1
-       )`,
+      `UPDATE tblinventory_variants v
+       SET stock_qty = COALESCE((
+             SELECT SUM(vu.stock_qty)
+             FROM tblinventory_variant_units vu
+             WHERE vu.variant_id = v.id AND vu.org_id = v.org_id AND vu.is_active = TRUE
+               AND COALESCE(vu.is_manual_entry, FALSE) = FALSE
+               AND LOWER(COALESCE(vu.unit_type, '')) NOT IN ('grams', 'gram', 'manual')
+               AND LOWER(COALESCE(vu.product_source, 'Wholesale')) <> 'retail'
+           ), 0)
+           + COALESCE((
+             SELECT SUM(sv.stock_qty)
+             FROM tblinventory_variant_subvariants sv
+             WHERE sv.variant_id = v.id AND sv.org_id = v.org_id AND sv.is_active = TRUE
+           ), 0),
+           stock_warning = COALESCE((
+             SELECT SUM(vu.stock_warning)
+             FROM tblinventory_variant_units vu
+             WHERE vu.variant_id = v.id AND vu.org_id = v.org_id AND vu.is_active = TRUE
+               AND COALESCE(vu.is_manual_entry, FALSE) = FALSE
+               AND LOWER(COALESCE(vu.unit_type, '')) NOT IN ('grams', 'gram', 'manual')
+               AND LOWER(COALESCE(vu.product_source, 'Wholesale')) <> 'retail'
+           ), 0)
+           + COALESCE((
+             SELECT SUM(sv.stock_warning)
+             FROM tblinventory_variant_subvariants sv
+             WHERE sv.variant_id = v.id AND sv.org_id = v.org_id AND sv.is_active = TRUE
+           ), 0),
+           retail_stock_qty = COALESCE((
+             SELECT SUM(vu.stock_qty)
+             FROM tblinventory_variant_units vu
+             WHERE vu.variant_id = v.id AND vu.org_id = v.org_id AND vu.is_active = TRUE
+               AND (
+                 COALESCE(vu.is_manual_entry, FALSE) = TRUE
+                 OR LOWER(COALESCE(vu.unit_type, '')) IN ('grams', 'gram', 'manual')
+                 OR LOWER(COALESCE(vu.product_source, '')) = 'retail'
+               )
+           ), 0),
+           retail_stock_warning = COALESCE((
+             SELECT SUM(vu.stock_warning)
+             FROM tblinventory_variant_units vu
+             WHERE vu.variant_id = v.id AND vu.org_id = v.org_id AND vu.is_active = TRUE
+               AND (
+                 COALESCE(vu.is_manual_entry, FALSE) = TRUE
+                 OR LOWER(COALESCE(vu.unit_type, '')) IN ('grams', 'gram', 'manual')
+                 OR LOWER(COALESCE(vu.product_source, '')) = 'retail'
+               )
+           ), 0),
+           cost_price = COALESCE((
+             SELECT vu.cost_price
+             FROM tblinventory_variant_units vu
+             WHERE vu.variant_id = v.id AND vu.org_id = v.org_id AND vu.is_active = TRUE
+             ORDER BY vu.is_default DESC, vu.sort_order ASC
+             LIMIT 1
+           ), v.cost_price),
+           updated_at = NOW()
+       WHERE v.id = $1 AND v.org_id = $2`,
       [variantId, orgId],
-    );
-    await client.query(
-      `UPDATE tblinventory_variant_units SET is_active = FALSE, updated_at = NOW()
-       WHERE variant_id = $1 AND org_id = $2 AND lower(unit_type) != ALL($3::text[])`,
-      [variantId, orgId, kept],
     );
   }
 
@@ -539,12 +1041,15 @@ export class InventoryProductsService {
                 v.variant_name AS "variantName",
                 v.stock_qty AS "stockQty",
                 v.stock_warning AS "stockWarning",
+                COALESCE(v.retail_stock_qty, 0) AS "retailStockQty",
+                COALESCE(v.retail_stock_warning, 0) AS "retailStockWarning",
                 v.cost_price AS "costPrice",
                 v.selling_price AS "sellingPrice",
                 v.sale_price AS "salePrice",
                 v.unit_type AS "unitType",
                 v.margin_percent AS "marginPercent",
                 v.has_sugar_level AS "hasSugarLevel",
+                COALESCE(v.product_source, 'Retail') AS "productSource",
                 v.image_url AS "imageUrl",
                 p.image_url AS "productImageUrl"
          FROM tblinventory_variants v
@@ -555,11 +1060,16 @@ export class InventoryProductsService {
       );
       const rows = result.rows.map((r: Record<string, unknown>) => ({
         ...r,
+        stockQty: Number(r['stockQty'] ?? 0),
+        stockWarning: Number(r['stockWarning'] ?? 0),
+        retailStockQty: Number(r['retailStockQty'] ?? 0),
+        retailStockWarning: Number(r['retailStockWarning'] ?? 0),
         costPrice: Number(r['costPrice'] ?? 0),
         sellingPrice: Number(r['sellingPrice'] ?? 0),
         salePrice: r['salePrice'] != null ? Number(r['salePrice']) : null,
         marginPercent: r['marginPercent'] != null ? Number(r['marginPercent']) : null,
         hasSugarLevel: Boolean(r['hasSugarLevel']),
+        productSource: String(r['productSource'] ?? 'Retail') === 'Wholesale' ? 'Wholesale' : 'Retail',
         imageUrl: r['imageUrl'] ?? null,
       })) as Array<{ id: number } & Record<string, unknown>>;
       const unitsMap = await this.loadUnitsMap(rows.map((r) => r.id), orgId);
@@ -575,6 +1085,7 @@ export class InventoryProductsService {
 
   async listAllVariants(orgId: number, search?: string, category?: string, deletedOnly = false) {
     try {
+      await this.ensureBeverageSchema();
       const params: unknown[] = [orgId];
       let extra = '';
       const variantActive = deletedOnly ? 'FALSE' : 'TRUE';
@@ -597,11 +1108,14 @@ export class InventoryProductsService {
                 v.variant_name AS "variantName",
                 v.stock_qty AS "stockQty",
                 v.stock_warning AS "stockWarning",
+                COALESCE(v.retail_stock_qty, 0) AS "retailStockQty",
+                COALESCE(v.retail_stock_warning, 0) AS "retailStockWarning",
                 v.cost_price AS "costPrice",
                 v.selling_price AS "sellingPrice",
                 v.sale_price AS "salePrice",
                 v.unit_type AS "unitType",
                 v.margin_percent AS "marginPercent",
+                COALESCE(v.product_source, 'Retail') AS "productSource",
                 v.image_url AS "imageUrl",
                 p.image_url AS "productImageUrl",
                 v.is_active AS "isActive"
@@ -614,9 +1128,14 @@ export class InventoryProductsService {
 
       const rows = result.rows.map((r: Record<string, unknown>) => ({
         ...r,
+        stockQty: Number(r['stockQty'] ?? 0),
+        stockWarning: Number(r['stockWarning'] ?? 0),
+        retailStockQty: Number(r['retailStockQty'] ?? 0),
+        retailStockWarning: Number(r['retailStockWarning'] ?? 0),
         costPrice: Number(r['costPrice'] ?? 0),
         sellingPrice: Number(r['sellingPrice'] ?? 0),
         salePrice: r['salePrice'] != null ? Number(r['salePrice']) : null,
+        productSource: String(r['productSource'] ?? 'Retail') === 'Wholesale' ? 'Wholesale' : 'Retail',
         marginPercent: r['marginPercent'] != null ? Number(r['marginPercent']) : null,
         imageUrl: r['imageUrl'] ?? r['productImageUrl'] ?? null,
       })) as Array<{ id: number } & Record<string, unknown>>;
@@ -665,7 +1184,9 @@ export class InventoryProductsService {
         unitType?: string;
         marginPercent?: number | null;
         hasSugarLevel?: boolean;
+        productSource?: string;
         units?: Array<{
+          id?: number;
           unitType?: string;
           sellingPrice?: number;
           salePrice?: number | null;
@@ -678,6 +1199,8 @@ export class InventoryProductsService {
           sizeLabel?: string;
           sellingPrice?: number;
           salePrice?: number | null;
+          stockQty?: number;
+          stockWarning?: number;
         }>;
       }>;
     },
@@ -758,12 +1281,25 @@ export class InventoryProductsService {
           const primary = units[0];
           const stockQty = this.toFiniteNumber(v.stockQty, 0);
           const stockWarning = this.toFiniteNumber(v.stockWarning, 0);
+          const retailStockQty = this.toFiniteNumber(
+            (v as { retailStockQty?: number }).retailStockQty,
+            0,
+          );
+          const retailStockWarning = this.toFiniteNumber(
+            (v as { retailStockWarning?: number }).retailStockWarning,
+            0,
+          );
           const costPrice = this.toFiniteNumber(v.costPrice, 0);
           const sellingPrice = this.toFiniteNumber(primary?.sellingPrice, 0);
           const salePrice = this.toOptionalNumber(primary?.salePrice);
           const marginPercent = this.computeMarginPercent(costPrice, sellingPrice);
           const hasSugarLevel = Boolean(v.hasSugarLevel);
           const subVariants = this.normalizeSubvariants(v.subVariants);
+          const productSource = this.normalizeProductSource(
+            v.productSource,
+            units,
+            primary?.unitType ?? v.unitType,
+          );
 
           let variantId: number;
           if (v.id) {
@@ -771,15 +1307,16 @@ export class InventoryProductsService {
             await client.query(
               `UPDATE tblinventory_variants
                SET variant_name = $1, stock_qty = $2, stock_warning = $3,
-                   cost_price = $4, selling_price = $5, sale_price = $6,
-                   unit_type = $7, margin_percent = $8, sort_order = $9,
-                   has_sugar_level = $10, updated_at = NOW()
-               WHERE id = $11 AND org_id = $12 AND product_id = $13`,
+                   retail_stock_qty = $4, retail_stock_warning = $5,
+                   cost_price = $6, selling_price = $7, sale_price = $8,
+                   unit_type = $9, margin_percent = $10, sort_order = $11,
+                   has_sugar_level = $12, product_source = $13, updated_at = NOW()
+               WHERE id = $14 AND org_id = $15 AND product_id = $16`,
               [
-                vName, stockQty, stockWarning,
+                vName, stockQty, stockWarning, retailStockQty, retailStockWarning,
                 costPrice, sellingPrice, salePrice,
                 primary?.unitType ?? null, marginPercent, i + 1,
-                hasSugarLevel,
+                hasSugarLevel, productSource,
                 variantId, orgId, productId,
               ],
             );
@@ -788,13 +1325,15 @@ export class InventoryProductsService {
             const ins = await client.query<{ id: number }>(
               `INSERT INTO tblinventory_variants
                  (org_id, product_id, variant_name, stock_qty, stock_warning,
+                  retail_stock_qty, retail_stock_warning,
                   cost_price, selling_price, sale_price, unit_type, margin_percent,
-                  sort_order, has_sugar_level)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+                  sort_order, has_sugar_level, product_source)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
               [
                 orgId, productId, vName, stockQty, stockWarning,
+                retailStockQty, retailStockWarning,
                 costPrice, sellingPrice, salePrice,
-                primary?.unitType ?? null, marginPercent, i + 1, hasSugarLevel,
+                primary?.unitType ?? null, marginPercent, i + 1, hasSugarLevel, productSource,
               ],
             );
             variantId = ins.rows[0].id;
@@ -913,6 +1452,14 @@ export class InventoryProductsService {
             const primary = units[0];
             const stockQty = this.toFiniteNumber(v.stockQty, 0);
             const stockWarning = this.toFiniteNumber(v.stockWarning, 0);
+            const retailStockQty = this.toFiniteNumber(
+              (v as { retailStockQty?: number }).retailStockQty,
+              0,
+            );
+            const retailStockWarning = this.toFiniteNumber(
+              (v as { retailStockWarning?: number }).retailStockWarning,
+              0,
+            );
             const costPrice = this.toFiniteNumber(v.costPrice, 0);
             const sellingPrice = this.toFiniteNumber(primary?.sellingPrice, 0);
             const salePrice = this.toOptionalNumber(primary?.salePrice);
@@ -929,19 +1476,30 @@ export class InventoryProductsService {
               variantId = existingVariant.rows[0].id;
               await client.query(
                 `UPDATE tblinventory_variants
-                 SET stock_qty = $1, stock_warning = $2, cost_price = $3, selling_price = $4,
-                     sale_price = $5, unit_type = $6, margin_percent = $7, is_active = TRUE, updated_at = NOW()
-                 WHERE id = $8 AND org_id = $9`,
-                [stockQty, stockWarning, costPrice, sellingPrice, salePrice, primary?.unitType ?? null, marginPercent, variantId, orgId],
+                 SET stock_qty = $1, stock_warning = $2,
+                     retail_stock_qty = $3, retail_stock_warning = $4,
+                     cost_price = $5, selling_price = $6,
+                     sale_price = $7, unit_type = $8, margin_percent = $9, is_active = TRUE, updated_at = NOW()
+                 WHERE id = $10 AND org_id = $11`,
+                [
+                  stockQty, stockWarning, retailStockQty, retailStockWarning,
+                  costPrice, sellingPrice, salePrice, primary?.unitType ?? null, marginPercent,
+                  variantId, orgId,
+                ],
               );
               updatedVariants++;
             } else {
               const ins = await client.query<{ id: number }>(
                 `INSERT INTO tblinventory_variants
                    (org_id, product_id, variant_name, stock_qty, stock_warning,
+                    retail_stock_qty, retail_stock_warning,
                     cost_price, selling_price, sale_price, unit_type, margin_percent)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
-                [orgId, productId, vName, stockQty, stockWarning, costPrice, sellingPrice, salePrice, primary?.unitType ?? null, marginPercent],
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+                [
+                  orgId, productId, vName, stockQty, stockWarning,
+                  retailStockQty, retailStockWarning,
+                  costPrice, sellingPrice, salePrice, primary?.unitType ?? null, marginPercent,
+                ],
               );
               variantId = ins.rows[0].id;
               importedVariants++;
@@ -1057,7 +1615,9 @@ export class InventoryProductsService {
       salePrice?: number | null;
       unitType?: string;
       hasSugarLevel?: boolean;
+      productSource?: string;
       units?: Array<{
+        id?: number;
         unitType?: string;
         sellingPrice?: number;
         salePrice?: number | null;
@@ -1070,6 +1630,8 @@ export class InventoryProductsService {
         sizeLabel?: string;
         sellingPrice?: number;
         salePrice?: number | null;
+        stockQty?: number;
+        stockWarning?: number;
       }>;
     },
   ) {
@@ -1104,23 +1666,38 @@ export class InventoryProductsService {
         const primary = units[0];
         const stockQty = this.toFiniteNumber(dto.stockQty, 0);
         const stockWarning = this.toFiniteNumber(dto.stockWarning, 0);
+        const retailStockQty = this.toFiniteNumber(
+          (dto as { retailStockQty?: number }).retailStockQty,
+          0,
+        );
+        const retailStockWarning = this.toFiniteNumber(
+          (dto as { retailStockWarning?: number }).retailStockWarning,
+          0,
+        );
         const costPrice = this.toFiniteNumber(dto.costPrice, 0);
         const sellingPrice = this.toFiniteNumber(primary?.sellingPrice ?? dto.sellingPrice, 0);
         const salePrice = this.toOptionalNumber(primary?.salePrice ?? dto.salePrice);
         const marginPercent = this.computeMarginPercent(costPrice, sellingPrice);
         const hasSugarLevel = Boolean(dto.hasSugarLevel);
         const subVariants = this.normalizeSubvariants(dto.subVariants);
+        const productSource = this.normalizeProductSource(
+          dto.productSource,
+          units,
+          primary?.unitType ?? dto.unitType,
+        );
 
         await client.query(
           `UPDATE tblinventory_variants
            SET variant_name = $1, stock_qty = $2, stock_warning = $3,
-               cost_price = $4, selling_price = $5, sale_price = $6,
-               unit_type = $7, margin_percent = $8, has_sugar_level = $9, updated_at = NOW()
-           WHERE id = $10 AND org_id = $11`,
+               retail_stock_qty = $4, retail_stock_warning = $5,
+               cost_price = $6, selling_price = $7, sale_price = $8,
+               unit_type = $9, margin_percent = $10, has_sugar_level = $11,
+               product_source = $12, updated_at = NOW()
+           WHERE id = $13 AND org_id = $14`,
           [
-            vName, stockQty, stockWarning,
+            vName, stockQty, stockWarning, retailStockQty, retailStockWarning,
             costPrice, sellingPrice, salePrice,
-            primary?.unitType ?? null, marginPercent, hasSugarLevel,
+            primary?.unitType ?? null, marginPercent, hasSugarLevel, productSource,
             variantId, orgId,
           ],
         );
@@ -1152,6 +1729,7 @@ export class InventoryProductsService {
         marginPercent: string | null;
         imageUrl: string | null;
         hasSugarLevel: boolean;
+        productSource: string;
         sortOrder: number | null;
       }>(
         `SELECT v.id,
@@ -1168,6 +1746,7 @@ export class InventoryProductsService {
                 v.margin_percent::text AS "marginPercent",
                 v.image_url AS "imageUrl",
                 COALESCE(v.has_sugar_level, FALSE) AS "hasSugarLevel",
+                COALESCE(v.product_source, 'Retail') AS "productSource",
                 v.sort_order AS "sortOrder"
          FROM tblinventory_variants v
          INNER JOIN tblinventory_products p ON p.id = v.product_id
@@ -1189,6 +1768,8 @@ export class InventoryProductsService {
         sizeLabel: s.sizeLabel,
         sellingPrice: s.sellingPrice,
         salePrice: s.salePrice,
+        stockQty: 0,
+        stockWarning: Number(s.stockWarning ?? 0),
       }));
 
       const existingNames = await this.db.query<{ variantName: string }>(
@@ -1219,6 +1800,7 @@ export class InventoryProductsService {
       const stockWarning = Number(row.stockWarning ?? 0);
       const unitType = primary?.unitType ?? row.unitType ?? null;
       const hasSugarLevel = Boolean(row.hasSugarLevel);
+      const productSource = this.normalizeProductSource(row.productSource, units, unitType);
       const sortOrder = Number(row.sortOrder ?? 0) || 1;
 
       let newId = 0;
@@ -1227,8 +1809,8 @@ export class InventoryProductsService {
           `INSERT INTO tblinventory_variants
              (org_id, product_id, variant_name, stock_qty, stock_warning,
               cost_price, selling_price, sale_price, unit_type, margin_percent,
-              sort_order, has_sugar_level, image_url)
-           VALUES ($1,$2,$3,0,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+              sort_order, has_sugar_level, product_source, image_url)
+           VALUES ($1,$2,$3,0,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
            RETURNING id`,
           [
             orgId,
@@ -1242,6 +1824,7 @@ export class InventoryProductsService {
             marginPercent,
             sortOrder,
             hasSugarLevel,
+            productSource,
             row.imageUrl,
           ],
         );

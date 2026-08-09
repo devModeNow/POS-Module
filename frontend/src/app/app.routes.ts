@@ -22,6 +22,8 @@ import { CateringSchedulesComponent } from './pages/catering/schedules/catering-
 import { CateringMenusComponent } from './pages/catering/menus/catering-menus.component';
 import { PosDashboardComponent } from './pages/pos/dashboard/pos-dashboard.component';
 import { PosMySalesComponent } from './pages/pos/my-sales/pos-my-sales.component';
+import { PosStockCountComponent } from './pages/pos/stock-count/pos-stock-count.component';
+import { PosCompanyCostsComponent } from './pages/pos/company-costs/pos-company-costs.component';
 import { PosStaffMonitorComponent } from './pages/pos/staff-monitor/pos-staff-monitor.component';
 import { PosAuditTrailComponent } from './pages/pos/audit-trail/pos-audit-trail.component';
 import { PosCompanyProfileComponent } from './pages/pos/company-profile/pos-company-profile.component';
@@ -163,6 +165,20 @@ export const routes: Routes = [
         canActivate: [rbacGuard],
         data: { menu: 'pos-my-sales', permission: 'canRead' },
         title: 'My Sales',
+      },
+      {
+        path: 'pos-stock-count',
+        component: PosStockCountComponent,
+        canActivate: [rbacGuard],
+        data: { menu: 'pos-dashboard', permission: 'canRead' },
+        title: 'End-of-Day Stock',
+      },
+      {
+        path: 'pos-company-costs',
+        component: PosCompanyCostsComponent,
+        canActivate: [rbacGuard],
+        data: { menu: 'pos-dashboard', permission: 'canRead' },
+        title: 'Company Costs',
       },
       {
         path: 'pos-staff',

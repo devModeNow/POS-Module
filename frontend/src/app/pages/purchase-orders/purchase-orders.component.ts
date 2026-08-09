@@ -291,11 +291,31 @@ export class PurchaseOrdersComponent implements OnInit {
           if (!this.poItems[index].unitType || !this.poItems[index].availableUnits!.includes(this.poItems[index].unitType)) {
             this.poItems[index].unitType = this.poItems[index].availableUnits![0] ?? fallback;
           }
+          this.poItems[index].productSource = this.resolvePoProductSource(
+            (variant as { productSource?: string }).productSource,
+            this.poItems[index].unitType,
+          );
         }
       } catch {
         /* keep search result data */
       }
     }
+  }
+
+  resolvePoProductSource(value: unknown, unitType?: string | null): 'Retail' | 'Wholesale' {
+    const unit = String(unitType ?? '').trim().toLowerCase();
+    if (unit === 'grams' || unit === 'manual') return 'Retail';
+    return String(value ?? '').trim().toLowerCase() === 'wholesale' ? 'Wholesale' : 'Retail';
+  }
+
+  isPoProductSourceLocked(item: EditablePOItem): boolean {
+    const unit = String(item.unitType ?? '').trim().toLowerCase();
+    return unit === 'grams' || unit === 'manual';
+  }
+
+  onPoItemProductSourceChange(index: number): void {
+    const item = this.poItems[index];
+    item.productSource = this.resolvePoProductSource(item.productSource, item.unitType);
   }
 
   itemSourceLabel(item: EditablePOItem): string {
@@ -379,6 +399,10 @@ export class PurchaseOrdersComponent implements OnInit {
 
   selectPoItemUnitType(index: number, code: string): void {
     this.poItems[index].unitType = code;
+    this.poItems[index].productSource = this.resolvePoProductSource(
+      this.poItems[index].productSource,
+      code,
+    );
     this.showPoItemUnitTypeDropdown[index] = false;
   }
 
@@ -504,6 +528,7 @@ export class PurchaseOrdersComponent implements OnInit {
           if (i.inventoryId) item.inventoryId = Number(i.inventoryId);
           if (i.variantId) item.variantId = Number(i.variantId);
           if (i.unitType?.trim()) item.unitType = i.unitType.trim();
+          item.productSource = this.resolvePoProductSource(i.productSource, i.unitType);
           return item;
         }),
       });
@@ -866,6 +891,7 @@ export class PurchaseOrdersComponent implements OnInit {
           unitType: i.unitType || undefined,
           brand: i.brand || undefined,
           category: i.category || undefined,
+          productSource: this.resolvePoProductSource(i.productSource, i.unitType),
           quantity: Math.max(1, Math.round(i.quantity)),
           unitCost: Number(i.unitCost) || 0,
         })),
@@ -951,6 +977,7 @@ export class PurchaseOrdersComponent implements OnInit {
       productName: '',
       brand: '',
       category: '',
+      productSource: 'Retail',
       quantity: 1,
       unitCost: 0,
       inventoryId: null,

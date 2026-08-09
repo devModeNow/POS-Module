@@ -68,6 +68,7 @@ export class PosTerminalController {
         variantId: number;
         quantity: number;
         unitType?: string;
+        unitId?: number | null;
         subVariantId?: number | null;
       }>;
       discountId?: number | null;

@@ -13,6 +13,7 @@ export class PosOrgBootstrapService implements OnModuleInit {
     await this.ensurePosUserManagement();
     await this.ensureContinuation30();
     await this.ensureContinuation31();
+    await this.ensureContinuation44();
   }
 
   private async ensurePosUserManagement(): Promise<void> {
@@ -125,6 +126,45 @@ export class PosOrgBootstrapService implements OnModuleInit {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.logger.warn(`POS continuation 3.1 bootstrap skipped: ${message}`);
+    }
+  }
+
+  private async ensureContinuation44(): Promise<void> {
+    try {
+      await this.db.query(`
+        ALTER TABLE public.tblsales_transactions
+          ADD COLUMN IF NOT EXISTS payment_proof_image TEXT
+      `);
+
+      await this.db.query(`
+        INSERT INTO public.tblorg_menus (org_id, menu_key, menu_label, menu_order)
+        SELECT o.id, v.menu_key, v.menu_label, v.menu_order
+        FROM public.tblorganizations o
+        CROSS JOIN (
+          VALUES
+            ('pos-stock-count', 'End-of-Day Stock', 9),
+            ('pos-company-costs', 'Company Costs', 10)
+        ) AS v(menu_key, menu_label, menu_order)
+        WHERE o.code IN ('point-of-sales', 'pos')
+        ON CONFLICT (org_id, menu_key) DO NOTHING
+      `);
+
+      await this.db.query(`
+        UPDATE public.tblrbac r
+        SET "roleMenus" = CASE
+          WHEN LOWER(COALESCE(r."roleName", '')) LIKE '%cashier%'
+            AND COALESCE(to_jsonb(r)->>'roleMenus', '') NOT ILIKE '%pos-stock-count%'
+          THEN COALESCE(to_jsonb(r)->>'roleMenus', '') || ',pos-stock-count,pos-company-costs'
+          WHEN LOWER(COALESCE(r."roleName", '')) LIKE '%cashier%'
+            AND COALESCE(to_jsonb(r)->>'roleMenus', '') NOT ILIKE '%pos-company-costs%'
+          THEN COALESCE(to_jsonb(r)->>'roleMenus', '') || ',pos-company-costs'
+          ELSE COALESCE(to_jsonb(r)->>'roleMenus', '')
+        END
+        WHERE r.org_id IN (SELECT id FROM public.tblorganizations WHERE code IN ('point-of-sales', 'pos'))
+      `);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`POS continuation 4.4 bootstrap skipped: ${message}`);
     }
   }
 }

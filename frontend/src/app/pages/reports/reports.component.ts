@@ -32,7 +32,7 @@ import ExcelJS from 'exceljs/dist/exceljs.min.js';
 
 type ReportType =
   | 'sales' | 'jobs' | 'inventory' | 'low-stock' | 'payables-receivables'
-  | 'pos-dashboard' | 'pos-completed-sales' | 'pos-top-products' | 'pos-sales-by-category' | 'pos-inventory-valuation' | 'pos-low-stock'
+  | 'pos-dashboard' | 'pos-completed-sales' | 'pos-top-products' | 'pos-sales-by-category' | 'pos-sales-by-source' | 'pos-inventory-valuation' | 'pos-low-stock'
   | 'pos-product-logs';
 
 @Component({
@@ -45,6 +45,8 @@ export class ReportsComponent implements OnInit {
   fromDate = this.today();
   toDate = this.today();
   paymentStatusFilter = '';
+  cashierUserId: number | null = null;
+  cashiers: Array<{ userId: number; fullname: string; username: string }> = [];
   tableSearch = '';
   sortBy = 'date';
   sortDir: 'asc' | 'desc' = 'desc';
@@ -72,6 +74,7 @@ export class ReportsComponent implements OnInit {
   updatingTransactionId: number | null = null;
   posTopProducts: Array<{ partName: string; category: string | null; quantitySold: number; totalAmount: number }> = [];
   posCategorySales: Array<{ category: string; quantitySold: number; totalAmount: number }> = [];
+  posSourceSales: Array<{ productSource: string; quantitySold: number; totalAmount: number; transactionCount: number }> = [];
   posInventoryValuation: Array<{ category: string; itemCount: number; totalStock: number; retailValue: number }> = [];
   posLowStock: Array<{ partName: string; category: string | null; stockQty: number; stockWarning: number; sellingPrice: number }> = [];
   posCompletedSales: PosCompletedSale[] = [];
@@ -104,6 +107,7 @@ export class ReportsComponent implements OnInit {
     { value: 'pos-completed-sales', label: 'Completed Sales' },
     { value: 'pos-top-products', label: 'Top Selling Products' },
     { value: 'pos-sales-by-category', label: 'Sales by Category' },
+    { value: 'pos-sales-by-source', label: 'Retail / Wholesale Sales' },
     { value: 'pos-inventory-valuation', label: 'Inventory Valuation' },
     { value: 'pos-low-stock', label: 'Low Stock Alert' },
     { value: 'pos-product-logs', label: 'Product Logs' },
@@ -112,7 +116,7 @@ export class ReportsComponent implements OnInit {
   get reportTypes() { return this.isPosOrg ? this.posReportTypes : this.autoRepairReportTypes; }
 
   get needsDateRange(): boolean {
-    return ['sales', 'jobs', 'payables-receivables', 'pos-dashboard', 'pos-completed-sales', 'pos-top-products', 'pos-sales-by-category'].includes(this.reportType);
+    return ['sales', 'jobs', 'payables-receivables', 'pos-dashboard', 'pos-completed-sales', 'pos-top-products', 'pos-sales-by-category', 'pos-sales-by-source'].includes(this.reportType);
   }
 
   get usesServerPagination(): boolean {
@@ -156,9 +160,23 @@ export class ReportsComponent implements OnInit {
     this.isPosOrg = this.orgSvc.isPosOrg() || this.rbac.isPosOrg();
     if (this.isPosOrg) {
       this.reportType = 'pos-dashboard';
+      void this.loadCashiers();
     }
     this.setDefaultDateRange();
     void this.generate();
+  }
+
+  async loadCashiers(): Promise<void> {
+    try {
+      const r = await this.posSvc.listCashiers();
+      this.cashiers = (r?.data ?? []).map((c) => ({
+        userId: c.userId,
+        fullname: c.fullname || c.username,
+        username: c.username,
+      }));
+    } catch {
+      this.cashiers = [];
+    }
   }
 
   onReportTypeChange(): void {
@@ -295,6 +313,7 @@ export class ReportsComponent implements OnInit {
       case 'pos-completed-sales': return this.totalItems > 0 || this.posCompletedSales.length > 0;
       case 'pos-top-products': return this.posTopProducts.length > 0;
       case 'pos-sales-by-category': return this.posCategorySales.length > 0;
+      case 'pos-sales-by-source': return this.posSourceSales.length > 0;
       case 'pos-inventory-valuation': return this.posInventoryValuation.length > 0;
       case 'pos-low-stock': return this.posLowStock.length > 0;
       case 'pos-product-logs': return this.posProductLogs.length > 0;
@@ -314,8 +333,9 @@ export class ReportsComponent implements OnInit {
         const offset = (this.page - 1) * this.pageSize;
 
         if (this.reportType === 'pos-dashboard') {
+          const cashierId = this.cashierUserId || undefined;
           const r = await this.posSvc.getDashboardReport(
-            this.fromDate, this.toDate, this.paymentStatusFilter || undefined,
+            this.fromDate, this.toDate, this.paymentStatusFilter || undefined, cashierId,
           );
           if (!r.success) { this.notify.error('Error', r.message ?? 'Failed.'); return; }
           this.posDashboard = r.data ?? null;
@@ -330,13 +350,20 @@ export class ReportsComponent implements OnInit {
               search: this.tableSearch.trim() || undefined,
               sortBy: this.sortBy,
               sortDir: this.sortDir,
+              cashierUserId: cashierId,
             },
           );
           this.posTransactions = tx.success ? (tx.data ?? []) : [];
           this.totalItems = tx.success ? (tx.total ?? this.posTransactions.length) : 0;
         } else if (this.reportType === 'pos-completed-sales') {
           // Load up to API max for the period; search/sort/pagination are client-side.
-          const r = await this.posSvc.getCompletedSalesReport(this.fromDate, this.toDate, 200, 0);
+          const r = await this.posSvc.getCompletedSalesReport(
+            this.fromDate,
+            this.toDate,
+            200,
+            0,
+            this.cashierUserId || undefined,
+          );
           if (!r?.success) {
             this.notify.error('Error', r?.message ?? 'Failed to load completed sales.');
             this.posCompletedSales = [];
@@ -353,6 +380,10 @@ export class ReportsComponent implements OnInit {
           const r = await this.posSvc.getSalesByCategoryReport(this.fromDate, this.toDate);
           this.posCategorySales = r.data ?? [];
           this.totalItems = this.posCategorySales.length;
+        } else if (this.reportType === 'pos-sales-by-source') {
+          const r = await this.posSvc.getSalesBySourceReport(this.fromDate, this.toDate);
+          this.posSourceSales = r.data ?? [];
+          this.totalItems = this.posSourceSales.length;
         } else if (this.reportType === 'pos-inventory-valuation') {
           const r = await this.posSvc.getInventoryValuationReport();
           this.posInventoryValuation = r.data ?? [];
@@ -535,6 +566,16 @@ export class ReportsComponent implements OnInit {
         return {
           headers: ['Category', 'Qty Sold', 'Revenue'],
           rows: this.posCategorySales.map((r) => [r.category, r.quantitySold, this.exportMoney(r.totalAmount)]),
+        };
+      case 'pos-sales-by-source':
+        return {
+          headers: ['Source', 'Qty Sold', 'Transactions', 'Revenue'],
+          rows: this.posSourceSales.map((r) => [
+            r.productSource,
+            r.quantitySold,
+            r.transactionCount,
+            this.exportMoney(r.totalAmount),
+          ]),
         };
       case 'pos-inventory-valuation':
         return {
