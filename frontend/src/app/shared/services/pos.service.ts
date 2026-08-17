@@ -62,6 +62,7 @@ export interface PosVariant {
   units: PosVariantUnit[];
   hasSugarLevel?: boolean;
   subVariants?: PosSubVariant[];
+  barcode?: string | null;
   inStock: boolean;
 }
 
@@ -190,6 +191,7 @@ export interface InventoryVariantRow {
   imageUrl?: string | null;
   hasSugarLevel?: boolean;
   productSource?: 'Retail' | 'Wholesale' | string;
+  barcode?: string | null;
   units?: Array<{
     unitType: string;
     sellingPrice: number;
@@ -243,6 +245,7 @@ export interface InventoryProductPayload {
     marginPercent?: number | null;
     hasSugarLevel?: boolean;
     productSource?: 'Retail' | 'Wholesale' | string;
+    barcode?: string | null;
     units?: Array<{
       unitType: string;
       sellingPrice?: number;
@@ -291,6 +294,14 @@ export class PosService {
   async getVariants(productId: number) {
     const r = await apiClient.get<{ success: boolean; data?: PosVariant[]; message?: string }>(
       `/api/pos/products/${productId}/variants`,
+    );
+    return r.data;
+  }
+
+  async getVariantByBarcode(barcode: string) {
+    const r = await apiClient.get<{ success: boolean; data?: PosVariant; message?: string }>(
+      '/api/pos/scan',
+      { params: { barcode: barcode.trim() } },
     );
     return r.data;
   }
@@ -595,6 +606,7 @@ export class PosService {
       costPrice?: number;
       sellingPrice?: number;
       salePrice?: number | null;
+      barcode?: string | null;
     }>;
   }>) {
     const r = await apiClient.post<{

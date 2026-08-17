@@ -185,6 +185,9 @@
                     @if (isColumnVisible('variantName')) {
                     <td class="px-4 py-3 text-sm font-semibold text-gray-800 dark:text-gray-200">{{ v.variantName }}</td>
                     }
+                    @if (isColumnVisible('barcode')) {
+                    <td class="px-4 py-3 font-mono text-xs text-gray-600 dark:text-gray-400">{{ v.barcode || '—' }}</td>
+                    }
                     @if (isColumnVisible('productName')) {
                     <td class="px-4 py-3 text-sm text-gray-600 dark:text-gray-400">{{ v.productName }}</td>
                     }
@@ -615,6 +618,11 @@
                   <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Variant name *</span>
                   <input type="text" [(ngModel)]="v.variantName" placeholder="e.g. Garlic, Honey roasted"
                     class="w-full rounded-lg border px-2 py-2 text-sm dark:border-gray-700 dark:bg-gray-900" />
+                </label>
+                <label class="block">
+                  <span class="mb-1 block text-xs font-medium text-gray-600 dark:text-gray-300">Barcode</span>
+                  <input type="text" [(ngModel)]="v.barcode" placeholder="Scan or type barcode" maxlength="64" autocomplete="off"
+                    class="w-full rounded-lg border px-2 py-2 font-mono text-sm dark:border-gray-700 dark:bg-gray-900" />
                 </label>
                 <div class="flex items-start gap-3">
                   <label class="group relative flex h-20 w-20 shrink-0 cursor-pointer items-center justify-center overflow-hidden rounded-md border-2 border-dashed border-gray-300 bg-gray-50 hover:border-brand-400 dark:border-gray-600 dark:bg-gray-800">

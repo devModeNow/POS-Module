@@ -1,6 +1,7 @@
 import { CommonModule } from '@angular/common';
-import { Component, ElementRef, OnInit, ViewChild } from '@angular/core';
+import { Component, ElementRef, OnDestroy, OnInit, ViewChild } from '@angular/core';
 import { FormsModule } from '@angular/forms';
+import { Subscription } from 'rxjs';
 import { ConfirmDialogComponent } from '../../../shared/components/ui/confirm-dialog/confirm-dialog.component';
 import {
   CartLine,
@@ -29,6 +30,7 @@ import {
   stockQtyToSellUnits,
   tracksStockInGrams,
 } from '../../../shared/utils/weight-stock.util';
+import { PosBarcodeScannerService } from '../../../shared/services/pos-barcode-scanner.service';
 
 @Component({
   selector: 'app-pos-dashboard',
@@ -37,7 +39,7 @@ import {
   templateUrl: './pos-dashboard.component.html',
   styles: `:host { display: block; height: 100%; min-height: 0; }`,
 })
-export class PosDashboardComponent implements OnInit {
+export class PosDashboardComponent implements OnInit, OnDestroy {
   state: 'loading' | 'loaded' | 'error' = 'loading';
   catalogLoading = false;
   errorMessage = '';
@@ -114,6 +116,10 @@ export class PosDashboardComponent implements OnInit {
   private confirmAction: (() => void) | null = null;
 
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
+  private scanSub?: Subscription;
+  private barcodeBusy = false;
+  private lastScanCode = '';
+  private lastScanAt = 0;
 
   @ViewChild('amountReceivedInput') amountReceivedInput?: ElementRef<HTMLInputElement>;
   @ViewChild('paymentProofFileInput') paymentProofFileInput?: ElementRef<HTMLInputElement>;
@@ -129,6 +135,7 @@ export class PosDashboardComponent implements OnInit {
     private readonly receiptPrint: PosReceiptPrintService,
     private readonly comms: PosCommunicationsService,
     private readonly offline: PosOfflineService,
+    private readonly barcodeScanner: PosBarcodeScannerService,
   ) {
     this.isCashierMode = this.rbac.isCashier();
   }
@@ -266,6 +273,14 @@ export class PosDashboardComponent implements OnInit {
     void this.loadPaymentMethods();
     void this.loadCatalog();
     void this.loadCashDrawerSettings();
+    this.barcodeScanner.start();
+    this.scanSub = this.barcodeScanner.scans$.subscribe((code) => void this.handleBarcodeScan(code));
+  }
+
+  ngOnDestroy(): void {
+    this.scanSub?.unsubscribe();
+    this.barcodeScanner.stop();
+    if (this.searchTimer) clearTimeout(this.searchTimer);
   }
 
   async loadCashDrawerSettings(): Promise<void> {
@@ -586,6 +601,68 @@ export class PosDashboardComponent implements OnInit {
   onSearchInput(): void {
     if (this.searchTimer) clearTimeout(this.searchTimer);
     this.searchTimer = setTimeout(() => void this.loadCatalog(), 300);
+  }
+
+  onSearchKeydown(event: KeyboardEvent): void {
+    if (event.key !== 'Enter') return;
+    const q = this.search.trim();
+    if (!this.looksLikeBarcode(q)) return;
+    event.preventDefault();
+    void this.handleBarcodeScan(q);
+  }
+
+  private looksLikeBarcode(value: string): boolean {
+    return /^[A-Za-z0-9][A-Za-z0-9._-]{3,63}$/.test(value);
+  }
+
+  private async handleBarcodeScan(code: string): Promise<void> {
+    const barcode = String(code ?? '').trim();
+    if (!barcode) return;
+    if (this.showCheckoutModal || this.confirmOpen || this.isCheckingOut) return;
+
+    const now = Date.now();
+    if (this.barcodeBusy || (barcode === this.lastScanCode && now - this.lastScanAt < 600)) return;
+    this.lastScanCode = barcode;
+    this.lastScanAt = now;
+    this.barcodeBusy = true;
+    if (this.searchTimer) clearTimeout(this.searchTimer);
+
+    try {
+      const r = await this.posService.getVariantByBarcode(barcode);
+      if (!r.success || !r.data) {
+        this.notify.warning('Barcode not found', r.message ?? `No product matches "${barcode}".`);
+        return;
+      }
+
+      const variant = this.normalizeVariant(r.data);
+      this.search = '';
+      this.searchFocused = false;
+      if (this.showVariantModal) this.closeVariantModal();
+      if (this.showCartUnitModal) {
+        this.showCartUnitModal = false;
+        this.editingCartLine = null;
+      }
+
+      this.prepareScanSelections(variant);
+      const unit = this.selectedUnitFor(variant);
+      if (unit.isManualEntry || unit.unitType === 'grams') {
+        await this.openVariantFromCatalog(variant);
+        this.notify.info('Scanned', 'Enter the weight, then add to cart.');
+        return;
+      }
+
+      this.addVariantToCart(variant);
+    } catch {
+      this.notify.error('Scan failed', 'Could not look up that barcode.');
+    } finally {
+      this.barcodeBusy = false;
+    }
+  }
+
+  private prepareScanSelections(variant: PosVariant): void {
+    this.variantSelectedUnit[variant.id] = this.defaultUnitType(variant);
+    this.variantQty[variant.id] = this.defaultVariantQty(variant);
+    this.ensureBeverageSelections(variant);
   }
 
   onSearchBlur(): void {

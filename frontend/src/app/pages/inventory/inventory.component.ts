@@ -74,6 +74,7 @@ type VariantFormRow = {
   marginPercent: number | null;
   unitType: string;
   hasSugarLevel: boolean;
+  barcode: string;
   collapsed: boolean;
   subVariantsCollapsed: boolean;
   unitsCollapsed: boolean;
@@ -109,6 +110,7 @@ type PosImportProductGroup = {
     costPrice: number;
     sellingPrice: number;
     salePrice: number | null;
+    barcode?: string | null;
   }>;
 };
 
@@ -161,6 +163,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
   readonly variantTableColumns: InventoryTableColumn[] = [
     { key: 'image', label: 'Image', sortable: false, hideable: false },
     { key: 'variantName', label: 'Variant', sortable: true, hideable: true },
+    { key: 'barcode', label: 'Barcode', sortable: true, hideable: true },
     { key: 'productName', label: 'Product', sortable: true, hideable: true },
     { key: 'category', label: 'Category', sortable: true, hideable: true },
     { key: 'unitType', label: 'Unit', sortable: true, hideable: true },
@@ -272,6 +275,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
     return this.variantItems.filter(v =>
       v.productName?.toLowerCase().includes(q) ||
       v.variantName?.toLowerCase().includes(q) ||
+      v.barcode?.toLowerCase().includes(q) ||
       v.category?.toLowerCase().includes(q)
     );
   }
@@ -1096,6 +1100,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
           unitType: this.normalizeUnitType(v.unitType),
           marginPercent: v.marginPercent ?? null,
           hasSugarLevel: Boolean(v.hasSugarLevel),
+          barcode: String(v.barcode ?? ''),
           collapsed: false,
           subVariantsCollapsed: false,
           unitsCollapsed: true,
@@ -1175,6 +1180,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
       marginPercent: source.marginPercent != null ? Number(source.marginPercent) : null,
       unitType: this.normalizeUnitType(source.unitType),
       hasSugarLevel: Boolean(source.hasSugarLevel),
+      barcode: '',
       collapsed: false,
       subVariantsCollapsed: false,
       unitsCollapsed: this.isBeveragesCategory(this.productForm.category),
@@ -1519,6 +1525,13 @@ export class InventoryComponent implements OnInit, OnDestroy {
         return;
       }
     }
+    const barcodes = this.productForm.variants
+      .map((v) => v.barcode.trim().toLowerCase())
+      .filter(Boolean);
+    if (new Set(barcodes).size !== barcodes.length) {
+      this.notify.warning('Duplicate barcodes', 'Each barcode must be unique.');
+      return;
+    }
     const label = this.isEditingVariantOnly
       ? 'Save changes to this variant?'
       : this.itemDrawerMode === 'create'
@@ -1617,6 +1630,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
             primary?.unitType ?? v.unitType,
             primary?.isManualEntry,
           ),
+      barcode: v.barcode.trim() || null,
       units: unitsPayload,
       subVariants: this.isBeveragesCategory(this.productForm.category)
         ? (v.subVariants ?? [])
@@ -1779,6 +1793,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
         salePrice: payload.salePrice,
         unitType: payload.unitType ?? existing.unitType,
         marginPercent: payload.marginPercent,
+        barcode: payload.barcode ?? existing.barcode ?? null,
         imageUrl: imageUrl !== undefined ? imageUrl : existing.imageUrl,
       };
     }
@@ -1820,6 +1835,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
       salePrice: v.salePrice != null ? Number(v.salePrice) : null,
       unitType: (v.unitType as string | null | undefined) ?? null,
       marginPercent: v.marginPercent != null ? Number(v.marginPercent) : null,
+      barcode: (v.barcode as string | null | undefined) ?? null,
       imageUrl: (v.imageUrl as string | null | undefined) ?? null,
     }));
     this.variantItems = [...mappedVariants, ...this.variantItems];
@@ -2466,7 +2482,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
 
   private readonly posExportHeaders = [
     'Product Name', 'Category', 'Brand', 'Description', 'Variant Name',
-    'Unit Type', 'Stock Qty', 'Stock Warning', 'Cost Price', 'Selling Price', 'Sale Price',
+    'Barcode', 'Unit Type', 'Stock Qty', 'Stock Warning', 'Cost Price', 'Selling Price', 'Sale Price',
   ];
 
   async exportPosInventory(): Promise<void> {
@@ -2486,7 +2502,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
       for (const v of this.variantItems) {
         sheet.addRow([
           v.productName, v.category || '', v.brand || '', '',
-          v.variantName, v.unitType || 'piece', v.stockQty, v.stockWarning,
+          v.variantName, v.barcode || '', v.unitType || 'piece', v.stockQty, v.stockWarning,
           v.costPrice, v.sellingPrice, v.salePrice ?? '',
         ]);
       }
@@ -2500,8 +2516,8 @@ export class InventoryComponent implements OnInit, OnDestroy {
 
   async downloadPosTemplate(): Promise<void> {
     const sampleRows = [
-      ['Peanut', 'Snacks', 'Brand X', 'Roasted peanuts', 'Garlic', 'piece', 50, 10, 5, 10, ''],
-      ['Peanut', 'Snacks', 'Brand X', 'Roasted peanuts', 'Honey Roasted', 'piece', 30, 10, 6, 12, ''],
+      ['Peanut', 'Snacks', 'Brand X', 'Roasted peanuts', 'Garlic', '4801234567890', 'piece', 50, 10, 5, 10, ''],
+      ['Peanut', 'Snacks', 'Brand X', 'Roasted peanuts', 'Honey Roasted', '4801234567891', 'piece', 30, 10, 6, 12, ''],
     ];
     try {
       const workbook = new ExcelJS.Workbook();
@@ -2626,6 +2642,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
         costPrice: Number(this.pickField(row, ['Cost Price', 'CostPrice'])) || 0,
         sellingPrice: Number(this.pickField(row, ['Selling Price', 'SellingPrice'])) || 0,
         salePrice: salePriceRaw ? Number(salePriceRaw) : null,
+        barcode: this.pickField(row, ['Barcode', 'SKU', 'Upc', 'EAN']) || null,
       });
     }
     return Array.from(groups.values());
@@ -2824,6 +2841,7 @@ export class InventoryComponent implements OnInit, OnDestroy {
       marginPercent: null,
       unitType: 'piece',
       hasSugarLevel: false,
+      barcode: '',
       collapsed: false,
       subVariantsCollapsed: false,
       unitsCollapsed,

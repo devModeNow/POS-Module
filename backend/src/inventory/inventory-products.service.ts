@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { PoolClient } from 'pg';
 import { DatabaseService } from 'src/database/database.service';
 import sharp from 'sharp';
 
@@ -210,6 +211,9 @@ export class InventoryProductsService {
     }
     if (msg.includes('idx_inv_variants_product_name')) {
       return 'Each variant must have a unique name under the same product.';
+    }
+    if (msg.includes('idx_inv_variants_org_barcode')) {
+      return 'This barcode is already assigned to another variant.';
     }
     if (msg.includes('idx_variant_units_variant_type')) {
       return 'Could not save unit types. Refresh and try again.';
@@ -547,6 +551,50 @@ export class InventoryProductsService {
         ON public.tblinventory_variant_subvariants(variant_id)
         WHERE is_active = TRUE
     `);
+    await this.ensureBarcodeSchema();
+  }
+
+  private async ensureBarcodeSchema(): Promise<void> {
+    await this.db.query(`
+      ALTER TABLE public.tblinventory_variants
+        ADD COLUMN IF NOT EXISTS barcode TEXT
+    `);
+    await this.db.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_inv_variants_org_barcode
+        ON public.tblinventory_variants (org_id, lower(btrim(barcode)))
+        WHERE barcode IS NOT NULL AND btrim(barcode) <> ''
+    `);
+  }
+
+  private normalizeBarcode(value: unknown): string | null {
+    const s = String(value ?? '').trim();
+    if (!s) return null;
+    if (s.length > 64) throw new Error('Barcode is too long (max 64 characters).');
+    return s;
+  }
+
+  private async assertBarcodeAvailable(
+    client: PoolClient,
+    orgId: number,
+    barcode: string | null,
+    exceptVariantId?: number | null,
+  ): Promise<void> {
+    if (!barcode) return;
+    const result = await client.query<{ productName: string; variantName: string }>(
+      `SELECT p.name AS "productName", v.variant_name AS "variantName"
+       FROM tblinventory_variants v
+       INNER JOIN tblinventory_products p ON p.id = v.product_id
+       WHERE v.org_id = $1
+         AND v.barcode IS NOT NULL
+         AND lower(btrim(v.barcode)) = lower($2)
+         AND ($3::bigint IS NULL OR v.id <> $3)
+       LIMIT 1`,
+      [orgId, barcode, exceptVariantId ?? null],
+    );
+    if (result.rowCount) {
+      const row = result.rows[0];
+      throw new Error(`Barcode "${barcode}" is already used by ${row.productName} — ${row.variantName}.`);
+    }
   }
 
   private normalizeTempType(value: unknown): string | null {
@@ -1050,6 +1098,7 @@ export class InventoryProductsService {
                 v.margin_percent AS "marginPercent",
                 v.has_sugar_level AS "hasSugarLevel",
                 COALESCE(v.product_source, 'Retail') AS "productSource",
+                v.barcode,
                 v.image_url AS "imageUrl",
                 p.image_url AS "productImageUrl"
          FROM tblinventory_variants v
@@ -1092,7 +1141,7 @@ export class InventoryProductsService {
       if (search?.trim()) {
         params.push(`%${search.trim()}%`);
         const idx = params.length;
-        extra += ` AND (LOWER(p.name) LIKE LOWER($${idx}) OR LOWER(v.variant_name) LIKE LOWER($${idx}) OR LOWER(COALESCE(p.category,'')) LIKE LOWER($${idx}))`;
+        extra += ` AND (LOWER(p.name) LIKE LOWER($${idx}) OR LOWER(v.variant_name) LIKE LOWER($${idx}) OR LOWER(COALESCE(p.category,'')) LIKE LOWER($${idx}) OR LOWER(COALESCE(v.barcode,'')) LIKE LOWER($${idx}))`;
       }
       if (category?.trim()) {
         params.push(category.trim());
@@ -1116,6 +1165,7 @@ export class InventoryProductsService {
                 v.unit_type AS "unitType",
                 v.margin_percent AS "marginPercent",
                 COALESCE(v.product_source, 'Retail') AS "productSource",
+                v.barcode,
                 v.image_url AS "imageUrl",
                 p.image_url AS "productImageUrl",
                 v.is_active AS "isActive"
@@ -1185,6 +1235,7 @@ export class InventoryProductsService {
         marginPercent?: number | null;
         hasSugarLevel?: boolean;
         productSource?: string;
+        barcode?: string | null;
         units?: Array<{
           id?: number;
           unitType?: string;
@@ -1211,6 +1262,13 @@ export class InventoryProductsService {
 
     const variantNameError = this.validateVariantNames(dto.variants);
     if (variantNameError) return { success: false, message: variantNameError };
+
+    const barcodes = dto.variants
+      .map((v) => String(v.barcode ?? '').trim().toLowerCase())
+      .filter(Boolean);
+    if (new Set(barcodes).size !== barcodes.length) {
+      return { success: false, message: 'Each barcode must be unique.' };
+    }
 
     try {
       await this.ensureBeverageSchema();
@@ -1294,6 +1352,7 @@ export class InventoryProductsService {
           const salePrice = this.toOptionalNumber(primary?.salePrice);
           const marginPercent = this.computeMarginPercent(costPrice, sellingPrice);
           const hasSugarLevel = Boolean(v.hasSugarLevel);
+          const barcode = this.normalizeBarcode(v.barcode);
           const subVariants = this.normalizeSubvariants(v.subVariants);
           const productSource = this.normalizeProductSource(
             v.productSource,
@@ -1304,36 +1363,38 @@ export class InventoryProductsService {
           let variantId: number;
           if (v.id) {
             variantId = v.id;
+            await this.assertBarcodeAvailable(client, orgId, barcode, variantId);
             await client.query(
               `UPDATE tblinventory_variants
                SET variant_name = $1, stock_qty = $2, stock_warning = $3,
                    retail_stock_qty = $4, retail_stock_warning = $5,
                    cost_price = $6, selling_price = $7, sale_price = $8,
                    unit_type = $9, margin_percent = $10, sort_order = $11,
-                   has_sugar_level = $12, product_source = $13, updated_at = NOW()
-               WHERE id = $14 AND org_id = $15 AND product_id = $16`,
+                   has_sugar_level = $12, product_source = $13, barcode = $14, updated_at = NOW()
+               WHERE id = $15 AND org_id = $16 AND product_id = $17`,
               [
                 vName, stockQty, stockWarning, retailStockQty, retailStockWarning,
                 costPrice, sellingPrice, salePrice,
                 primary?.unitType ?? null, marginPercent, i + 1,
-                hasSugarLevel, productSource,
+                hasSugarLevel, productSource, barcode,
                 variantId, orgId, productId,
               ],
             );
             keptIds.push(variantId);
           } else {
+            await this.assertBarcodeAvailable(client, orgId, barcode, null);
             const ins = await client.query<{ id: number }>(
               `INSERT INTO tblinventory_variants
                  (org_id, product_id, variant_name, stock_qty, stock_warning,
                   retail_stock_qty, retail_stock_warning,
                   cost_price, selling_price, sale_price, unit_type, margin_percent,
-                  sort_order, has_sugar_level, product_source)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
+                  sort_order, has_sugar_level, product_source, barcode)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
               [
                 orgId, productId, vName, stockQty, stockWarning,
                 retailStockQty, retailStockWarning,
                 costPrice, sellingPrice, salePrice,
-                primary?.unitType ?? null, marginPercent, i + 1, hasSugarLevel, productSource,
+                primary?.unitType ?? null, marginPercent, i + 1, hasSugarLevel, productSource, barcode,
               ],
             );
             variantId = ins.rows[0].id;
@@ -1373,6 +1434,7 @@ export class InventoryProductsService {
         costPrice?: number;
         sellingPrice?: number;
         salePrice?: number | null;
+        barcode?: string | null;
       }>;
     }>,
   ) {
@@ -1390,6 +1452,7 @@ export class InventoryProductsService {
     const errors: string[] = [];
 
     try {
+      await this.ensureBeverageSchema();
       await this.db.withTransaction(async (client) => {
         for (let i = 0; i < products.length; i++) {
           const p = products[i];
@@ -1464,6 +1527,13 @@ export class InventoryProductsService {
             const sellingPrice = this.toFiniteNumber(primary?.sellingPrice, 0);
             const salePrice = this.toOptionalNumber(primary?.salePrice);
             const marginPercent = this.computeMarginPercent(costPrice, sellingPrice);
+            let barcode: string | null = null;
+            try {
+              barcode = this.normalizeBarcode(v.barcode);
+            } catch (e) {
+              errors.push(`Product "${name}" variant "${vName}": ${e instanceof Error ? e.message : 'Invalid barcode'}`);
+              continue;
+            }
 
             const existingVariant = await client.query<{ id: number }>(
               `SELECT id FROM tblinventory_variants
@@ -1474,31 +1544,35 @@ export class InventoryProductsService {
             let variantId: number;
             if (existingVariant.rowCount) {
               variantId = existingVariant.rows[0].id;
+              await this.assertBarcodeAvailable(client, orgId, barcode, variantId);
               await client.query(
                 `UPDATE tblinventory_variants
                  SET stock_qty = $1, stock_warning = $2,
                      retail_stock_qty = $3, retail_stock_warning = $4,
                      cost_price = $5, selling_price = $6,
-                     sale_price = $7, unit_type = $8, margin_percent = $9, is_active = TRUE, updated_at = NOW()
-                 WHERE id = $10 AND org_id = $11`,
+                     sale_price = $7, unit_type = $8, margin_percent = $9,
+                     barcode = COALESCE($10, barcode),
+                     is_active = TRUE, updated_at = NOW()
+                 WHERE id = $11 AND org_id = $12`,
                 [
                   stockQty, stockWarning, retailStockQty, retailStockWarning,
                   costPrice, sellingPrice, salePrice, primary?.unitType ?? null, marginPercent,
-                  variantId, orgId,
+                  barcode, variantId, orgId,
                 ],
               );
               updatedVariants++;
             } else {
+              await this.assertBarcodeAvailable(client, orgId, barcode, null);
               const ins = await client.query<{ id: number }>(
                 `INSERT INTO tblinventory_variants
                    (org_id, product_id, variant_name, stock_qty, stock_warning,
                     retail_stock_qty, retail_stock_warning,
-                    cost_price, selling_price, sale_price, unit_type, margin_percent)
-                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+                    cost_price, selling_price, sale_price, unit_type, margin_percent, barcode)
+                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
                 [
                   orgId, productId, vName, stockQty, stockWarning,
                   retailStockQty, retailStockWarning,
-                  costPrice, sellingPrice, salePrice, primary?.unitType ?? null, marginPercent,
+                  costPrice, sellingPrice, salePrice, primary?.unitType ?? null, marginPercent, barcode,
                 ],
               );
               variantId = ins.rows[0].id;
@@ -1616,6 +1690,7 @@ export class InventoryProductsService {
       unitType?: string;
       hasSugarLevel?: boolean;
       productSource?: string;
+      barcode?: string | null;
       units?: Array<{
         id?: number;
         unitType?: string;
@@ -1679,6 +1754,7 @@ export class InventoryProductsService {
         const salePrice = this.toOptionalNumber(primary?.salePrice ?? dto.salePrice);
         const marginPercent = this.computeMarginPercent(costPrice, sellingPrice);
         const hasSugarLevel = Boolean(dto.hasSugarLevel);
+        const barcode = this.normalizeBarcode(dto.barcode);
         const subVariants = this.normalizeSubvariants(dto.subVariants);
         const productSource = this.normalizeProductSource(
           dto.productSource,
@@ -1686,18 +1762,19 @@ export class InventoryProductsService {
           primary?.unitType ?? dto.unitType,
         );
 
+        await this.assertBarcodeAvailable(client, orgId, barcode, variantId);
         await client.query(
           `UPDATE tblinventory_variants
            SET variant_name = $1, stock_qty = $2, stock_warning = $3,
                retail_stock_qty = $4, retail_stock_warning = $5,
                cost_price = $6, selling_price = $7, sale_price = $8,
                unit_type = $9, margin_percent = $10, has_sugar_level = $11,
-               product_source = $12, updated_at = NOW()
-           WHERE id = $13 AND org_id = $14`,
+               product_source = $12, barcode = $13, updated_at = NOW()
+           WHERE id = $14 AND org_id = $15`,
           [
             vName, stockQty, stockWarning, retailStockQty, retailStockWarning,
             costPrice, sellingPrice, salePrice,
-            primary?.unitType ?? null, marginPercent, hasSugarLevel, productSource,
+            primary?.unitType ?? null, marginPercent, hasSugarLevel, productSource, barcode,
             variantId, orgId,
           ],
         );
@@ -1868,6 +1945,7 @@ export class InventoryProductsService {
           marginPercent,
           imageUrl: row.imageUrl,
           hasSugarLevel,
+          barcode: null,
           units,
           subVariants,
         },

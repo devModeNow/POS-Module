@@ -22,6 +22,11 @@ export class PosTerminalController {
     private readonly printerService: PosPrinterService,
   ) {}
 
+  @Get('scan')
+  findByBarcode(@Query('barcode') barcode: string, @Req() req: AuthReq) {
+    return this.terminalService.findByBarcode(orgId(req), barcode);
+  }
+
   @Get('products')
   listProducts(
     @Query('search') search: string,

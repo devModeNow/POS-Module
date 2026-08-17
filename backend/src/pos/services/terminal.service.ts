@@ -62,6 +62,7 @@ export class PosTerminalService {
   private readonly logger = new Logger(PosTerminalService.name);
   private beverageSchemaReady = false;
   private unitStockSchemaReady = false;
+  private barcodeSchemaReady = false;
 
   constructor(
     private readonly db: DatabaseService,
@@ -149,37 +150,57 @@ export class PosTerminalService {
   }
 
   private async ensureBeverageSchema(): Promise<void> {
-    if (this.beverageSchemaReady) return;
+    if (!this.beverageSchemaReady) {
+      try {
+        await this.db.query(`
+          ALTER TABLE public.tblinventory_variants
+          ADD COLUMN IF NOT EXISTS has_sugar_level BOOLEAN NOT NULL DEFAULT FALSE
+        `);
+        await this.db.query(`
+          CREATE TABLE IF NOT EXISTS public.tblinventory_variant_subvariants (
+            id            BIGSERIAL PRIMARY KEY,
+            org_id        BIGINT NOT NULL REFERENCES public.tblorganizations(id) ON DELETE CASCADE,
+            variant_id    BIGINT NOT NULL REFERENCES public.tblinventory_variants(id) ON DELETE CASCADE,
+            temp_type     TEXT,
+            size_label    TEXT NOT NULL,
+            selling_price NUMERIC(12,2) NOT NULL DEFAULT 0,
+            sale_price    NUMERIC(12,2),
+            stock_qty     NUMERIC(12,3) NOT NULL DEFAULT 0,
+            stock_warning NUMERIC(12,3) NOT NULL DEFAULT 0,
+            sort_order    INTEGER NOT NULL DEFAULT 0,
+            is_active     BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          )
+        `);
+        await this.db.query(`
+          ALTER TABLE public.tblinventory_variant_subvariants
+            ADD COLUMN IF NOT EXISTS stock_qty NUMERIC(12, 3) NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS stock_warning NUMERIC(12, 3) NOT NULL DEFAULT 0
+        `);
+        this.beverageSchemaReady = true;
+      } catch (e) {
+        this.logger.warn(`Beverage schema ensure skipped: ${e instanceof Error ? e.message : e}`);
+      }
+    }
+    await this.ensureBarcodeSchema();
+  }
+
+  private async ensureBarcodeSchema(): Promise<void> {
+    if (this.barcodeSchemaReady) return;
     try {
       await this.db.query(`
         ALTER TABLE public.tblinventory_variants
-        ADD COLUMN IF NOT EXISTS has_sugar_level BOOLEAN NOT NULL DEFAULT FALSE
+        ADD COLUMN IF NOT EXISTS barcode TEXT
       `);
       await this.db.query(`
-        CREATE TABLE IF NOT EXISTS public.tblinventory_variant_subvariants (
-          id            BIGSERIAL PRIMARY KEY,
-          org_id        BIGINT NOT NULL REFERENCES public.tblorganizations(id) ON DELETE CASCADE,
-          variant_id    BIGINT NOT NULL REFERENCES public.tblinventory_variants(id) ON DELETE CASCADE,
-          temp_type     TEXT,
-          size_label    TEXT NOT NULL,
-          selling_price NUMERIC(12,2) NOT NULL DEFAULT 0,
-          sale_price    NUMERIC(12,2),
-          stock_qty     NUMERIC(12,3) NOT NULL DEFAULT 0,
-          stock_warning NUMERIC(12,3) NOT NULL DEFAULT 0,
-          sort_order    INTEGER NOT NULL DEFAULT 0,
-          is_active     BOOLEAN NOT NULL DEFAULT TRUE,
-          created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-          updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_inv_variants_org_barcode
+          ON public.tblinventory_variants (org_id, lower(btrim(barcode)))
+          WHERE barcode IS NOT NULL AND btrim(barcode) <> ''
       `);
-      await this.db.query(`
-        ALTER TABLE public.tblinventory_variant_subvariants
-          ADD COLUMN IF NOT EXISTS stock_qty NUMERIC(12, 3) NOT NULL DEFAULT 0,
-          ADD COLUMN IF NOT EXISTS stock_warning NUMERIC(12, 3) NOT NULL DEFAULT 0
-      `);
-      this.beverageSchemaReady = true;
+      this.barcodeSchemaReady = true;
     } catch (e) {
-      this.logger.warn(`Beverage schema ensure skipped: ${e instanceof Error ? e.message : e}`);
+      this.logger.warn(`Barcode schema ensure skipped: ${e instanceof Error ? e.message : e}`);
     }
   }
 
@@ -355,6 +376,7 @@ export class PosTerminalService {
 
   async listProducts(orgId: number, search?: string, category?: string) {
     try {
+      await this.ensureBarcodeSchema();
       const params: unknown[] = [orgId];
       let extra = '';
       if (search?.trim()) {
@@ -366,7 +388,10 @@ export class PosTerminalService {
           OR EXISTS (
             SELECT 1 FROM tblinventory_variants sv
             WHERE sv.product_id = p.id AND sv.is_active = TRUE
-              AND LOWER(sv.variant_name) LIKE LOWER($${idx})
+              AND (
+                LOWER(sv.variant_name) LIKE LOWER($${idx})
+                OR LOWER(COALESCE(sv.barcode, '')) LIKE LOWER($${idx})
+              )
           )
         )`;
       }
@@ -491,6 +516,7 @@ export class PosTerminalService {
 
   async listVariants(productId: number, orgId: number) {
     try {
+      await this.ensureBarcodeSchema();
       const result = await this.db.query<{
         id: number;
         productId: number;
@@ -504,6 +530,7 @@ export class PosTerminalService {
         unitType: string | null;
         imageUrl: string | null;
         productImageUrl: string | null;
+        barcode: string | null;
       }>(
         `SELECT v.id,
                 v.product_id AS "productId",
@@ -516,7 +543,8 @@ export class PosTerminalService {
                 v.sale_price AS "salePrice",
                 v.unit_type AS "unitType",
                 v.image_url AS "imageUrl",
-                p.image_url AS "productImageUrl"
+                p.image_url AS "productImageUrl",
+                v.barcode
          FROM tblinventory_variants v
          INNER JOIN tblinventory_products p ON p.id = v.product_id
          WHERE v.product_id = $1 AND v.org_id = $2 AND v.is_active = TRUE AND p.is_active = TRUE
@@ -564,6 +592,7 @@ export class PosTerminalService {
 
   async listAllVariants(orgId: number, search?: string, category?: string) {
     try {
+      await this.ensureBarcodeSchema();
       const params: unknown[] = [orgId];
       let extra = '';
       if (search?.trim()) {
@@ -573,6 +602,7 @@ export class PosTerminalService {
           LOWER(v.variant_name) LIKE LOWER($${idx})
           OR LOWER(p.name) LIKE LOWER($${idx})
           OR LOWER(COALESCE(p.category,'')) LIKE LOWER($${idx})
+          OR LOWER(COALESCE(v.barcode,'')) LIKE LOWER($${idx})
         )`;
       }
       if (category?.trim()) {
@@ -592,6 +622,7 @@ export class PosTerminalService {
         unitType: string | null;
         imageUrl: string | null;
         productImageUrl: string | null;
+        barcode: string | null;
       }>(
         `SELECT v.id,
                 v.product_id AS "productId",
@@ -604,7 +635,8 @@ export class PosTerminalService {
                 v.sale_price AS "salePrice",
                 v.unit_type AS "unitType",
                 v.image_url AS "imageUrl",
-                p.image_url AS "productImageUrl"
+                p.image_url AS "productImageUrl",
+                v.barcode
          FROM tblinventory_variants v
          INNER JOIN tblinventory_products p ON p.id = v.product_id
          LEFT JOIN (
@@ -643,6 +675,7 @@ export class PosTerminalService {
           unitType: primary.unitType,
           imageUrl: row.imageUrl,
           productImageUrl: row.productImageUrl,
+          barcode: row.barcode ?? null,
           units: resolvedUnits,
           hasSugarLevel: beverageExtras.sugarMap.get(row.id) ?? false,
           subVariants,
@@ -659,6 +692,84 @@ export class PosTerminalService {
       return {
         success: false,
         message: e instanceof Error ? e.message : 'Failed to load variants',
+      };
+    }
+  }
+
+  async findByBarcode(orgId: number, barcode?: string) {
+    const code = String(barcode ?? '').trim();
+    if (!code) {
+      return { success: false, message: 'Barcode is required' };
+    }
+
+    try {
+      await this.ensureBarcodeSchema();
+      const result = await this.db.query<{
+        id: number;
+        productId: number;
+        productName: string;
+        variantName: string;
+        category: string | null;
+        stockQty: number;
+        sellingPrice: string;
+        salePrice: string | null;
+        unitType: string | null;
+        imageUrl: string | null;
+        productImageUrl: string | null;
+        barcode: string | null;
+      }>(
+        `SELECT v.id,
+                v.product_id AS "productId",
+                p.name AS "productName",
+                v.variant_name AS "variantName",
+                p.category,
+                v.stock_qty AS "stockQty",
+                v.selling_price AS "sellingPrice",
+                v.sale_price AS "salePrice",
+                v.unit_type AS "unitType",
+                v.image_url AS "imageUrl",
+                p.image_url AS "productImageUrl",
+                v.barcode
+         FROM tblinventory_variants v
+         INNER JOIN tblinventory_products p ON p.id = v.product_id
+         WHERE v.org_id = $1
+           AND v.is_active = TRUE
+           AND p.is_active = TRUE
+           AND v.barcode IS NOT NULL
+           AND lower(btrim(v.barcode)) = lower($2)
+         LIMIT 1`,
+        [orgId, code],
+      );
+
+      if (!result.rowCount) {
+        return { success: false, message: `No product found for barcode "${code}"` };
+      }
+
+      const row = result.rows[0];
+      const [unitsMap, beverageExtras] = await Promise.all([
+        this.loadUnitsMap(orgId, [row.id]),
+        this.loadBeverageExtras(orgId, [row.id]),
+      ]);
+      const resolvedUnits = this.resolveUnits(row, unitsMap);
+      const primary = resolvedUnits[0];
+
+      return {
+        success: true,
+        data: {
+          ...row,
+          sellingPrice: primary.sellingPrice,
+          salePrice: primary.salePrice,
+          unitType: primary.unitType,
+          units: resolvedUnits,
+          hasSugarLevel: beverageExtras.sugarMap.get(row.id) ?? false,
+          subVariants: beverageExtras.subMap.get(row.id) ?? [],
+          inStock: row.stockQty > 0,
+        },
+      };
+    } catch (e) {
+      return {
+        success: false,
+        message: e instanceof Error ? e.message : 'Failed to look up barcode',
       };
     }
   }
