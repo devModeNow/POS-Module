@@ -98,29 +98,34 @@ export class SetupService {
 
     let executed = 0;
 
-    try {
-      for (const statement of statements) {
-        if (statement.startsWith('\\')) {
-          continue;
-        }
-        await this.db.query(statement);
-        executed++;
+    for (const statement of statements) {
+      if (statement.startsWith('\\')) {
+        continue;
       }
 
-      const summary = await this.getRestorationSummary();
+      try {
+        await this.db.query(statement);
+        executed++;
+      } catch (e: unknown) {
+        const message = e instanceof Error ? e.message : 'Unknown error';
+        if (isSkippableDumpPreambleError(statement, message)) {
+          continue;
+        }
 
-      return {
-        success: true,
-        message: `Database restored successfully (${executed} statements executed).`,
-        data: { summary },
-      };
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : 'Unknown error';
-      return {
-        success: false,
-        message: `Restore failed after ${executed} statement(s): ${message.substring(0, 400)}`,
-      };
+        return {
+          success: false,
+          message: `Restore failed after ${executed} statement(s): ${message.substring(0, 400)}`,
+        };
+      }
     }
+
+    const summary = await this.getRestorationSummary();
+
+    return {
+      success: true,
+      message: `Database restored successfully (${executed} statements executed).`,
+      data: { summary },
+    };
   }
 
   private async restoreViaPsql(sql: string, psqlPath: string) {
@@ -277,4 +282,14 @@ export class SetupService {
       };
     }
   }
+}
+
+function isSkippableDumpPreambleError(statement: string, message: string): boolean {
+  const isSessionSetting =
+    /^\s*SET\s+/i.test(statement) || /^\s*SELECT\s+pg_catalog\.set_config\s*\(/i.test(statement);
+
+  return (
+    isSessionSetting &&
+    /unrecognized configuration parameter/i.test(message)
+  );
 }
