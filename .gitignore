@@ -1,0 +1,36 @@
+# Dependencies & build
+node_modules/
+dist/
+.angular/
+coverage/
+out-tsc/
+tmp/
+.temp/
+.tmp/
+
+# Environment & secrets (never commit)
+.env
+.env.*
+!.env.example
+!**/.env.example
+!**/.env.*.example
+.env.docker
+!.env.docker.example
+
+# Runtime
+backend/backups/
+logs/
+*.log
+npm-debug.log*
+
+# IDE / OS
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.DS_Store
+Thumbs.db
+.history/
+
+# Generated at `npm start` / `npm run build`
+frontend/public/app-version.json

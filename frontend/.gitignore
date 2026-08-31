@@ -40,10 +40,8 @@ testem.log
 # System files
 .DS_Store
 Thumbs.db
-.vercel
 
 # Environment files
 .env
 .env.*
 !.env.example
-!.env.production

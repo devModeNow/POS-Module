@@ -14,6 +14,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { BackupMetadata, BackupType, BackupFormat } from './interfaces';
 import { buildPgDumpArgs } from './utils/build-pg-dump-args';
 import { generateFilename } from './utils/generate-filename';
+import { resolveDatabaseTarget } from '../database/database.config';
 
 /**
  * Service responsible for managing database backup operations.
@@ -117,7 +118,9 @@ export class BackupService implements OnModuleInit {
     const backupFormat: BackupFormat = (options.format as BackupFormat) || 'plain';
 
     const id = uuidv4();
-    const databaseName = this.configService.get<string>('DB_NAME', 'postgres');
+    const databaseName = resolveDatabaseTarget(this.configService, {
+      preferDirectUrl: true,
+    }).dbname;
     const fileName = generateFilename(databaseName, backupType, backupFormat);
 
     const metadata: BackupMetadata = {
@@ -172,12 +175,15 @@ export class BackupService implements OnModuleInit {
     // Step 2: Transition to in_progress
     metadata.status = 'in_progress';
 
-    // Step 3: Build pg_dump arguments
+    // Step 3: Build pg_dump arguments (prefer DATABASE_DIRECT_URL for Supabase)
+    const dbTarget = resolveDatabaseTarget(this.configService, {
+      preferDirectUrl: true,
+    });
     const dbConfig = {
-      host: this.configService.get<string>('DB_HOST', '127.0.0.1'),
-      port: parseInt(this.configService.get<string>('DB_PORT', '5432'), 10),
-      username: this.configService.get<string>('DB_USER', 'postgres'),
-      dbname: this.configService.get<string>('DB_NAME', 'postgres'),
+      host: dbTarget.host,
+      port: dbTarget.port,
+      username: dbTarget.username,
+      dbname: dbTarget.dbname,
     };
 
     const args = buildPgDumpArgs(dbConfig, { type, format });
@@ -186,7 +192,7 @@ export class BackupService implements OnModuleInit {
     args.push('-f', filePath);
 
     // Step 4: Execute pg_dump with PGPASSWORD env var
-    const password = this.configService.get<string>('DB_PASSWORD', '');
+    const password = dbTarget.password;
 
     try {
       await this.spawnPgDump(args, password);

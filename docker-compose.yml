@@ -1,0 +1,72 @@
+# POS PCmazing — Docker Compose for Debian/Ubuntu + Cloudflare Tunnel
+#
+# Tunnel routes (configure to match your hostnames):
+#   alingbeth-staging.webkodex.com     → http://alingbeth-staging-frontend:80
+#   api-alingbeth-staging.webkodex.com → http://alingbeth-staging-backend:3000
+#
+# Deploy on the server:
+#   docker network create app-tier   # skip if it already exists
+#   cd ~/apps/POS-pcmazing
+#   cp .env.docker.example .env.docker
+#   nano .env.docker
+#   docker compose --env-file .env.docker up -d --build
+#
+# Network must match the Cloudflare tunnel container (this server: app-tier).
+#   docker inspect <tunnel-container> --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'
+
+name: pos-pcmazing
+
+services:
+  alingbeth-staging-frontend:
+    container_name: alingbeth-staging-frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        API_URL: ${API_URL:-https://api-alingbeth-staging.webkodex.com}
+        PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:-https://alingbeth-staging.webkodex.com}
+        BUILD_ID: ${BUILD_ID:-}
+    restart: unless-stopped
+    networks:
+      - edge
+    # No host ports required — Cloudflare tunnel reaches the container by name.
+    # Uncomment for local debug: ports: ["8080:80"]
+
+  alingbeth-staging-backend:
+    container_name: alingbeth-staging-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://alingbeth-staging.webkodex.com}
+      BACKUP_STORAGE_PATH: /app/backups
+    volumes:
+      - pos_backups:/app/backups
+    networks:
+      - edge
+    # Uncomment for local debug: ports: ["3000:3000"]
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+networks:
+  edge:
+    external: true
+    name: ${DOCKER_NETWORK:-app-tier}
+
+volumes:
+  pos_backups:

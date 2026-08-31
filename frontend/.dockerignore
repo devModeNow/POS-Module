@@ -1,10 +1,12 @@
 node_modules
 dist
-coverage
-backups
+.angular
+.tmp
+.temp
 .env
 .env.*
 !.env.example
+coverage
 *.log
 npm-debug.log*
 .git
@@ -12,7 +14,3 @@ npm-debug.log*
 README.md
 Dockerfile*
 .dockerignore
-test
-**/*.spec.ts
-.eslintrc*
-.prettierrc*

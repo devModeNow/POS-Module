@@ -1,4 +1,5 @@
 import axios, { AxiosHeaders, InternalAxiosRequestConfig } from 'axios';
+import { ENV } from '../config/env.generated';
 import {
   clearAccessToken,
   getAccessToken,
@@ -12,15 +13,14 @@ import {
 type RetryConfig = InternalAxiosRequestConfig & { _retry?: boolean };
 
 /**
- * API base URL resolution (build-time via @ngx-env/builder):
- * 1) NG_APP_API_BASE_URL from .env / .env.production / Docker build-arg
+ * API base URL resolution (baked in at `npm start` / `npm run build`):
+ * 1) API_URL or NG_APP_API_BASE_URL from frontend/.env (or Docker build-arg)
  * 2) localhost → http://localhost:3000
  * 3) production fallback → same-origin /api (only if env was missing at build)
  *
- * Browsers cannot read .env at runtime. Rebuild the frontend image after changing the API URL.
+ * Browsers cannot read .env at runtime. Rebuild the frontend after changing the API URL.
  */
-const appEnv = (import.meta as ImportMeta & { env?: Record<string, string | undefined> }).env;
-const rawConfiguredApiBaseUrl = String(appEnv?.['NG_APP_API_BASE_URL'] ?? '').trim().replace(/\/+$/, '');
+const rawConfiguredApiBaseUrl = String(ENV.API_URL ?? '').trim().replace(/\/+$/, '');
 const hostName = String(globalThis.location?.hostname ?? '').trim().toLowerCase();
 const isLocalHost = hostName === 'localhost' || hostName === '127.0.0.1';
 const isLocalApiUrl =
@@ -32,8 +32,8 @@ const configuredApiBaseUrl =
 
 if (!configuredApiBaseUrl && !isLocalHost) {
   console.warn(
-    '[api-client] NG_APP_API_BASE_URL is missing in this build. Using same-origin /api fallback. ' +
-      'Rebuild frontend with NG_APP_API_BASE_URL=https://api-pcmazepos.pcmazing.com',
+    '[api-client] API_URL is missing in this build. Using same-origin /api fallback. ' +
+      'Rebuild frontend with API_URL=https://api-alingbeth-staging.webkodex.com',
   );
 }
 

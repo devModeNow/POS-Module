@@ -1,98 +1,29 @@
 import { Injectable, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Pool, PoolClient, QueryResult } from 'pg';
+import { buildDatabaseConfig, DatabaseConnectionMode } from './database.config';
 
 @Injectable()
 export class DatabaseService implements OnModuleDestroy {
   private readonly pool: Pool;
+  private readonly mode: DatabaseConnectionMode;
+  private readonly schema: string;
 
   constructor(private readonly configService: ConfigService) {
-    console.log('🔌 Initializing database connection...');
+    console.log('Initializing database connection...');
 
-    const databaseUrl = this.configService.get<string>('DATABASE_URL');
-    const shouldUseSsl = this.resolveSslEnabled(databaseUrl);
-    const rejectUnauthorized = this.resolveRejectUnauthorized(databaseUrl);
-    const ssl = shouldUseSsl ? { rejectUnauthorized } : undefined;
-    const connectionString = this.normalizeConnectionString(
-      databaseUrl,
-      shouldUseSsl,
-      rejectUnauthorized,
-    );
+    const config = buildDatabaseConfig(configService);
+    this.mode = config.mode;
+    this.schema = config.schema;
+    this.pool = new Pool(config.poolConfig);
 
-    console.log('DB_SSL:', shouldUseSsl);
-    console.log('DB_SSL_REJECT_UNAUTHORIZED:', rejectUnauthorized);
-    console.log('Using connection string:', !!connectionString);
-
-    try {
-      this.pool = connectionString
-        ? new Pool({
-            connectionString,
-            ssl,
-            connectionTimeoutMillis: 10_000,
-            idleTimeoutMillis: 30_000,
-            max: 10,
-          })
-        : new Pool({
-            host: this.configService.get<string>('DB_HOST', '127.0.0.1'),
-            port: Number(this.configService.get<string>('DB_PORT', '5432')),
-            database: this.configService.get<string>('DB_NAME', 'postgres'),
-            user: this.configService.get<string>('DB_USER', 'postgres'),
-            password: this.configService.get<string>('DB_PASSWORD', ''),
-            ssl,
-            connectionTimeoutMillis: 10_000,
-            idleTimeoutMillis: 30_000,
-            max: 10,
-          });
-
-      console.log('✅ Database pool created successfully');
-    } catch (error) {
-      console.error('❌ Failed to create database pool:', error);
-      throw error;
-    }
+    console.log('Database connection mode:', this.mode);
+    console.log('Database schema:', this.schema);
+    console.log('Using connection string:', Boolean(configService.get<string>('DATABASE_URL')));
   }
 
-  private resolveSslEnabled(databaseUrl?: string): boolean {
-    const defaultFromUrl = Boolean(databaseUrl?.includes('sslmode=require'));
-    return this.getBooleanEnv('DB_SSL', defaultFromUrl);
-  }
-
-  private resolveRejectUnauthorized(databaseUrl?: string): boolean {
-    const isSupabasePooler = Boolean(databaseUrl?.includes('.pooler.supabase.com'));
-    return this.getBooleanEnv('DB_SSL_REJECT_UNAUTHORIZED', !isSupabasePooler);
-  }
-
-  private getBooleanEnv(key: string, defaultValue: boolean): boolean {
-    const rawValue = this.configService.get<string>(key);
-    if (rawValue === undefined) {
-      return defaultValue;
-    }
-
-    const normalized = rawValue.trim().toLowerCase();
-    return ['1', 'true', 'yes', 'on'].includes(normalized);
-  }
-
-  private normalizeConnectionString(
-    databaseUrl: string | undefined,
-    shouldUseSsl: boolean,
-    rejectUnauthorized: boolean,
-  ): string | undefined {
-    if (!databaseUrl) {
-      return undefined;
-    }
-
-    if (!shouldUseSsl) {
-      return databaseUrl;
-    }
-
-    if (!rejectUnauthorized) {
-      if (databaseUrl.includes('sslmode=')) {
-        return databaseUrl.replace(/sslmode=[^&]*/i, 'sslmode=no-verify');
-      }
-
-      return `${databaseUrl}${databaseUrl.includes('?') ? '&' : '?'}sslmode=no-verify`;
-    }
-
-    return databaseUrl;
+  getConnectionMode(): DatabaseConnectionMode {
+    return this.mode;
   }
 
   async query<T = unknown>(
