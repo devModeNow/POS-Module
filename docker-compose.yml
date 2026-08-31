@@ -43,6 +43,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
+      NODE_PATH: /app
       CORS_ORIGINS: ${CORS_ORIGINS:-https://alingbeth-staging.webkodex.com}
       BACKUP_STORAGE_PATH: /app/backups
     volumes:

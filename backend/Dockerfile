@@ -32,10 +32,11 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=3000
+ENV NODE_PATH=/app
 
-# pg_dump for in-app backups (PostgreSQL 17 client)
+# pg_dump for in-app backups + sharp runtime libs
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends gnupg curl ca-certificates \
+  && apt-get install -y --no-install-recommends gnupg curl ca-certificates libgomp1 \
   && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/postgresql-archive-keyring.gpg \
   && echo "deb [signed-by=/usr/share/keyrings/postgresql-archive-keyring.gpg] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
   && apt-get update \
@@ -43,15 +44,17 @@ RUN apt-get update \
   && apt-get purge -y gnupg curl \
   && apt-get autoremove -y \
   && rm -rf /var/lib/apt/lists/* \
-  && mkdir -p /app/backups \
-  && chown -R node:node /app
+  && mkdir -p /app/backups
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY package*.json ./
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 
-USER node
+RUN sed -i 's/\r$//' /app/docker-entrypoint.sh \
+  && chmod +x /app/docker-entrypoint.sh \
+  && ln -sfn /app/dist /app/src
 
 EXPOSE 3000
 
-CMD ["node", "dist/main.js"]
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

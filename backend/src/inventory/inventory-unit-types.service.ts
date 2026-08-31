@@ -18,7 +18,12 @@ export class InventoryUnitTypesService implements OnModuleInit {
   constructor(private readonly db: DatabaseService) {}
 
   async onModuleInit(): Promise<void> {
-    await this.ensureSchema();
+    try {
+      await this.ensureSchema();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`Inventory unit-types bootstrap skipped: ${message}`);
+    }
   }
 
   /** Idempotent — creates tblorg_unit_types and seeds defaults for POS orgs. */
