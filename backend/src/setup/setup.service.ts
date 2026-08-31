@@ -2,8 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { DatabaseService } from 'src/database/database.service';
+import { convertCopyFromStdinToInserts } from './utils/copy-to-inserts';
 import { containsCopyFromStdin, splitSqlStatements } from './utils/split-sql-statements';
 
 @Injectable()
@@ -64,6 +65,11 @@ export class SetupService {
     }
 
     if (containsCopyFromStdin(trimmedSql)) {
+      const converted = convertCopyFromStdinToInserts(trimmedSql);
+      if (converted.ok) {
+        return this.restoreViaPg(converted.sql);
+      }
+
       const psqlPath = this.resolvePsqlPath();
       if (psqlPath) {
         return this.restoreViaPsql(trimmedSql, psqlPath);
@@ -71,8 +77,7 @@ export class SetupService {
 
       return {
         success: false,
-        message:
-          'This SQL file uses COPY ... FROM stdin, which requires the psql client. Install PostgreSQL client tools or export a plain SQL backup without COPY blocks.',
+        message: converted.error,
       };
     }
 
@@ -110,7 +115,9 @@ export class SetupService {
   }
 
   private async restoreViaPsql(sql: string, psqlPath: string) {
-    const databaseUrl = this.configService.get<string>('DATABASE_URL', '');
+    const databaseUrl =
+      this.configService.get<string>('DATABASE_DIRECT_URL', '') ||
+      this.configService.get<string>('DATABASE_URL', '');
     if (!databaseUrl) {
       return { success: false, message: 'DATABASE_URL not configured' };
     }
@@ -125,11 +132,14 @@ export class SetupService {
     try {
       writeFileSync(tempFile, sql, 'utf-8');
 
-      const output = execSync(`"${psqlPath}" "${databaseUrl}" -f "${tempFile}"`, {
-        encoding: 'utf-8',
-        timeout: 300000,
-        env: { ...process.env, PGPASSWORD: undefined },
-      });
+      const output = execFileSync(
+        psqlPath,
+        [databaseUrl, '-v', 'ON_ERROR_STOP=1', '-f', tempFile],
+        {
+          encoding: 'utf-8',
+          timeout: 300000,
+        },
+      );
 
       if (existsSync(tempFile)) {
         unlinkSync(tempFile);
@@ -158,12 +168,56 @@ export class SetupService {
   }
 
   private resolvePsqlPath(): string | null {
-    const pgDumpPath = this.configService.get<string>(
-      'PG_DUMP_PATH',
-      'C:\\Program Files\\PostgreSQL\\18\\bin\\pg_dump.exe',
-    );
-    const psqlPath = pgDumpPath.replace(/pg_dump(\.exe)?$/i, 'psql$1');
-    return existsSync(psqlPath) ? psqlPath : null;
+    const configured = this.configService.get<string>('PSQL_PATH')?.trim();
+    if (configured && existsSync(configured)) {
+      return configured;
+    }
+
+    const pgDumpPath = this.configService.get<string>('PG_DUMP_PATH')?.trim();
+    if (pgDumpPath) {
+      const sibling = pgDumpPath.replace(/pg_dump(\.exe)?$/i, 'psql$1');
+      if (sibling !== pgDumpPath && existsSync(sibling)) {
+        return sibling;
+      }
+    }
+
+    const fromPath = this.findExecutable(process.platform === 'win32' ? 'psql.exe' : 'psql');
+    if (fromPath) {
+      return fromPath;
+    }
+
+    const fallbacks =
+      process.platform === 'win32'
+        ? [
+            'C:\\Program Files\\PostgreSQL\\18\\bin\\psql.exe',
+            'C:\\Program Files\\PostgreSQL\\17\\bin\\psql.exe',
+            'C:\\Program Files\\PostgreSQL\\16\\bin\\psql.exe',
+            'C:\\laragon\\bin\\postgresql\\postgresql-17\\bin\\psql.exe',
+            'C:\\laragon\\bin\\postgresql\\postgresql-16\\bin\\psql.exe',
+          ]
+        : ['/usr/bin/psql', '/usr/lib/postgresql/17/bin/psql', '/usr/lib/postgresql/16/bin/psql'];
+
+    return fallbacks.find((candidate) => existsSync(candidate)) ?? null;
+  }
+
+  private findExecutable(command: string): string | null {
+    try {
+      const output = execFileSync(process.platform === 'win32' ? 'where' : 'which', [command], {
+        encoding: 'utf-8',
+        timeout: 5000,
+      })
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find((line) => line.length > 0);
+
+      if (output && existsSync(output)) {
+        return output;
+      }
+
+      return command;
+    } catch {
+      return null;
+    }
   }
 
   private async getRestorationSummary() {
