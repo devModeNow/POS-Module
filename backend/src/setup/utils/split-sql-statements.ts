@@ -40,6 +40,22 @@ export function splitSqlStatements(source: string): string[] {
       continue;
     }
 
+    // psql meta-commands (\restrict, \unrestrict, \connect, \.) are not SQL
+    if (
+      !inSingleQuote &&
+      !inDoubleQuote &&
+      current.trim().length === 0 &&
+      char === '\\' &&
+      source[i + 1] &&
+      source[i + 1] !== '\n' &&
+      source[i + 1] !== '\r'
+    ) {
+      while (i < source.length && source[i] !== '\n') {
+        i++;
+      }
+      continue;
+    }
+
     if (!inDoubleQuote && char === "'") {
       if (inSingleQuote && source[i + 1] === "'") {
         current += "''";
@@ -100,4 +116,12 @@ export function splitSqlStatements(source: string): string[] {
 
 export function containsCopyFromStdin(sql: string): boolean {
   return /\bCOPY\b[\s\S]*?\bFROM\s+stdin\b/i.test(sql);
+}
+
+/** Remove psql-only lines such as \\restrict / \\unrestrict from pg_dump 17+ files. */
+export function stripPsqlMetaCommands(sql: string): string {
+  return sql
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*\\[a-zA-Z?.]/.test(line))
+    .join('\n');
 }

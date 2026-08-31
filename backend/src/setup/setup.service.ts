@@ -5,7 +5,11 @@ import { join } from 'path';
 import { execFileSync } from 'child_process';
 import { DatabaseService } from 'src/database/database.service';
 import { convertCopyFromStdinToInserts } from './utils/copy-to-inserts';
-import { containsCopyFromStdin, splitSqlStatements } from './utils/split-sql-statements';
+import {
+  containsCopyFromStdin,
+  splitSqlStatements,
+  stripPsqlMetaCommands,
+} from './utils/split-sql-statements';
 
 @Injectable()
 export class SetupService {
@@ -64,24 +68,26 @@ export class SetupService {
       return { success: false, message: 'SQL file is empty' };
     }
 
-    if (containsCopyFromStdin(trimmedSql)) {
-      const converted = convertCopyFromStdinToInserts(trimmedSql);
+    let sqlToRun = trimmedSql;
+    if (containsCopyFromStdin(sqlToRun)) {
+      const converted = convertCopyFromStdinToInserts(sqlToRun);
       if (converted.ok) {
-        return this.restoreViaPg(converted.sql);
-      }
+        sqlToRun = converted.sql;
+      } else {
+        const psqlPath = this.resolvePsqlPath();
+        if (psqlPath) {
+          return this.restoreViaPsql(trimmedSql, psqlPath);
+        }
 
-      const psqlPath = this.resolvePsqlPath();
-      if (psqlPath) {
-        return this.restoreViaPsql(trimmedSql, psqlPath);
+        return {
+          success: false,
+          message: converted.error,
+        };
       }
-
-      return {
-        success: false,
-        message: converted.error,
-      };
     }
 
-    return this.restoreViaPg(trimmedSql);
+    sqlToRun = stripPsqlMetaCommands(sqlToRun);
+    return this.restoreViaPg(sqlToRun);
   }
 
   private async restoreViaPg(sql: string) {
@@ -94,6 +100,9 @@ export class SetupService {
 
     try {
       for (const statement of statements) {
+        if (statement.startsWith('\\')) {
+          continue;
+        }
         await this.db.query(statement);
         executed++;
       }

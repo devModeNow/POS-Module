@@ -42,4 +42,19 @@ a\\tb's
     if (!result.ok) return;
     expect(result.sql.trim()).toBe('');
   });
+
+  it('keeps surrounding SQL including pg_dump meta-commands for later stripping', () => {
+    const sql = `\\restrict tok
+COPY public.t (id) FROM stdin;
+1
+\\.
+\\unrestrict tok
+`;
+    const result = convertCopyFromStdinToInserts(sql);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.sql).toContain('\\restrict tok');
+    expect(result.sql).toContain("INSERT INTO public.t (id) VALUES\n('1');");
+    expect(result.sql).toContain('\\unrestrict tok');
+  });
 });
