@@ -1,6 +1,6 @@
 const COPY_START = /\bCOPY\b/gi;
 const FROM_STDIN = /\s+FROM\s+stdin\b/i;
-const INSERT_BATCH_SIZE = 50;
+const INSERT_BATCH_SIZE = 15;
 
 export function convertCopyFromStdinToInserts(
   sql: string,

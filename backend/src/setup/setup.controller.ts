@@ -21,6 +21,16 @@ export class SetupController {
     return this.setupService.getStatus();
   }
 
+  /** Ping the configured PostgreSQL server without exposing credentials */
+  @Get('connection')
+  async getConnection() {
+    const connection = await this.setupService.getConnectionStatus();
+    return {
+      success: true,
+      data: { connection },
+    };
+  }
+
   /** Execute a SQL backup file to initialize the database */
   @Post('restore')
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))

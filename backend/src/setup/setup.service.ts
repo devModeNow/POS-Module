@@ -3,13 +3,40 @@ import { ConfigService } from '@nestjs/config';
 import { existsSync, mkdirSync, writeFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { execFileSync } from 'child_process';
+import { Client, ClientConfig, Pool, PoolClient } from 'pg';
+import {
+  buildDatabaseConfig,
+  buildRestorePoolConfig,
+  resolveDatabaseTarget,
+} from 'src/database/database.config';
 import { DatabaseService } from 'src/database/database.service';
+import { classifyConnectionError } from './utils/classify-connection-error';
 import { convertCopyFromStdinToInserts } from './utils/copy-to-inserts';
+import { sanitizeSupabaseDump } from './utils/sanitize-supabase-dump';
 import {
   containsCopyFromStdin,
   splitSqlStatements,
   stripPsqlMetaCommands,
 } from './utils/split-sql-statements';
+
+const PING_TIMEOUT_MS = 4000;
+
+export type SetupConnectionStatus = {
+  connected: boolean;
+  host: string;
+  port: number;
+  database: string;
+  username: string;
+  ssl: boolean;
+  mode: string;
+  schema: string;
+  latencyMs: number;
+  checkedAt: string;
+  serverVersion?: string;
+  code?: string;
+  error?: string;
+  hint?: string;
+};
 
 @Injectable()
 export class SetupService {
@@ -18,8 +45,69 @@ export class SetupService {
     private readonly configService: ConfigService,
   ) {}
 
+  /** Live probe of the configured PostgreSQL server. Never returns credentials. */
+  async getConnectionStatus(): Promise<SetupConnectionStatus> {
+    const config = buildDatabaseConfig(this.configService);
+    const target = resolveDatabaseTarget(this.configService);
+    const checkedAt = new Date().toISOString();
+    const base = {
+      host: target.host,
+      port: target.port,
+      database: target.dbname,
+      username: target.username,
+      ssl: Boolean(config.poolConfig.ssl),
+      mode: config.mode,
+      schema: config.schema,
+      checkedAt,
+    };
+
+    const client = new Client(buildPingClientConfig(config.poolConfig));
+    const started = Date.now();
+
+    try {
+      await client.connect();
+      const ping = await client.query<{ version: string }>(
+        `SELECT current_setting('server_version') AS version`,
+      );
+      await client.end().catch(() => undefined);
+
+      return {
+        ...base,
+        connected: true,
+        latencyMs: Date.now() - started,
+        serverVersion: ping.rows[0]?.version,
+      };
+    } catch (error: unknown) {
+      await client.end().catch(() => undefined);
+      const classified = classifyConnectionError(error, target.host, target.port);
+
+      return {
+        ...base,
+        connected: false,
+        latencyMs: Date.now() - started,
+        code: classified.code,
+        error: classified.error,
+        hint: classified.hint,
+      };
+    }
+  }
+
   /** Check if core tables exist — if not, DB needs setup */
   async getStatus() {
+    const connection = await this.getConnectionStatus();
+
+    if (!connection.connected) {
+      return {
+        success: true,
+        data: {
+          isSetupComplete: false,
+          tablesFound: [] as string[],
+          message: connection.error || 'Cannot reach PostgreSQL.',
+          connection,
+        },
+      };
+    }
+
     try {
       const result = await this.db.query<{ table_name: string }>(
         `SELECT table_name FROM information_schema.tables
@@ -39,15 +127,24 @@ export class SetupService {
           message: isSetupComplete
             ? 'Database is already set up. Setup page is disabled.'
             : 'Database is fresh. You can import a backup.',
+          connection,
         },
       };
-    } catch {
+    } catch (error: unknown) {
+      const classified = classifyConnectionError(error, connection.host, connection.port);
       return {
         success: true,
         data: {
           isSetupComplete: false,
-          tablesFound: [],
-          message: 'Database is fresh. You can import a backup.',
+          tablesFound: [] as string[],
+          message: classified.error,
+          connection: {
+            ...connection,
+            connected: false,
+            code: classified.code,
+            error: classified.error,
+            hint: classified.hint,
+          },
         },
       };
     }
@@ -63,12 +160,21 @@ export class SetupService {
       };
     }
 
+    if (!status.data.connection?.connected) {
+      return {
+        success: false,
+        message:
+          status.data.connection?.error ||
+          'Cannot reach PostgreSQL. Fix the connection before restoring.',
+      };
+    }
+
     const trimmedSql = sql.trim();
     if (!trimmedSql) {
       return { success: false, message: 'SQL file is empty' };
     }
 
-    let sqlToRun = trimmedSql;
+    let sqlToRun = sanitizeSupabaseDump(trimmedSql);
     if (containsCopyFromStdin(sqlToRun)) {
       const converted = convertCopyFromStdinToInserts(sqlToRun);
       if (converted.ok) {
@@ -96,27 +202,59 @@ export class SetupService {
       return { success: false, message: 'No executable SQL statements found in file.' };
     }
 
+    const pool = new Pool(buildRestorePoolConfig(this.configService));
+    let client: PoolClient | null = null;
     let executed = 0;
 
-    for (const statement of statements) {
-      if (statement.startsWith('\\')) {
-        continue;
+    try {
+      client = await connectRestoreClient(pool);
+
+      for (const schema of SUPABASE_COMPAT_SCHEMAS) {
+        await client.query(`CREATE SCHEMA IF NOT EXISTS ${schema}`);
       }
 
-      try {
-        await this.db.query(statement);
-        executed++;
-      } catch (e: unknown) {
-        const message = e instanceof Error ? e.message : 'Unknown error';
-        if (isSkippableDumpPreambleError(statement, message)) {
+      for (const statement of statements) {
+        if (statement.startsWith('\\')) {
           continue;
         }
 
-        return {
-          success: false,
-          message: `Restore failed after ${executed} statement(s): ${message.substring(0, 400)}`,
-        };
+        try {
+          await client.query(statement);
+          executed++;
+        } catch (e: unknown) {
+          const message = e instanceof Error ? e.message : 'Unknown error';
+          if (isSkippableRestoreError(statement, message)) {
+            continue;
+          }
+
+          if (isConnectionResetError(message)) {
+            client = await reconnectRestoreClient(pool, client);
+            try {
+              await client.query(statement);
+              executed++;
+              continue;
+            } catch (retryError: unknown) {
+              const retryMessage =
+                retryError instanceof Error ? retryError.message : 'Unknown error';
+              if (isSkippableRestoreError(statement, retryMessage)) {
+                continue;
+              }
+              return {
+                success: false,
+                message: `Restore failed after ${executed} statement(s): ${retryMessage.substring(0, 400)}`,
+              };
+            }
+          }
+
+          return {
+            success: false,
+            message: `Restore failed after ${executed} statement(s): ${message.substring(0, 400)}`,
+          };
+        }
       }
+    } finally {
+      client?.release();
+      await pool.end().catch(() => undefined);
     }
 
     const summary = await this.getRestorationSummary();
@@ -284,12 +422,117 @@ export class SetupService {
   }
 }
 
-function isSkippableDumpPreambleError(statement: string, message: string): boolean {
+function buildPingClientConfig(poolConfig: ClientConfig): ClientConfig {
+  const ping: ClientConfig = {
+    ssl: poolConfig.ssl,
+    connectionTimeoutMillis: PING_TIMEOUT_MS,
+  };
+
+  if (poolConfig.connectionString) {
+    ping.connectionString = poolConfig.connectionString;
+    return ping;
+  }
+
+  ping.host = poolConfig.host;
+  ping.port = poolConfig.port;
+  ping.user = poolConfig.user;
+  ping.password = poolConfig.password;
+  ping.database = poolConfig.database;
+  return ping;
+}
+
+const SUPABASE_COMPAT_SCHEMAS = [
+  'extensions',
+  'pgbouncer',
+  'auth',
+  'storage',
+  'realtime',
+  'supabase_functions',
+  'supabase_migrations',
+  'pgsodium',
+  'vault',
+  'graphql',
+  'graphql_public',
+] as const;
+
+function isSkippableRestoreError(statement: string, message: string): boolean {
   const isSessionSetting =
     /^\s*SET\s+/i.test(statement) || /^\s*SELECT\s+pg_catalog\.set_config\s*\(/i.test(statement);
 
-  return (
-    isSessionSetting &&
-    /unrecognized configuration parameter/i.test(message)
+  if (isSessionSetting && /unrecognized configuration parameter/i.test(message)) {
+    return true;
+  }
+
+  if (/^\s*CREATE\b/i.test(statement) && /already exists/i.test(message)) {
+    return true;
+  }
+
+  if (
+    /^\s*CREATE\s+EXTENSION\b/i.test(statement) &&
+    (/does not exist/i.test(message) ||
+      /could not open extension control file/i.test(message) ||
+      /is not available/i.test(message) ||
+      /could not access file/i.test(message))
+  ) {
+    return true;
+  }
+
+  const isPrivilegeOrCatalogStatement =
+    /^\s*(GRANT|REVOKE|ALTER|DROP|COMMENT\s+ON)\b/i.test(statement) ||
+    /\bOWNER\s+TO\b/i.test(statement);
+
+  if (
+    isPrivilegeOrCatalogStatement &&
+    (/does not exist/i.test(message) ||
+      /already exists/i.test(message) ||
+      /must be member of role/i.test(message) ||
+      /permission denied/i.test(message))
+  ) {
+    return true;
+  }
+
+  if (
+    referencesSupabaseCompatSchema(statement) &&
+    !/^\s*CREATE\s+TABLE\b/i.test(statement) &&
+    (/does not exist/i.test(message) ||
+      /already exists/i.test(message) ||
+      /permission denied/i.test(message) ||
+      /must be member of role/i.test(message))
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
+function referencesSupabaseCompatSchema(statement: string): boolean {
+  return SUPABASE_COMPAT_SCHEMAS.some((schema) =>
+    new RegExp(`\\b${schema}\\b`, 'i').test(statement),
   );
+}
+
+function isConnectionResetError(message: string): boolean {
+  return /ECONNRESET|EPIPE|ECONNREFUSED|connection terminated|Connection ended unexpectedly|server closed the connection|Client has encountered a connection error|timeout expired|Connection terminated unexpectedly/i.test(
+    message,
+  );
+}
+
+async function connectRestoreClient(pool: Pool): Promise<PoolClient> {
+  const client = await pool.connect();
+  await client.query('SET statement_timeout = 0');
+  await client.query('SET idle_in_transaction_session_timeout = 0');
+  return client;
+}
+
+async function reconnectRestoreClient(
+  pool: Pool,
+  previous: PoolClient | null,
+): Promise<PoolClient> {
+  try {
+    previous?.release(true);
+  } catch {
+    // Client is already dead.
+  }
+
+  return connectRestoreClient(pool);
 }

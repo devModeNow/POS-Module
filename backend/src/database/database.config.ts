@@ -37,6 +37,32 @@ export function buildDatabaseConfig(configService: ConfigService): DatabaseConfi
   };
 }
 
+/** Dedicated pool for long restore/setup jobs. Prefers DATABASE_DIRECT_URL. */
+export function buildRestorePoolConfig(configService: ConfigService): PoolConfig {
+  const schema = configService.get<string>('DB_SCHEMA', 'public').trim() || 'public';
+  const directUrl = configService.get<string>('DATABASE_DIRECT_URL')?.trim();
+  const databaseUrl = configService.get<string>('DATABASE_URL')?.trim();
+  const url = directUrl || databaseUrl;
+  const shouldUseSsl = resolveSslEnabled(configService, url);
+  const rejectUnauthorized = resolveRejectUnauthorized(configService, url);
+  const ssl = shouldUseSsl ? { rejectUnauthorized } : undefined;
+  const usePoolerSettings = !directUrl && resolveConnectionMode(configService, url) === 'supabase-pooler';
+
+  const poolConfig = buildPoolConfig(configService, schema, {
+    databaseUrl: url,
+    ssl,
+    usePoolerSettings,
+  });
+
+  poolConfig.max = 1;
+  poolConfig.connectionTimeoutMillis = 30_000;
+  poolConfig.idleTimeoutMillis = 600_000;
+  poolConfig.keepAlive = true;
+  poolConfig.keepAliveInitialDelayMillis = 10_000;
+
+  return poolConfig;
+}
+
 /**
  * Connection target for pg_dump / tools.
  * Prefers DATABASE_DIRECT_URL (Supabase direct) so dumps are not sent through PgBouncer.

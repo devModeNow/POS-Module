@@ -1,32 +1,52 @@
 # Stage 1: build NestJS
-FROM node:22-slim AS builder
+# node:20 is more stable than 22-slim for `npm ci` (SIGSEGV / exit 139 on small VPS).
+FROM node:20-bookworm-slim AS builder
 
 WORKDIR /app
+
+ENV NODE_OPTIONS=--max-old-space-size=1536 \
+    NPM_CONFIG_AUDIT=false \
+    NPM_CONFIG_FUND=false \
+    NPM_CONFIG_UPDATE_NOTIFIER=false \
+    npm_config_jobs=2
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 
-COPY package*.json ./
-RUN npm ci
+COPY package.json package-lock.json ./
+RUN node -v && npm -v \
+  && (npm ci --no-audit --no-fund \
+      || (echo "npm ci failed; retrying once" && rm -rf node_modules && npm ci --no-audit --no-fund) \
+      || (echo "npm ci segfaulted; falling back to npm install" && rm -rf node_modules && npm install --no-audit --no-fund))
 
 COPY . .
 RUN npm run build
 
 # Stage 2: production deps (native modules like sharp)
-FROM node:22-slim AS deps
+FROM node:20-bookworm-slim AS deps
 
 WORKDIR /app
+
+ENV NODE_OPTIONS=--max-old-space-size=1536 \
+    NPM_CONFIG_AUDIT=false \
+    NPM_CONFIG_FUND=false \
+    NPM_CONFIG_UPDATE_NOTIFIER=false \
+    npm_config_jobs=2
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 
-COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+COPY package.json package-lock.json ./
+RUN node -v && npm -v \
+  && (npm ci --omit=dev --no-audit --no-fund \
+      || (echo "npm ci failed; retrying once" && rm -rf node_modules && npm ci --omit=dev --no-audit --no-fund) \
+      || (echo "npm ci segfaulted; falling back to npm install" && rm -rf node_modules && npm install --omit=dev --no-audit --no-fund)) \
+  && npm cache clean --force
 
 # Stage 3: runtime
-FROM node:22-slim AS runner
+FROM node:20-bookworm-slim AS runner
 
 WORKDIR /app
 
@@ -48,7 +68,7 @@ RUN apt-get update \
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
-COPY package*.json ./
+COPY package.json package-lock.json ./
 COPY docker-entrypoint.sh /app/docker-entrypoint.sh
 
 RUN sed -i 's/\r$//' /app/docker-entrypoint.sh \

@@ -4,12 +4,12 @@
 #   alingbeth-staging.webkodex.com     → http://alingbeth-staging-frontend:80
 #   api-alingbeth-staging.webkodex.com → http://alingbeth-staging-backend:3000
 #
-# Deploy on the server:
+# Deploy on the server (build one image at a time — parallel npm ci can SIGSEGV / exit 139):
 #   docker network create app-tier   # skip if it already exists
 #   cd ~/apps/POS-pcmazing
 #   cp .env.docker.example .env.docker
 #   nano .env.docker
-#   docker compose --env-file .env.docker up -d --build
+#   COMPOSE_PARALLEL_LIMIT=1 docker compose --env-file .env.docker up -d --build
 #
 # Network must match the Cloudflare tunnel container (this server: app-tier).
 #   docker inspect <tunnel-container> --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'

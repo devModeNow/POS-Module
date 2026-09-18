@@ -12,6 +12,75 @@
       <p class="mt-2 text-sm text-gray-500 dark:text-gray-400">Initialize your database from a backup file</p>
     </div>
 
+    <!-- Postgres connection status -->
+    <div class="mb-5 rounded-2xl border p-4 shadow-sm"
+      [ngClass]="apiUnreachable || (connection && !connection.connected)
+        ? 'border-red-200 bg-red-50 dark:border-red-500/30 dark:bg-red-500/10'
+        : connection?.connected
+          ? 'border-green-200 bg-green-50 dark:border-green-500/30 dark:bg-green-500/10'
+          : 'border-gray-200 bg-white dark:border-gray-800 dark:bg-white/[0.03]'">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <span class="relative flex h-2.5 w-2.5">
+              @if (checkingConnection) {
+                <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-60"></span>
+                <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-500"></span>
+              } @else if (connection?.connected) {
+                <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-green-500"></span>
+              } @else {
+                <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-500"></span>
+              }
+            </span>
+            <p class="text-sm font-semibold text-gray-800 dark:text-white">
+              @if (checkingConnection) {
+                Checking PostgreSQL…
+              } @else if (apiUnreachable) {
+                Backend API unreachable
+              } @else if (connection?.connected) {
+                Connected to PostgreSQL
+              } @else {
+                Cannot reach PostgreSQL
+              }
+            </p>
+          </div>
+
+          @if (connection) {
+            <p class="mt-1 truncate font-mono text-xs text-gray-600 dark:text-gray-300">
+              {{ connectionTarget }} / {{ connection.database }}
+            </p>
+            <p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">
+              user {{ connection.username }}
+              · {{ connection.ssl ? 'SSL on' : 'SSL off' }}
+              · {{ connection.mode }}
+              @if (connection.connected && connection.latencyMs != null) {
+                · {{ connection.latencyMs }} ms
+              }
+              @if (connection.serverVersion) {
+                · PG {{ connection.serverVersion }}
+              }
+            </p>
+          } @else if (apiUnreachable) {
+            <p class="mt-1 text-xs text-red-700 dark:text-red-300">
+              The setup API did not respond. Confirm the backend is running.
+            </p>
+          }
+
+          @if (!checkingConnection && connection && !connection.connected) {
+            <p class="mt-2 text-sm font-medium text-red-700 dark:text-red-300">{{ connection.error }}</p>
+            @if (connection.hint) {
+              <p class="mt-1 text-xs text-red-600/90 dark:text-red-300/80">{{ connection.hint }}</p>
+            }
+          }
+        </div>
+
+        <button type="button" (click)="recheckConnection()" [disabled]="checkingConnection"
+          class="shrink-0 rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-600 dark:bg-gray-900 dark:text-gray-200 dark:hover:bg-gray-800">
+          {{ checkingConnection ? 'Checking…' : 'Recheck' }}
+        </button>
+      </div>
+    </div>
+
     <!-- Loading -->
     @if (state === 'loading') {
       <div class="rounded-2xl border border-gray-200 bg-white p-8 text-center shadow-sm dark:border-gray-800 dark:bg-white/[0.03]">
@@ -86,8 +155,13 @@
           }
         </div>
 
-        <!-- Restore Button -->
-        <button type="button" (click)="restore()" [disabled]="!selectedFile"
+        @if (connection && !connection.connected) {
+          <p class="mt-4 text-xs text-amber-700 dark:text-amber-400">
+            Restore is disabled until PostgreSQL is reachable.
+          </p>
+        }
+
+        <button type="button" (click)="restore()" [disabled]="!selectedFile || (connection !== null && !connection.connected)"
           class="mt-5 w-full rounded-lg bg-brand-500 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-600 disabled:cursor-not-allowed disabled:opacity-50">
           🚀 Restore Database
         </button>
