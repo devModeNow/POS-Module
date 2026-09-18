@@ -1,6 +1,7 @@
 # Stage 1: build NestJS
 # node:20 is more stable than 22-slim for `npm ci` (SIGSEGV / exit 139 on small VPS).
 FROM node:20-bookworm-slim AS builder
+LABEL org.opencontainers.image.title="alingbeth-backend-builder"
 
 WORKDIR /app
 
@@ -25,6 +26,7 @@ RUN npm run build
 
 # Stage 2: production deps (native modules like sharp)
 FROM node:20-bookworm-slim AS deps
+LABEL org.opencontainers.image.title="alingbeth-backend-deps"
 
 WORKDIR /app
 
@@ -47,6 +49,7 @@ RUN node -v && npm -v \
 
 # Stage 3: runtime
 FROM node:20-bookworm-slim AS runner
+LABEL org.opencontainers.image.title="alingbeth-backend"
 
 WORKDIR /app
 

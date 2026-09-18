@@ -1,6 +1,7 @@
 # Stage 1: Build Angular
 # node:20 is more stable than 22-slim for `npm ci` (SIGSEGV / exit 139 on small VPS).
 FROM node:20-bookworm-slim AS builder
+LABEL org.opencontainers.image.title="alingbeth-frontend-builder"
 
 WORKDIR /app
 

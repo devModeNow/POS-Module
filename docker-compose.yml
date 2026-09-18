@@ -4,12 +4,17 @@
 #   alingbeth-staging.webkodex.com     → http://alingbeth-staging-frontend:80
 #   api-alingbeth-staging.webkodex.com → http://alingbeth-staging-backend:3000
 #
-# Deploy on the server (build one image at a time — parallel npm ci can SIGSEGV / exit 139):
+# Deploy on the server (never build frontend+backend in parallel on a small VPS):
 #   docker network create app-tier   # skip if it already exists
-#   cd ~/apps/POS-pcmazing
+#   cd ~/apps/alingbeth-pos
 #   cp .env.docker.example .env.docker
 #   nano .env.docker
-#   COMPOSE_PARALLEL_LIMIT=1 docker compose --env-file .env.docker up -d --build
+#   chmod +x deploy.sh && ./deploy.sh
+#
+# If you already have a corrupt BuildKit cache ("unexpected commit digest"):
+#   docker builder prune -af
+#   COMPOSE_PARALLEL_LIMIT=1 docker compose --env-file .env.docker build --no-cache
+#   docker compose --env-file .env.docker up -d
 #
 # Network must match the Cloudflare tunnel container (this server: app-tier).
 #   docker inspect <tunnel-container> --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}'
@@ -17,13 +22,13 @@
 name: pos-pcmazing
 
 services:
-  alingbeth-staging-frontend:
-    container_name: alingbeth-staging-frontend
+  alingbeth-prod-frontend:
+    container_name: alingbeth-prod-frontend
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        API_URL: ${API_URL:-https://api-alingbeth-staging.webkodex.com}
+        API_URL: ${API_URL:-https://api-alingbeth.webkodex.com}
         PUBLIC_SITE_URL: ${PUBLIC_SITE_URL:-https://alingbeth-staging.webkodex.com}
         BUILD_ID: ${BUILD_ID:-}
     restart: unless-stopped
@@ -32,8 +37,8 @@ services:
     # No host ports required — Cloudflare tunnel reaches the container by name.
     # Uncomment for local debug: ports: ["8080:80"]
 
-  alingbeth-staging-backend:
-    container_name: alingbeth-staging-backend
+  alingbeth-prod-backend:
+    container_name: alingbeth-prod-backend
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -44,7 +49,7 @@ services:
       NODE_ENV: production
       PORT: 3000
       NODE_PATH: /app
-      CORS_ORIGINS: ${CORS_ORIGINS:-https://alingbeth-staging.webkodex.com}
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://alingbeth.webkodex.com}
       BACKUP_STORAGE_PATH: /app/backups
     volumes:
       - pos_backups:/app/backups
